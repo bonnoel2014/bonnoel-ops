@@ -134,8 +134,9 @@
   table.grid th{ background:var(--surface-sunken); font-weight:500; color:var(--ink-soft); position:sticky; left:0; }
   table.grid th:first-child{ min-width:44px; z-index:1; }
   table.grid .on{ background:var(--accent-soft); }
-  .chip{ display:inline-block; padding:0 4px; margin:1px; border-radius:4px; background:var(--tile-gray); color:var(--ink); white-space:nowrap; }
-  .chip.sub{ background:var(--accent); color:var(--accent-ink); }
+  .chip{ display:inline-block; padding:0 4px; margin:1px; border-radius:4px; background:var(--tile-gray); color:#2b2420; white-space:nowrap; }
+  .chip.sub{ outline:2px solid var(--accent); outline-offset:-1px; font-weight:600; }
+  .dot{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; border:1px solid rgba(0,0,0,.15); }
   .chip.covering{ background:var(--warn-soft); color:var(--warn); }
   .chip.work{ background:var(--ok-soft); color:var(--ok); }
   .chip.brk{ background:transparent; color:var(--ink-faint); border:1px dashed var(--line-strong); }
@@ -750,6 +751,7 @@
   };
 
   // ===== 근무표 · 휴무 · 대타 =====
+  var PALETTE = ['#fde68a','#bfdbfe','#bbf7d0','#fbcfe8','#ddd6fe','#fed7aa','#a5f3fc','#fecaca','#d9f99d','#e9d5ff','#fef08a','#c7d2fe','#fcd5b4','#b2f0e6','#f5c6e0','#d4e2ff'];
   var WD = ['일','월','화','수','목','금','토'];
   var WD_ORDER = [1,2,3,4,5,6,0];
   function toMin(t){ if (!t) return null; var p = t.split(':'); return (+p[0]) * 60 + (+p[1]); }
@@ -812,32 +814,42 @@
     var html = topbar('근무표 · ' + branchName(b), true) + branchTabs(b, false);
     html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="sched-day" data-date="' + addDays(ws, -7) + '">‹ 지난주</button><b>' + esc(fmtDateK(ws)) + ' ~ ' + esc(fmtDateK(days[6])) + '</b><button class="btn sm" data-act="sched-day" data-date="' + addDays(ws, 7) + '">다음주 ›</button></div>';
     html += '<div class="tabs">' + days.map(function(d){ return '<span class="tab' + (d === day ? ' on' : '') + '" data-act="sched-day" data-date="' + d + '">' + WD[wdOf(d)] + ' ' + dateObj(d).getDate() + '</span>'; }).join('') + '</div>';
+    // 근무자마다 색 (이 매장 패턴에 나오는 사람 순서대로)
+    var colorOf = {}, ci = 0;
+    sch.patterns.filter(function(p){ return p.branch_id === b; }).map(function(p){ return p.staff_id; }).sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); }).forEach(function(id){ if (!colorOf[id]) colorOf[id] = PALETTE[(ci++) % PALETTE.length]; });
+    function col(id){ if (!colorOf[id]) colorOf[id] = PALETTE[(ci++) % PALETTE.length]; return colorOf[id]; }
     var rows = shiftsOn(sch, b, day);
     html += '<div class="card section"><div class="sec-h">' + esc(fmtDateK(day)) + (day === todayStr() ? ' · 오늘' : '') + '<span class="sp"></span>' + rows.length + '명</div>';
     if (!rows.length) html += '<div class="empty">이 날 근무 패턴이 없어요' + (isManager() ? '. "근무 패턴"에서 넣어 주세요' : '') + '</div>';
     rows.forEach(function(r){
-      html += '<div class="item"><div class="iname"><div class="t">' + (r.kind === 'sub' ? '<s style="color:var(--ink-faint)">' + esc(r.name) + '</s> → ' + esc(r.subName) : esc(r.name)) + '</div><div class="s">' + esc(tRange(r.start, r.end)) + (r.brk ? ' · 휴게 ' + esc(r.brk) : '') + '</div></div>' + kindBadge(r) + '</div>';
+      var who = r.kind === 'sub' ? '<span class="dot" style="background:' + col(r.req.sub_staff_id) + '"></span><s style="color:var(--ink-faint)">' + esc(r.name) + '</s> → ' + esc(r.subName) : '<span class="dot" style="background:' + col(r.staffId) + '"></span>' + esc(r.name);
+      html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + (r.brk ? ' · 휴게 ' + esc(r.brk) : '') + '</div></div>' + kindBadge(r) + '</div>';
     });
     html += '</div>';
-    // 주간 표 (30분 단위)
-    var mn = 24 * 60, mx = 0;
-    sch.patterns.forEach(function(p){ if (p.branch_id === b){ mn = Math.min(mn, toMin(p.start_time)); mx = Math.max(mx, toMin(p.end_time)); } });
+    // 주간 표: 30분 줄로 맞추고, 7:20처럼 어긋난 시작·끝이 있으면 그 줄만 따로 (예: 7:20~7:30)
+    var mn = 24 * 60, mx = 0, bounds = {};
+    sch.patterns.forEach(function(p){ if (p.branch_id === b){ mn = Math.min(mn, toMin(p.start_time)); mx = Math.max(mx, toMin(p.end_time)); bounds[toMin(p.start_time)] = 1; bounds[toMin(p.end_time)] = 1; } });
     if (mx > mn){
+      for (var t = Math.ceil(mn / 30) * 30; t <= Math.floor(mx / 30) * 30; t += 30) bounds[t] = 1;
+      var times = Object.keys(bounds).map(Number).sort(function(x, y){ return x - y; });
       html += '<div class="group-title">주간 표 (옆으로 밀어 보세요)</div><div class="card" style="overflow-x:auto"><table class="grid"><tr><th></th>' + days.map(function(d){ return '<th' + (d === day ? ' class="on"' : '') + '>' + WD[wdOf(d)] + '<br>' + dateObj(d).getDate() + '</th>'; }).join('') + '</tr>';
       var byDay = days.map(function(d){ return shiftsOn(sch, b, d); });
-      for (var m = mn; m < mx; m += 30){
-        html += '<tr><th>' + fromMin(m) + '</th>';
+      for (var i = 0; i < times.length - 1; i++){
+        var rs = times[i], re = times[i + 1];
+        html += '<tr><th>' + fromMin(rs) + (re - rs !== 30 ? '<br><span style="font-weight:400">~' + fromMin(re) + '</span>' : '') + '</th>';
         byDay.forEach(function(list, di){
-          var cells = list.filter(function(r){ return toMin(r.start) <= m && m < toMin(r.end) && r.kind !== 'off'; }).map(function(r){
-            var onBreak = r.brk && toMin(r.brk.split('~')[0]) <= m && m < toMin(r.brk.split('~')[1]);
+          var cells = list.filter(function(r){ return toMin(r.start) < re && rs < toMin(r.end) && r.kind !== 'off'; }).map(function(r){
+            var onBreak = r.brk && toMin(r.brk.split('~')[0]) < re && rs < toMin(r.brk.split('~')[1]);
+            var who = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId;
             var nm = r.kind === 'sub' ? r.subName : r.name;
-            return '<span class="chip ' + (onBreak ? 'brk' : r.kind) + '">' + esc(onBreak ? '휴게' : nm.replace(/\s/g, '').slice(0, 4)) + '</span>';
+            var style = onBreak || r.kind === 'covering' || r.kind === 'work' ? '' : ' style="background:' + col(who) + '"';
+            return '<span class="chip ' + (onBreak ? 'brk' : r.kind) + '"' + style + '>' + esc(onBreak ? '휴게' : nm.replace(/\s/g, '').slice(0, 4)) + '</span>';
           });
           html += '<td' + (days[di] === day ? ' class="on"' : '') + '>' + cells.join('') + '</td>';
         });
         html += '</tr>';
       }
-      html += '</table></div><div class="muted" style="margin-top:6px">색: 회색 보통 · 갈색 대타 · 노랑 구하는 중 · 초록 출근(대타 없음)</div>';
+      html += '</table></div><div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게</div>';
     }
     app.innerHTML = html;
   };
