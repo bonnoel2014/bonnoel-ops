@@ -20,3 +20,25 @@ create table if not exists ops_branch_notes (
 alter table ops_branch_notes enable row level security;
 drop policy if exists "anon full access" on ops_branch_notes;
 create policy "anon full access" on ops_branch_notes for all using (true) with check (true);
+
+-- =========================================================
+-- 4. 출퇴근 기록 (매장폰에서 이름·비밀번호로 출근/퇴근)
+-- =========================================================
+create table if not exists ops_attendance (
+  id uuid primary key default gen_random_uuid(),
+  staff_id uuid not null references manual_staff(id) on delete cascade,
+  branch_id uuid not null references manual_branches(id) on delete cascade,
+  work_date date not null,                  -- 출근한 날짜
+  clock_in timestamptz,
+  clock_out timestamptz,
+  in_by uuid references manual_staff(id) on delete set null,     -- 본인이면 본인, 매니저가 넣으면 매니저
+  out_by uuid references manual_staff(id) on delete set null,
+  memo text,
+  edits jsonb not null default '[]',        -- [{at, by, field, from, to, reason}]
+  created_at timestamptz not null default now()
+);
+create index if not exists ops_attendance_branch_date_idx on ops_attendance (branch_id, work_date);
+create index if not exists ops_attendance_staff_date_idx on ops_attendance (staff_id, work_date);
+alter table ops_attendance enable row level security;
+drop policy if exists "anon full access" on ops_attendance;
+create policy "anon full access" on ops_attendance for all using (true) with check (true);

@@ -290,7 +290,12 @@
         {id:'q2',staff_id:'s2',branch_id:'b2',date:(function(){ var d=todayStr(); for(var i=1;i<8;i++){ var x=addDays(d,i); if(wdOf(x)===1) return x; } return addDays(d,2); })(),start_time:'13:00',end_time:'21:00',reason:'병원',status:'requested',created_at:daysAgo(0)}
       ],
       ops_sub_offers: [],
-      ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ]
+      ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
+      ops_attendance: [
+        { id: 'a1', staff_id: 'm1', branch_id: 'b2', work_date: addDays(todayStr(), -1), clock_in: new Date(addDays(todayStr(), -1) + 'T07:28:00').toISOString(), clock_out: new Date(addDays(todayStr(), -1) + 'T16:33:00').toISOString(), in_by: 'm1', out_by: 'm1', edits: [] },
+        { id: 'a2', staff_id: 's2', branch_id: 'b2', work_date: addDays(todayStr(), -1), clock_in: new Date(addDays(todayStr(), -1) + 'T12:58:00').toISOString(), clock_out: new Date(addDays(todayStr(), -1) + 'T22:05:00').toISOString(), in_by: 's2', out_by: 's2', edits: [] },
+        { id: 'a3', staff_id: 's2', branch_id: 'b2', work_date: todayStr(), clock_in: new Date(todayStr() + 'T13:02:00').toISOString(), clock_out: null, in_by: 's2', edits: [] }
+      ]
     };
   }
 
@@ -384,7 +389,7 @@
     var h = location.hash.replace(/^#\/?/, '') || 'home';
     var parts = h.split('/');
     var route = parts[0]; var params = { arg: parts[1], arg2: parts[2] };
-    if (!session && route !== 'login'){ nav('#/login'); return; }
+    if (!session && route !== 'login' && route !== 'clock'){ nav('#/login'); return; }
     if (session && route === 'login'){ nav('#/home'); return; }
     var fn = routes[route] || routes.home;
     current = { route: route, params: params };
@@ -475,6 +480,7 @@
       return '<a class="row' + (disabled ? ' disabled' : '') + '" href="' + href + '"' + (disabled ? ' data-act="soon"' : '') + (href.indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + tileBg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">' + (disabled ? '<span class="badge muted">준비 중</span>' : '›') + '</div></a>';
     }
     html += '<div class="group-title">매일 하는 일</div><div class="card">';
+    html += row('#/clock', 'tile-green', '⏱', '출퇴근', '매장폰에서 이름·비밀번호로 출근·퇴근');
     html += row('#/check', 'tile-blue', '📦', '비품 체크', '주 1회 현재고 넣기');
     html += row('#/arrive', 'tile-green', '📥', '도착 확인', '온 물건 수량 맞는지');
     html += row('#/leave', 'tile-yellow', '🌴', '휴무 신청', '쉬고 싶은 날 신청·내 신청 상태');
@@ -485,6 +491,7 @@
     html += row('#/short', 'tile-orange', '🛒', '부족·주문', isOwner() ? '4개 매장 부족 목록과 주문' : '우리 매장 부족 목록');
     html += row('#/transfer', 'tile-purple', '🔁', '점간 이동', '매장끼리 물건 주고받기');
     if (isManager()) html += row('#/leave-admin', 'tile-yellow', '✅', '대타 관리', '휴무 수락·대타 컨펌');
+    if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 실제 근무시간 (급여 근거)');
     html += '</div>';
     html += '<div class="group-title">자료</div><div class="card">';
     html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
@@ -1063,6 +1070,166 @@
     else if (made) render();
   }
 
+  // ===== 출퇴근 기록 (매장폰) =====
+  var KIOSK_KEY = 'bonnoel_ops_kiosk_branch';
+  var clockState = { branchId: null, staffId: null, ok: false };
+  function nowIso(){ return new Date().toISOString(); }
+  function hm(iso){ if (!iso) return '-'; var d = new Date(iso); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function minutesBetween(a, b){ return Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)); }
+  function nightMinutes(a, b){ // 22:00~06:00 겹치는 분
+    var s = new Date(a), e = new Date(b), total = 0;
+    for (var k = -1; k <= 1; k++){
+      var ws = new Date(s.getFullYear(), s.getMonth(), s.getDate() + k, 22, 0, 0), we = new Date(ws.getTime() + 8 * 3600000);
+      var lo = Math.max(s, ws), hi = Math.min(e, we); if (hi > lo) total += Math.round((hi - lo) / 60000);
+    }
+    return total;
+  }
+  function fmtH(min){ return (min / 60).toFixed(1) + 'h'; }
+  function openRecordOf(list, staffId){ return list.filter(function(r){ return r.staff_id === staffId && r.clock_in && !r.clock_out && (Date.now() - new Date(r.clock_in)) < 20 * 3600000; })[0]; }
+
+  routes.clock = async function(params){
+    await loadBase();
+    var b = clockState.branchId || (session ? (isOwner() ? (params.arg || session.branchId) : session.branchId) : null);
+    if (!b){ try { b = localStorage.getItem(KIOSK_KEY) || null; } catch(e){} }
+    var html = topbar('출퇴근', !!session);
+    if (!b){
+      html += '<div class="group-title">이 폰이 있는 매장</div><div class="card">' + base.branches.map(function(x){ return '<div class="row" data-act="clock-branch" data-id="' + esc(x.id) + '"><div class="tile" style="background:var(--tile-orange)">🏬</div><div class="rt"><div class="rtitle">' + esc(x.name) + '</div></div><div class="chev">›</div></div>'; }).join('') + '</div>';
+      app.innerHTML = html; return;
+    }
+    clockState.branchId = b;
+    var today = todayStr();
+    var recs = await db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: addDays(today, -1) }, order: { col: 'clock_in', asc: false } });
+    var people = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || !s.branch_id); });
+    var st = clockState;
+    if (!st.staffId){
+      html += '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + esc(branchName(b)) + '</b><span class="muted" data-act="clock-branch-reset" style="cursor:pointer">매장 바꾸기</span></div>';
+      html += '<div class="muted" style="margin:0 4px 10px">내 이름을 누르고 비밀번호 4자리를 넣으면 출근·퇴근이 기록돼요.</div><div class="name-grid">';
+      people.forEach(function(s){ var open = openRecordOf(recs, s.id); html += '<button class="btn" data-act="clock-pick" data-id="' + esc(s.id) + '" style="' + (open ? 'background:var(--ok-soft);border-color:var(--ok)' : '') + '">' + esc(s.name) + (open ? '<br><span style="font-size:12px;font-weight:400">근무 중 ' + hm(open.clock_in) + '~</span>' : '') + '</button>'; });
+      html += '</div>';
+      var todayRecs = recs.filter(function(r){ return r.work_date === today; });
+      if (todayRecs.length){
+        html += '<div class="card section"><div class="sec-h">오늘 기록</div>';
+        todayRecs.forEach(function(r){ html += '<div class="hist"><span class="sp">' + esc(staffName(r.staff_id)) + '</span><span>' + hm(r.clock_in) + ' ~ ' + (r.clock_out ? hm(r.clock_out) : '<span class="badge ok">근무 중</span>') + '</span></div>'; });
+        html += '</div>';
+      }
+    } else {
+      var s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
+      if (!st.ok){
+        var first = !s.pin;
+        html += '<div class="pin-wrap"><div style="font-size:20px;font-weight:600;margin-bottom:6px">' + esc(s.name) + '</div><div class="muted" style="margin-bottom:14px">' + (first ? '처음이시네요. 앞으로 쓸 비밀번호 4자리를 정해 주세요.' : '비밀번호 4자리') + '</div>';
+        html += '<input class="pin" id="pin1" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
+        if (first) html += '<div class="muted" style="margin:12px 0 6px">한 번 더</div><input class="pin" id="pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
+        html += '<div style="margin-top:18px"><button class="btn primary" data-act="clock-pin">확인</button></div><div style="margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">다른 이름</span></div></div>';
+      } else {
+        var open = openRecordOf(recs, s.id);
+        var mine = recs.filter(function(r){ return r.staff_id === s.id; }).slice(0, 3);
+        html += '<div class="pin-wrap"><div style="font-size:22px;font-weight:700">' + esc(s.name) + '</div><div class="muted" style="margin:4px 0 18px">' + esc(fmtDateK(today)) + ' 지금 ' + hm(nowIso()) + '</div>';
+        if (open) html += '<div class="muted" style="margin-bottom:10px">출근 ' + hm(open.clock_in) + ' (' + fmtH(minutesBetween(open.clock_in, nowIso())) + ' 지남)</div><button class="btn primary" data-act="clock-out" data-id="' + esc(open.id) + '" style="font-size:22px;padding:18px 40px">퇴근하기</button>';
+        else html += '<button class="btn primary" data-act="clock-in" style="font-size:22px;padding:18px 40px;background:var(--ok);border-color:var(--ok)">출근하기</button>';
+        html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div></div>';
+        if (mine.length){ html += '<div class="card section"><div class="sec-h">내 최근 기록</div>'; mine.forEach(function(r){ html += '<div class="hist"><span>' + esc(fmtDateK(r.work_date)) + '</span><span class="sp">' + hm(r.clock_in) + ' ~ ' + hm(r.clock_out) + '</span><span>' + (r.clock_out ? fmtH(minutesBetween(r.clock_in, r.clock_out)) : '') + '</span></div>'; }); html += '</div>'; }
+      }
+    }
+    app.innerHTML = html;
+    var p1 = document.getElementById('pin1'); if (p1) p1.focus();
+  };
+  async function clockPin(){
+    var s = base.staff.filter(function(x){ return x.id === clockState.staffId; })[0];
+    var p1 = (document.getElementById('pin1') || {}).value || '';
+    if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
+    if (!s.pin){ var p2 = (document.getElementById('pin2') || {}).value || ''; if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; } await db.update('manual_staff', { id: s.id }, { pin: p1 }); s.pin = p1; }
+    else if (s.pin !== p1){ toast('비밀번호가 틀려요'); return; }
+    clockState.ok = true; render();
+  }
+  async function clockIn(){
+    var s = clockState.staffId, b = clockState.branchId;
+    var recent = await db.select('ops_attendance', { eq: { staff_id: s }, gte: { work_date: addDays(todayStr(), -1) } });
+    if (openRecordOf(recent, s)){ toast('이미 출근 중이에요. 퇴근을 눌러 주세요'); render(); return; }
+    await db.insert('ops_attendance', { staff_id: s, branch_id: b, work_date: todayStr(), clock_in: nowIso(), in_by: s, edits: [] });
+    toast(staffName(s) + ' 출근 ' + hm(nowIso()) + ' 기록했어요'); clockDone();
+  }
+  async function clockOut(id){
+    await db.update('ops_attendance', { id: id }, { clock_out: nowIso(), out_by: clockState.staffId });
+    toast(staffName(clockState.staffId) + ' 퇴근 ' + hm(nowIso()) + ' 기록했어요. 수고했어요!'); clockDone();
+  }
+  function clockDone(){ clockState.staffId = null; clockState.ok = false; setTimeout(render, 1200); }
+
+  // ===== 근무 조회 (사장님·매니저) =====
+  function monthOf(s){ return s.slice(0, 7); }
+  function monthDays(ym){ var y = +ym.slice(0, 4), m = +ym.slice(5, 7); var n = new Date(y, m, 0).getDate(); var out = []; for (var i = 1; i <= n; i++) out.push(ym + '-' + pad(i)); return out; }
+  function addMonths(ym, k){ var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + k; var d = new Date(y, m, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); }
+  function recNet(r, sch){ // 실제 분 − 근무표 휴게
+    if (!r.clock_in || !r.clock_out) return null;
+    var raw = minutesBetween(r.clock_in, r.clock_out), brk = 0;
+    var pats = poolFor(sch, r.branch_id, r.work_date).filter(function(p){ return p.staff_id === r.staff_id && p.weekday === wdOf(r.work_date) && p.break_start; });
+    if (pats.length) brk = toMin(pats[0].break_end) - toMin(pats[0].break_start);
+    return { raw: raw, net: Math.max(0, raw - brk), brk: brk, night: nightMinutes(r.clock_in, r.clock_out) };
+  }
+  routes.hours = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var b = pickBranch(params, false);
+    var ym = /^\d{4}-\d{2}$/.test(params.arg2 || '') ? params.arg2 : monthOf(todayStr());
+    var days = monthDays(ym);
+    var r = await Promise.all([ db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: days[0] }, order: { col: 'work_date' } }), loadSchedule([b], days[0], days[days.length - 1]) ]);
+    var recs = r[0].filter(function(x){ return x.work_date <= days[days.length - 1]; }), sch = r[1];
+    var html = topbar('근무 조회 · ' + branchName(b), true) + branchTabs(b, false);
+    html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="hours-month" data-ym="' + addMonths(ym, -1) + '">‹ 지난달</button><b>' + ym.replace('-', '년 ') + '월</b><button class="btn sm" data-act="hours-month" data-ym="' + addMonths(ym, 1) + '">다음달 ›</button></div>';
+    var open = recs.filter(function(x){ return x.clock_in && !x.clock_out && x.work_date >= addDays(todayStr(), -1); });
+    if (open.length) html += '<div class="note ok">지금 근무 중: ' + open.map(function(x){ return esc(staffName(x.staff_id)) + ' ' + hm(x.clock_in) + '~'; }).join(' · ') + '</div>';
+    // 근무표 계획 시간
+    var planned = {};
+    days.forEach(function(d){ shiftsOn(sch, b, d).forEach(function(s){ if (s.kind === 'off') return; var who = s.kind === 'sub' ? s.req.sub_staff_id : s.staffId; var m = toMin(s.end) - toMin(s.start) - (s.brk ? toMin(s.brk.split('~')[1]) - toMin(s.brk.split('~')[0]) : 0); planned[who] = (planned[who] || 0) + m; }); });
+    var byStaff = {};
+    recs.forEach(function(x){ (byStaff[x.staff_id] = byStaff[x.staff_id] || []).push(x); });
+    var ids = Object.keys(byStaff); Object.keys(planned).forEach(function(k){ if (ids.indexOf(k) < 0) ids.push(k); });
+    ids.sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); });
+    html += '<div class="card section"><div class="sec-h">사람별 합계<span class="sp"></span><button class="btn sm" data-act="hours-csv" data-branch="' + esc(b) + '" data-ym="' + ym + '">엑셀(CSV) 내려받기</button></div>';
+    if (!ids.length) html += '<div class="empty">이 달 기록이 없어요</div>';
+    var csv = [['이름','날짜','출근','퇴근','실제(분)','휴게(분)','인정(분)','야간(분)','비고']];
+    ids.forEach(function(id){
+      var list = byStaff[id] || [], net = 0, night = 0, dcount = 0, missing = 0;
+      list.forEach(function(x){ var n = recNet(x, sch); if (n){ net += n.net; night += n.night; dcount++; } else missing++; csv.push([staffName(id), x.work_date, hm(x.clock_in), hm(x.clock_out), n ? n.raw : '', n ? n.brk : '', n ? n.net : '', n ? n.night : '', (x.edits && x.edits.length ? '수정 ' + x.edits.length + '회' : '') + (!x.clock_out ? ' 퇴근 없음' : '')]); });
+      var plan = planned[id] || 0, diff = net - plan;
+      html += '<div class="item" data-act="hours-toggle" data-id="' + esc(id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(staffName(id)) + '</div><div class="s">' + dcount + '일 · 실제 <b>' + fmtH(net) + '</b> · 근무표 ' + fmtH(plan) + ' · 야간 ' + fmtH(night) + (missing ? ' · <span style="color:var(--danger)">퇴근 없음 ' + missing + '</span>' : '') + '</div></div><span class="badge ' + (Math.abs(diff) < 30 ? 'ok' : 'warn') + '">' + (diff >= 0 ? '+' : '') + fmtH(diff) + '</span></div>';
+      html += '<div class="expand hidden" id="hx-' + esc(id) + '" style="padding-left:14px">';
+      list.forEach(function(x){ var n = recNet(x, sch); html += '<div class="hist"><span>' + esc(fmtDateK(x.work_date)) + '</span><span class="sp">' + hm(x.clock_in) + ' ~ ' + hm(x.clock_out) + (n ? ' · ' + fmtH(n.net) + (n.brk ? ' (휴게 ' + n.brk + '분 뺌)' : '') + (n.night ? ' · 야간 ' + n.night + '분' : '') : ' · <span style="color:var(--danger)">퇴근 없음</span>') + (x.edits && x.edits.length ? ' · <span class="badge muted" title="' + esc(x.edits.map(function(e){ return e.field + ' ' + e.from + '→' + e.to + ' (' + e.reason + ')'; }).join(', ')) + '">수정 ' + x.edits.length + '</span>' : '') + '</span><button class="btn sm" data-act="att-edit" data-id="' + esc(x.id) + '">고치기</button></div>'; });
+      if (!list.length) html += '<div class="hist"><span class="muted">기록 없음 (근무표만 있음)</span></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '<div class="group-title">기록 추가 (깜빡했을 때)</div><div class="form"><div class="grid2"><div><label>누구</label><select class="in" id="at-staff">' + base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || !s.branch_id); }).map(function(s){ return '<option value="' + esc(s.id) + '">' + esc(s.name) + '</option>'; }).join('') + '</select></div><div><label>날짜</label><input class="in" type="date" id="at-date" value="' + todayStr() + '"></div></div><div class="grid2"><div><label>출근</label><input class="in" type="time" id="at-in"></div><div><label>퇴근</label><input class="in" type="time" id="at-out"></div></div><div><label>사유</label><input class="in" id="at-reason" placeholder="예: 매장폰 고장, 찍는 걸 잊음"></div><button class="btn primary" data-act="att-add" data-branch="' + esc(b) + '">추가</button></div>';
+    html += '<div class="muted" style="margin-top:10px">인정 시간 = 실제 시간 − 근무표에 적힌 휴게. 야간 = 22시~06시. 급여 계산은 이 표를 바탕으로 다음 단계에서 만들어요.</div>';
+    app.innerHTML = html;
+    app._csv = csv; app._csvName = branchName(b) + '_' + ym + '_근무시간.csv';
+  };
+  function downloadCsv(){
+    var rows = app._csv || []; var text = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })); a.download = app._csvName || 'hours.csv'; document.body.appendChild(a); a.click(); a.remove();
+  }
+  function localIso(dateStr, hmStr){ return new Date(dateStr + 'T' + hmStr + ':00').toISOString(); }
+  async function attEdit(id){
+    var r = (await db.select('ops_attendance', { eq: { id: id } }))[0]; if (!r) return;
+    var inV = window.prompt('출근 시각 (HH:MM)', hm(r.clock_in) === '-' ? '' : hm(r.clock_in)); if (inV === null) return;
+    var outV = window.prompt('퇴근 시각 (HH:MM, 비우면 없음)', hm(r.clock_out) === '-' ? '' : hm(r.clock_out)); if (outV === null) return;
+    if (inV === '' && window.confirm('출근 시각을 비우면 이 기록을 지워요. 지울까요?')){ await db.remove('ops_attendance', { id: id }); toast('지웠어요'); render(); return; }
+    var reason = window.prompt('고치는 이유 (기록에 남아요)', ''); if (reason === null) return; if (!reason.trim()){ toast('이유를 적어 주세요'); return; }
+    var patch = {}, edits = (r.edits || []).slice();
+    var chk = function(v){ return /^\d{1,2}:\d{2}$/.test(v); };
+    if (chk(inV) && hm(r.clock_in) !== inV.padStart(5, '0')){ patch.clock_in = localIso(r.work_date, inV.padStart(5, '0')); edits.push({ at: nowIso(), by: staffName(session.staffId), field: '출근', from: hm(r.clock_in), to: inV, reason: reason.trim() }); }
+    if (outV === '' && r.clock_out){ patch.clock_out = null; edits.push({ at: nowIso(), by: staffName(session.staffId), field: '퇴근', from: hm(r.clock_out), to: '-', reason: reason.trim() }); }
+    else if (chk(outV) && hm(r.clock_out) !== outV.padStart(5, '0')){ var od = r.work_date; if (toMin(outV.padStart(5, '0')) < toMin(hm(patch.clock_in || r.clock_in))) od = addDays(od, 1); patch.clock_out = localIso(od, outV.padStart(5, '0')); patch.out_by = session.staffId; edits.push({ at: nowIso(), by: staffName(session.staffId), field: '퇴근', from: hm(r.clock_out), to: outV, reason: reason.trim() }); }
+    if (!Object.keys(patch).length){ toast('바뀐 게 없어요'); return; }
+    patch.edits = edits; await db.update('ops_attendance', { id: id }, patch); toast('고쳤어요 (이력 남김)'); render();
+  }
+  async function attAdd(b){
+    var s = document.getElementById('at-staff').value, d = document.getElementById('at-date').value, i = document.getElementById('at-in').value, o = document.getElementById('at-out').value, reason = document.getElementById('at-reason').value.trim();
+    if (!d || !i){ toast('날짜와 출근 시각을 넣어 주세요'); return; } if (!reason){ toast('사유를 적어 주세요'); return; }
+    var od = d; if (o && toMin(o) < toMin(i)) od = addDays(d, 1);
+    await db.insert('ops_attendance', { staff_id: s, branch_id: b, work_date: d, clock_in: localIso(d, i), clock_out: o ? localIso(od, o) : null, in_by: session.staffId, out_by: o ? session.staffId : null, memo: reason, edits: [{ at: nowIso(), by: staffName(session.staffId), field: '추가', from: '-', to: i + '~' + (o || '-'), reason: reason }] });
+    toast('추가했어요'); render();
+  }
+
   // ===== 이벤트 =====
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
@@ -1116,6 +1283,19 @@
         case 'pat-staff-add': { var pn = document.getElementById('ps-name').value.trim(); if (!pn){ toast('이름을 넣어 주세요'); break; } if (base.staff.some(function(x){ return x.name === pn && x.active !== false; })){ toast('이미 명단에 있는 이름이에요'); break; } await db.insert('manual_staff', { name: pn, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast(pn + ' 추가했어요'); render(); break; }
         case 'pat-del': if (window.confirm('이 패턴을 지울까요?')){ await db.update('ops_shift_patterns', { id: id }, { active: false }); render(); } break;
         case 'pat-bulk': await patBulk(el.getAttribute('data-branch'), el.getAttribute('data-week') || null); break;
+        // 출퇴근
+        case 'clock-branch': clockState.branchId = id; try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} render(); break;
+        case 'clock-branch-reset': clockState.branchId = null; try { localStorage.removeItem(KIOSK_KEY); } catch(err){} if (session && !isOwner()){ toast('내 매장으로만 찍을 수 있어요'); break; } render(); break;
+        case 'clock-pick': clockState.staffId = id; clockState.ok = false; render(); break;
+        case 'clock-back': clockState.staffId = null; clockState.ok = false; render(); break;
+        case 'clock-pin': await clockPin(); break;
+        case 'clock-in': el.disabled = true; await clockIn(); break;
+        case 'clock-out': el.disabled = true; await clockOut(id); break;
+        case 'hours-month': nav('#/hours/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-ym')); break;
+        case 'hours-toggle': document.getElementById('hx-' + id).classList.toggle('hidden'); break;
+        case 'hours-csv': downloadCsv(); break;
+        case 'att-edit': await attEdit(id); break;
+        case 'att-add': await attAdd(el.getAttribute('data-branch')); break;
       }
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
