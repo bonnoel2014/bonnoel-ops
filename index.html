@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>본노엘 운영</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#642e2c">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="본노엘 운영">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --paper:#faf7f2; --surface:#ffffff; --surface-sunken:#f1ece3;
+    --ink:#2b2420; --ink-soft:#6b6259; --ink-faint:#9a9086;
+    --line:#e5ddd0; --line-strong:#d3c7b4;
+    --accent:#642e2c; --accent-soft:#f0e2e0; --accent-ink:#f7efe4;
+    --danger:#b5432c; --danger-soft:#f6dfd8;
+    --ok:#2f7a4f; --ok-soft:#dcefe1;
+    --warn:#9a6b12; --warn-soft:#fbeccb;
+    --tile-blue:#e3ebfa; --tile-green:#e2f2e6; --tile-orange:#fbe8d8; --tile-purple:#ece4f7; --tile-yellow:#fbf1cf; --tile-gray:#ebe8e3; --tile-red:#f9e1e0;
+    --shadow: 0 1px 2px rgba(43,36,32,0.06), 0 6px 18px -10px rgba(43,36,32,0.22);
+    --radius-s:6px; --radius-m:12px; --radius-l:18px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#1c1713; --surface:#252019; --surface-sunken:#2c261e;
+      --ink:#f1ece3; --ink-soft:#b7ada0; --ink-faint:#847a6e;
+      --line:#3a3226; --line-strong:#4a4030;
+      --accent:#d9a39e; --accent-soft:#3b2523; --accent-ink:#2a1412;
+      --danger:#e59078; --danger-soft:#3a241d;
+      --ok:#7bc79a; --ok-soft:#1e2f24;
+      --warn:#e0b45a; --warn-soft:#3a2f14;
+      --tile-blue:#26304a; --tile-green:#22392a; --tile-orange:#3f2d1e; --tile-purple:#33283f; --tile-yellow:#3d341a; --tile-gray:#332e28; --tile-red:#3f2424;
+      color-scheme: dark;
+    }
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:var(--paper); color:var(--ink); font-family:"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:16px; line-height:1.5; -webkit-text-size-adjust:100%; }
+  a{ color:inherit; text-decoration:none; }
+  button{ font:inherit; }
+  .wrap{ max-width:560px; margin:0 auto; padding:0 16px 96px; }
+  .loading{ padding:60px 0; text-align:center; color:var(--ink-faint); }
+
+  .topbar{ display:flex; align-items:center; gap:10px; padding:14px 0 10px; position:sticky; top:0; background:var(--paper); z-index:5; }
+  .topbar h1{ font-size:20px; margin:0; flex:1; font-weight:700; }
+  .topbar .back{ border:0; background:transparent; font-size:22px; padding:4px 8px 4px 0; color:var(--ink-soft); cursor:pointer; }
+  .who{ font-size:13px; color:var(--ink-soft); background:var(--surface-sunken); border-radius:999px; padding:4px 10px; border:1px solid var(--line); cursor:pointer; white-space:nowrap; }
+
+  .group-title{ font-size:14px; color:var(--ink-soft); margin:18px 4px 8px; font-weight:500; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-l); box-shadow:var(--shadow); overflow:hidden; }
+  .row{ display:flex; align-items:center; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .row:last-child{ border-bottom:0; }
+  .row:active{ background:var(--surface-sunken); }
+  .row.disabled{ opacity:.55; }
+  .tile{ width:48px; height:48px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px; flex:none; }
+  .rt{ flex:1; min-width:0; }
+  .rtitle{ font-weight:600; font-size:17px; }
+  .rsub{ font-size:13px; color:var(--ink-soft); }
+  .chev{ color:var(--ink-faint); font-size:20px; }
+  .badge{ font-size:12px; padding:2px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-weight:600; white-space:nowrap; }
+  .badge.danger{ background:var(--danger-soft); color:var(--danger); }
+  .badge.ok{ background:var(--ok-soft); color:var(--ok); }
+  .badge.warn{ background:var(--warn-soft); color:var(--warn); }
+  .badge.muted{ background:var(--surface-sunken); color:var(--ink-soft); }
+
+  .summary{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+  .summary a{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-m); padding:10px 8px; text-align:center; }
+  .summary .n{ font-size:24px; font-weight:700; line-height:1.1; }
+  .summary .n.danger{ color:var(--danger); }
+  .summary .l{ font-size:12px; color:var(--ink-soft); }
+
+  .section{ margin-top:16px; }
+  .sec-h{ display:flex; align-items:center; gap:8px; padding:10px 14px; background:var(--surface-sunken); font-weight:600; font-size:14px; border-bottom:1px solid var(--line); }
+  .sec-h .sp{ flex:1; }
+  .item{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); }
+  .item:last-child{ border-bottom:0; }
+  .iname{ flex:1; min-width:0; }
+  .iname .t{ font-weight:500; }
+  .iname .s{ font-size:12px; color:var(--ink-soft); }
+  .iname .s.warn{ color:var(--warn); }
+  .qty{ width:76px; padding:8px 6px; border:1px solid var(--line-strong); border-radius:var(--radius-s); font-size:17px; text-align:center; background:var(--surface); color:var(--ink); }
+  .qty:focus{ outline:2px solid var(--accent); border-color:transparent; }
+  .qty.filled{ background:var(--ok-soft); }
+  .unit{ font-size:13px; color:var(--ink-soft); width:34px; }
+
+  .btn{ display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:10px 16px; border-radius:var(--radius-m); border:1px solid var(--line-strong); background:var(--surface); color:var(--ink); font-weight:600; cursor:pointer; font-size:15px; }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn.danger{ background:var(--danger-soft); color:var(--danger); border-color:transparent; }
+  .btn.ok{ background:var(--ok-soft); color:var(--ok); border-color:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:13px; border-radius:8px; }
+  .btn.block{ width:100%; }
+  .btn:disabled{ opacity:.5; cursor:default; }
+  .stickybar{ position:fixed; left:0; right:0; bottom:0; padding:10px 16px calc(10px + env(safe-area-inset-bottom)); background:var(--paper); border-top:1px solid var(--line); z-index:6; }
+  .stickybar .inner{ max-width:560px; margin:0 auto; display:flex; gap:8px; }
+
+  .form{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-l); padding:14px 16px; display:grid; gap:10px; }
+  .form label{ font-size:13px; color:var(--ink-soft); display:block; margin-bottom:4px; }
+  .in, select.in{ width:100%; padding:10px 12px; border:1px solid var(--line-strong); border-radius:var(--radius-s); font-size:16px; background:var(--surface); color:var(--ink); }
+  .in:focus{ outline:2px solid var(--accent); border-color:transparent; }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .inline{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .muted{ color:var(--ink-soft); font-size:13px; }
+  .empty{ padding:24px 16px; text-align:center; color:var(--ink-faint); font-size:14px; }
+  .note{ background:var(--warn-soft); color:var(--warn); border-radius:var(--radius-m); padding:10px 14px; font-size:13px; margin-top:12px; }
+  .note.danger{ background:var(--danger-soft); color:var(--danger); }
+  .note.ok{ background:var(--ok-soft); color:var(--ok); }
+
+  .tabs{ display:flex; gap:6px; overflow-x:auto; padding:4px 0 8px; }
+  .tab{ padding:7px 14px; border-radius:999px; border:1px solid var(--line-strong); background:var(--surface); font-size:14px; white-space:nowrap; cursor:pointer; }
+  .tab.on{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+
+  .pin-wrap{ text-align:center; padding:20px 0; }
+  .pin{ font-size:32px; letter-spacing:14px; width:200px; text-align:center; padding:10px; border:1px solid var(--line-strong); border-radius:var(--radius-m); background:var(--surface); color:var(--ink); }
+  .pin:focus{ outline:2px solid var(--accent); }
+  .name-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .name-grid .btn{ padding:14px 8px; font-size:16px; }
+  .expand{ padding:10px 14px 14px 72px; background:var(--surface-sunken); border-bottom:1px solid var(--line); }
+
+  .toast{ position:fixed; left:50%; bottom:90px; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--paper); padding:10px 16px; border-radius:999px; font-size:14px; opacity:0; transition:.2s; pointer-events:none; z-index:20; max-width:90vw; text-align:center; }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .hist{ font-size:13px; color:var(--ink-soft); padding:8px 14px; border-bottom:1px solid var(--line); display:flex; gap:8px; }
+  .hist:last-child{ border-bottom:0; }
+  .hist .sp{ flex:1; }
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+<div id="app" class="wrap"><div class="loading">불러오는 중…</div></div>
+<div id="toast" class="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ===== 설정 =====
+  // 매뉴얼북·로그북과 같은 Supabase 프로젝트를 씁니다 (테이블만 추가). anon/publishable 키는 공개되어도 되는 값.
+  var SUPABASE_URL = 'https://caetlljnyxsusswqhtci.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_Oiqo2urdo-9s-HIso3rkmQ_7pP-I0nV';
+  var LINKS = { manual: 'https://bakery-manual-book.vercel.app', logbook: 'https://bonnoel-manager-logbook.vercel.app' };
+  var DEMO = /[?&]demo=1/.test(location.search);   // ?demo=1 : 창고 없이 가짜 데이터로 눌러보기
+
+  var app = document.getElementById('app');
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 2200); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function uid(){ return 'x' + Math.random().toString(36).slice(2) + Date.now().toString(36); }
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function todayStr(){ var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
+  function addDays(dateStr, n){ var d = new Date(dateStr + 'T00:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
+  function md(s){ if(!s) return ''; var d = new Date(s); if (isNaN(d)) return ''; return (d.getMonth()+1) + '/' + d.getDate(); }
+  function num(v){ var n = parseFloat(v); return isNaN(n) ? null : n; }
+  function fmtQ(n){ if (n == null) return '-'; return (Math.round(n * 100) / 100).toString(); }
+  function daysAgo(n){ var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); }
+
+  // ===== 데이터 창고 어댑터 =====
+  var db = null;
+
+  function makeSupabaseDb(sb){
+    function applyMatch(q, opt){
+      if (!opt) return q;
+      var k;
+      if (opt.eq) for (k in opt.eq) q = q.eq(k, opt.eq[k]);
+      if (opt.in) for (k in opt.in) q = q.in(k, opt.in[k]);
+      if (opt.gte) for (k in opt.gte) q = q.gte(k, opt.gte[k]);
+      if (opt.is) for (k in opt.is) q = q.is(k, opt.is[k]);
+      return q;
+    }
+    return {
+      select: async function(table, opt){
+        var q = sb.from(table).select('*');
+        q = applyMatch(q, opt);
+        if (opt && opt.order) q = q.order(opt.order.col, { ascending: opt.order.asc !== false });
+        if (opt && opt.limit) q = q.limit(opt.limit);
+        var r = await q; if (r.error) throw r.error; return r.data || [];
+      },
+      insert: async function(table, rows){ var r = await sb.from(table).insert(rows).select(); if (r.error) throw r.error; return r.data; },
+      update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
+      upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
+      remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; }
+    };
+  }
+
+  function makeMemoryDb(tables){
+    function match(row, opt){
+      if (!opt) return true;
+      var k;
+      if (opt.eq) for (k in opt.eq) if (row[k] !== opt.eq[k]) return false;
+      if (opt.in) for (k in opt.in) if (opt.in[k].indexOf(row[k]) < 0) return false;
+      if (opt.gte) for (k in opt.gte) if (!(row[k] >= opt.gte[k])) return false;
+      if (opt.is) for (k in opt.is) if (row[k] !== opt.is[k]) return false;
+      return true;
+    }
+    function clone(x){ return JSON.parse(JSON.stringify(x)); }
+    return {
+      select: async function(table, opt){
+        var rows = (tables[table] || []).filter(function(r){ return match(r, opt); });
+        if (opt && opt.order){ var c = opt.order.col, asc = opt.order.asc !== false; rows.sort(function(a,b){ return (a[c] > b[c] ? 1 : a[c] < b[c] ? -1 : 0) * (asc ? 1 : -1); }); }
+        if (opt && opt.limit) rows = rows.slice(0, opt.limit);
+        return clone(rows);
+      },
+      insert: async function(table, rows){ rows = Array.isArray(rows) ? rows : [rows]; tables[table] = tables[table] || []; var out = rows.map(function(r){ var x = Object.assign({ id: uid(), created_at: new Date().toISOString() }, r); tables[table].push(x); return x; }); return clone(out); },
+      update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
+      upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
+      remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); }
+    };
+  }
+
+  function demoSeed(){
+    var B = { s: 'b1', w: 'b2', j: 'b3', d: 'b4' };
+    var cats = [ {id:'c1',name:'빵봉투',sort_order:1}, {id:'c2',name:'커피',sort_order:2}, {id:'c3',name:'위생 장갑 / 물티슈 / 소독',sort_order:3}, {id:'c4',name:'스티커',sort_order:4} ];
+    var items = [
+      {id:'i1',category_id:'c1',name:'치아바타 봉투',unit:'묶음',sort_order:1,active:true},
+      {id:'i2',category_id:'c1',name:'깜빠뉴·초코머핀류 봉투',unit:'묶음',sort_order:2,active:true},
+      {id:'i3',category_id:'c1',name:'소금빵 봉투',unit:'묶음',sort_order:3,active:true},
+      {id:'i4',category_id:'c2',name:'원두',unit:'봉',sort_order:1,active:true},
+      {id:'i5',category_id:'c2',name:'ICE 컵',unit:'줄',sort_order:2,active:true},
+      {id:'i6',category_id:'c3',name:'위생장갑 (뽀송이)',unit:'box',sort_order:1,active:true},
+      {id:'i7',category_id:'c3',name:'소독 알코올',unit:'개',sort_order:2,active:true},
+      {id:'i8',category_id:'c4',name:'쌀 스티커',unit:'묶음',sort_order:1,active:true},
+      {id:'i9',category_id:'c4',name:'하트 스티커',unit:'줄',sort_order:2,active:true}
+    ];
+    var targets = { i1:4, i2:3, i3:8, i4:5, i5:6, i6:2, i7:2, i8:10, i9:3 };
+    var ib = [];
+    items.forEach(function(it){ ['b1','b2','b3','b4'].forEach(function(b){ ib.push({ item_id: it.id, branch_id: b, target_qty: targets[it.id], active: true }); }); });
+    var wk = daysAgo(2);
+    return {
+      manual_branches: [ {id:'b1',name:'성수점',sort_order:1}, {id:'b2',name:'왕십리점',sort_order:2}, {id:'b3',name:'중계점',sort_order:3}, {id:'b4',name:'답십리점',sort_order:4} ],
+      manual_staff: [
+        {id:'o1',name:'사장님',branch_id:null,role:'owner',pin:'0000',active:true},
+        {id:'m1',name:'매니저 M',branch_id:'b2',role:'manager',pin:'1111',active:true},
+        {id:'s1',name:'알바 E',branch_id:'b2',role:'staff',pin:null,active:true},
+        {id:'s2',name:'알바 F',branch_id:'b2',role:'staff',pin:'2222',active:true},
+        {id:'s3',name:'알바 A',branch_id:'b1',role:'staff',pin:'3333',active:true},
+        {id:'m2',name:'매니저 K',branch_id:'b3',role:'manager',pin:'1111',active:true}
+      ],
+      ops_categories: cats, ops_items: items, ops_item_branch: ib,
+      ops_stock_checks: [
+        {id:'k1',branch_id:'b2',item_id:'i1',qty:2,staff_id:'s2',checked_at:wk},
+        {id:'k2',branch_id:'b2',item_id:'i2',qty:1,staff_id:'s2',checked_at:wk},
+        {id:'k3',branch_id:'b2',item_id:'i3',qty:8,staff_id:'s2',checked_at:wk},
+        {id:'k4',branch_id:'b2',item_id:'i4',qty:5,staff_id:'s2',checked_at:wk},
+        {id:'k5',branch_id:'b2',item_id:'i6',qty:2,staff_id:'s2',checked_at:wk},
+        {id:'k6',branch_id:'b2',item_id:'i7',qty:1,staff_id:'s2',checked_at:wk},
+        {id:'k7',branch_id:'b3',item_id:'i7',qty:0,staff_id:'m2',checked_at:wk},
+        {id:'k8',branch_id:'b3',item_id:'i8',qty:4,staff_id:'m2',checked_at:wk},
+        {id:'k9',branch_id:'b1',item_id:'i5',qty:1,staff_id:'s3',checked_at:wk}
+      ],
+      ops_orders: [
+        {id:'r1',branch_id:'b2',item_id:'i2',qty:2,status:'ordered',eta_date:addDays(todayStr(),5),ordered_by:'o1',ordered_at:daysAgo(1),mismatch:false,resolved:false},
+        {id:'r2',branch_id:'b1',item_id:'i5',qty:5,status:'received',eta_date:addDays(todayStr(),-1),ordered_by:'o1',ordered_at:daysAgo(8),received_qty:4,received_by:'s3',received_at:daysAgo(1),mismatch:true,resolved:false}
+      ],
+      ops_transfers: [
+        {id:'t1',from_branch:'b2',to_branch:'b3',item_id:'i7',qty:2,created_by:'m1',created_at:daysAgo(1)}
+      ]
+    };
+  }
+
+  // ===== 세션 =====
+  var SESSION_KEY = 'bonnoel_ops_session';
+  var session = null;
+  try { session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch(e){ session = null; }
+  function saveSession(s){ session = s; try { if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s)); else localStorage.removeItem(SESSION_KEY); } catch(e){} }
+  function isOwner(){ return session && session.role === 'owner'; }
+  function isManager(){ return session && (session.role === 'manager' || session.role === 'owner'); }
+
+  // ===== 기본 데이터 =====
+  var base = { branches: [], staff: [], categories: [], items: [], itemBranch: [] };
+  async function loadBase(){
+    var r = await Promise.all([
+      db.select('manual_branches', { order: { col: 'sort_order' } }),
+      db.select('manual_staff', { order: { col: 'name' } }),
+      db.select('ops_categories', { order: { col: 'sort_order' } }),
+      db.select('ops_items', { order: { col: 'sort_order' } }),
+      db.select('ops_item_branch')
+    ]);
+    base.branches = r[0]; base.staff = r[1]; base.categories = r[2]; base.items = r[3]; base.itemBranch = r[4];
+    // 명단에 없는 사람(퇴사·시연 모드 기억 등)으로 들어와 있으면 다시 로그인
+    if (session && !base.staff.some(function(s){ return s.id === session.staffId && s.active !== false; })){ saveSession(null); nav('#/login'); throw new Error('다시 로그인해 주세요'); }
+  }
+  function branchName(id){ var b = base.branches.filter(function(x){ return x.id === id; })[0]; return b ? b.name : '?'; }
+  function itemById(id){ return base.items.filter(function(x){ return x.id === id; })[0]; }
+  function staffName(id){ var s = base.staff.filter(function(x){ return x.id === id; })[0]; return s ? s.name : ''; }
+  function itemsForBranch(branchId){
+    var map = {};
+    base.itemBranch.forEach(function(ib){ if (ib.branch_id === branchId) map[ib.item_id] = ib; });
+    return base.items.filter(function(it){ return it.active !== false && map[it.id] && map[it.id].active !== false; })
+      .map(function(it){ return { item: it, target: num(map[it.id].target_qty) || 0 }; });
+  }
+  function groupByCategory(list){ // list: [{item,...}]
+    var groups = [];
+    base.categories.concat([{ id: null, name: '기타', sort_order: 9999 }]).forEach(function(c){
+      var rows = list.filter(function(x){ return (x.item.category_id || null) === c.id; });
+      rows.sort(function(a,b){ return (a.item.sort_order||0) - (b.item.sort_order||0); });
+      if (rows.length) groups.push({ cat: c, rows: rows });
+    });
+    return groups;
+  }
+
+  // ===== 재고 계산 =====
+  // 추정 현재고 = 마지막 체크 수량 + 그 뒤 도착한 주문 + 그 뒤 받은 이동 − 그 뒤 보낸 이동
+  async function loadStock(branchIds){
+    var since = daysAgo(120);
+    var r = await Promise.all([
+      db.select('ops_stock_checks', { in: { branch_id: branchIds }, gte: { checked_at: since }, order: { col: 'checked_at', asc: false } }),
+      db.select('ops_orders', { in: { branch_id: branchIds }, gte: { ordered_at: since } }),
+      db.select('ops_transfers', { gte: { created_at: since } })
+    ]);
+    var checks = r[0], orders = r[1], transfers = r[2];
+    var out = {};
+    branchIds.forEach(function(b){
+      var latest = {};
+      checks.forEach(function(c){ if (c.branch_id === b && !latest[c.item_id]) latest[c.item_id] = c; });
+      var m = {};
+      itemsForBranch(b).forEach(function(x){
+        var it = x.item, last = latest[it.id] || null;
+        var est = last ? num(last.qty) : null;
+        var pending = 0, pendingList = [];
+        orders.forEach(function(o){
+          if (o.branch_id !== b || o.item_id !== it.id) return;
+          if (o.status === 'ordered'){ pending += num(o.qty) || 0; pendingList.push({ kind: 'order', qty: num(o.qty), eta: o.eta_date, id: o.id }); }
+          else if (o.status === 'received' && last && o.received_at > last.checked_at && est != null) est += num(o.received_qty) || 0;
+        });
+        transfers.forEach(function(t){
+          if (t.item_id !== it.id) return;
+          if (t.to_branch === b){
+            if (!t.received_at){ pending += num(t.qty) || 0; pendingList.push({ kind: 'transfer', qty: num(t.qty), from: t.from_branch, id: t.id }); }
+            else if (last && t.received_at > last.checked_at && est != null) est += num(t.received_qty) || 0;
+          }
+          if (t.from_branch === b && last && t.created_at > last.checked_at && est != null) est -= num(t.qty) || 0;
+        });
+        if (est != null && est < 0) est = 0;   // 보낸 게 종이 재고보다 많으면 0으로 봄
+        var shortage = (est != null && x.target > 0) ? Math.max(0, x.target - est - pending) : 0;
+        m[it.id] = { item: it, target: x.target, last: last, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
+      });
+      out[b] = m;
+    });
+    return { byBranch: out, orders: orders, transfers: transfers };
+  }
+
+  // ===== 라우터 =====
+  var routes = {};
+  var current = { route: '', params: {} };
+  function nav(hash){ location.hash = hash; }
+  async function render(){
+    var h = location.hash.replace(/^#\/?/, '') || 'home';
+    var parts = h.split('/');
+    var route = parts[0]; var params = { arg: parts[1] };
+    if (!session && route !== 'login'){ nav('#/login'); return; }
+    if (session && route === 'login'){ nav('#/home'); return; }
+    var fn = routes[route] || routes.home;
+    current = { route: route, params: params };
+    app.innerHTML = '<div class="loading">불러오는 중…</div>';
+    try { await fn(params); }
+    catch(e){ console.error(e); app.innerHTML = topbar('오류', true) + '<div class="note danger">불러오지 못했어요: ' + esc(e.message || e) + '<br><span class="muted">데이터 창고 준비(SQL)가 아직 안 됐거나 인터넷이 끊겼을 수 있어요.</span></div>'; }
+    window.scrollTo(0, 0);
+  }
+  function topbar(title, back, right){
+    return '<div class="topbar">' + (back ? '<button class="back" data-act="back">‹</button>' : '') + '<h1>' + esc(title) + '</h1>' + (right || '') + '</div>';
+  }
+  function whoChip(){ if (!session) return ''; return '<span class="who" data-act="logout">' + esc((session.branchName ? session.branchName + ' · ' : '') + session.name) + '</span>'; }
+
+  // ===== 화면: 로그인 =====
+  var loginState = { branchId: null, staffId: null };
+  routes.login = async function(){
+    await loadBase();
+    var st = loginState;
+    var html = topbar('본노엘 운영');
+    if (!st.branchId){
+      html += '<div class="group-title">어느 매장이에요?</div><div class="card">';
+      base.branches.forEach(function(b){ html += '<div class="row" data-act="pick-branch" data-id="' + esc(b.id) + '"><div class="tile" style="background:var(--tile-orange)">🏬</div><div class="rt"><div class="rtitle">' + esc(b.name) + '</div></div><div class="chev">›</div></div>'; });
+      if (!base.branches.length) html += '<div class="empty">매장이 없어요. 매뉴얼북 관리자에서 매장을 먼저 등록해 주세요.</div>';
+      html += '</div>';
+      if (DEMO) html += '<div class="note ok">시연 모드예요. 비밀번호: 사장님 0000 · 매니저 1111 · 알바 F 2222 · 알바 E는 처음(비밀번호 정하기)</div>';
+    } else if (!st.staffId){
+      var people = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === st.branchId || s.role === 'owner' || !s.branch_id); });
+      html += '<div class="group-title">' + esc(branchName(st.branchId)) + ' · 내 이름을 골라 주세요 <span class="muted" data-act="pick-branch-reset" style="cursor:pointer">(매장 바꾸기)</span></div>';
+      html += '<div class="name-grid">';
+      people.forEach(function(s){ html += '<button class="btn" data-act="pick-staff" data-id="' + esc(s.id) + '">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + '</button>'; });
+      html += '</div>';
+      if (!people.length) html += '<div class="empty">이 매장에 등록된 직원이 없어요. 매니저에게 등록을 요청하세요.</div>';
+    } else {
+      var s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
+      var first = !s.pin;
+      html += '<div class="pin-wrap"><div style="font-size:18px;font-weight:600;margin-bottom:6px">' + esc(s.name) + '</div>';
+      html += '<div class="muted" style="margin-bottom:14px">' + (first ? '처음이시네요. 앞으로 쓸 비밀번호 4자리를 정해 주세요.' : '비밀번호 4자리') + '</div>';
+      html += '<input class="pin" id="pin1" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
+      if (first) html += '<div class="muted" style="margin:12px 0 6px">한 번 더</div><input class="pin" id="pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
+      html += '<div style="margin-top:18px"><button class="btn primary" data-act="pin-go">' + (first ? '정하고 들어가기' : '들어가기') + '</button></div>';
+      html += '<div style="margin-top:14px"><span class="muted" data-act="pick-staff-reset" style="cursor:pointer">다른 이름 고르기</span></div></div>';
+      if (!first) html += '<div class="muted" style="text-align:center">비밀번호를 잊었으면 매니저·사장님께 초기화를 부탁하세요.</div>';
+    }
+    app.innerHTML = html;
+    var p1 = document.getElementById('pin1'); if (p1) p1.focus();
+  };
+
+  async function pinGo(){
+    var s = base.staff.filter(function(x){ return x.id === loginState.staffId; })[0];
+    var p1 = (document.getElementById('pin1') || {}).value || '';
+    if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
+    if (!s.pin){
+      var p2 = (document.getElementById('pin2') || {}).value || '';
+      if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; }
+      await db.update('manual_staff', { id: s.id }, { pin: p1 });
+      s.pin = p1;
+    } else if (s.pin !== p1){ toast('비밀번호가 틀려요'); return; }
+    var bid = s.role === 'owner' ? loginState.branchId : (s.branch_id || loginState.branchId);
+    saveSession({ staffId: s.id, name: s.name, role: s.role || 'staff', branchId: bid, branchName: branchName(bid) });
+    loginState = { branchId: null, staffId: null };
+    nav('#/home');
+  }
+
+  // ===== 화면: 홈 =====
+  routes.home = async function(){
+    await loadBase();
+    var html = topbar('본노엘 운영', false, whoChip());
+    if (isManager()){
+      var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
+      var st = await loadStock(ids);
+      var short = 0, arrive = 0, mism = 0;
+      ids.forEach(function(b){ var m = st.byBranch[b]; for (var k in m) if (m[k].shortage > 0) short++; });
+      st.orders.forEach(function(o){ if (ids.indexOf(o.branch_id) >= 0){ if (o.status === 'ordered') arrive++; if (o.mismatch && !o.resolved) mism++; } });
+      st.transfers.forEach(function(t){ if (ids.indexOf(t.to_branch) >= 0 && !t.received_at) arrive++; });
+      html += '<div class="summary"><a href="#/short"><div class="n' + (short ? ' danger' : '') + '">' + short + '</div><div class="l">부족 품목</div></a>' +
+              '<a href="#/arrive"><div class="n">' + arrive + '</div><div class="l">도착 확인 필요</div></a>' +
+              '<a href="#/short"><div class="n' + (mism ? ' danger' : '') + '">' + mism + '</div><div class="l">수량 오류</div></a></div>';
+    }
+    function row(href, tileBg, icon, title, sub, disabled){
+      return '<a class="row' + (disabled ? ' disabled' : '') + '" href="' + href + '"' + (disabled ? ' data-act="soon"' : '') + (href.indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + tileBg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">' + (disabled ? '<span class="badge muted">준비 중</span>' : '›') + '</div></a>';
+    }
+    html += '<div class="group-title">매일 하는 일</div><div class="card">';
+    html += row('#/check', 'tile-blue', '📦', '비품 체크', '주 1회 현재고 넣기');
+    html += row('#/arrive', 'tile-green', '📥', '도착 확인', '온 물건 수량 맞는지');
+    html += row('#', 'tile-yellow', '🌴', '휴무·대타', '휴무 신청·대타 지원', true);
+    html += '</div>';
+    html += '<div class="group-title">매장 운영</div><div class="card">';
+    html += row('#/short', 'tile-orange', '🛒', '부족·주문', isOwner() ? '4개 매장 부족 목록과 주문' : '우리 매장 부족 목록');
+    html += row('#/transfer', 'tile-purple', '🔁', '점간 이동', '매장끼리 물건 주고받기');
+    html += row('#', 'tile-blue', '📅', '근무표', '매장별 주간 근무표', true);
+    html += '</div>';
+    html += '<div class="group-title">자료</div><div class="card">';
+    html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
+    html += row(LINKS.logbook, 'tile-gray', '📝', '매니저 로그북', '하루 업무 기록');
+    html += '</div>';
+    if (isManager()){
+      html += '<div class="group-title">설정</div><div class="card">';
+      html += row('#/items', 'tile-gray', '⚙️', '비품 설정', '품목·단위·적정재고');
+      html += row('#/staff', 'tile-gray', '👥', '직원·비밀번호', '역할 정하기·비밀번호 초기화');
+      html += '</div>';
+    }
+    html += '<div class="muted" style="text-align:center;margin-top:20px">' + (DEMO ? '시연 모드 (가짜 데이터)' : '본노엘 베이커리') + '</div>';
+    app.innerHTML = html;
+  };
+
+  // ===== 매장 고르기 탭 (사장님용) =====
+  function branchTabs(selected, allowAll){
+    if (!isOwner()) return '';
+    var html = '<div class="tabs">';
+    if (allowAll) html += '<span class="tab' + (selected === 'all' ? ' on' : '') + '" data-act="tab-branch" data-id="all">전체</span>';
+    base.branches.forEach(function(b){ html += '<span class="tab' + (selected === b.id ? ' on' : '') + '" data-act="tab-branch" data-id="' + esc(b.id) + '">' + esc(b.name) + '</span>'; });
+    return html + '</div>';
+  }
+  function pickBranch(params, allowAll){
+    if (!isOwner()) return session.branchId;
+    if (params.arg) return params.arg;
+    return allowAll ? 'all' : session.branchId;
+  }
+
+  // ===== 화면: 비품 체크 =====
+  routes.check = async function(params){
+    await loadBase();
+    var b = pickBranch(params, false);
+    var st = await loadStock([b]);
+    var m = st.byBranch[b];
+    var list = itemsForBranch(b);
+    var html = topbar('비품 체크 · ' + branchName(b), true) + branchTabs(b, false);
+    html += '<div class="muted" style="margin:4px 4px 10px">지금 매장에 있는 수량을 넣어 주세요. 안 센 건 비워 두면 돼요. 소수점(0.5)도 돼요.</div>';
+    var groups = groupByCategory(list);
+    if (!groups.length) html += '<div class="empty">이 매장에 켜진 품목이 없어요. 비품 설정에서 켜 주세요.</div>';
+    groups.forEach(function(g){
+      html += '<div class="card section"><div class="sec-h">' + esc(g.cat.name) + '</div>';
+      g.rows.forEach(function(x){
+        var s = m[x.item.id] || {};
+        var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + fmtQ(num(s.last.qty)) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + sub + (x.item.note ? ' · ' + esc(x.item.note) : '') + '</div></div>' +
+                '<input class="qty" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" placeholder="-"><span class="unit">' + esc(x.item.unit) + '</span></div>';
+      });
+      html += '</div>';
+    });
+    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="save-check" data-branch="' + esc(b) + '">저장 <span id="cnt">(0/' + list.length + ')</span></button></div></div>';
+    app.innerHTML = html;
+    app._checkTotal = list.length;
+  };
+  async function saveCheck(b){
+    var rows = [];
+    app.querySelectorAll('.qty').forEach(function(inp){ var v = num(inp.value); if (v != null && inp.value !== '') rows.push({ branch_id: b, item_id: inp.getAttribute('data-item'), qty: v, staff_id: session.staffId, checked_at: new Date().toISOString() }); });
+    if (!rows.length){ toast('넣은 수량이 없어요'); return; }
+    await db.insert('ops_stock_checks', rows);
+    toast(rows.length + '개 저장했어요');
+    nav('#/home');
+  }
+
+  // ===== 화면: 부족·주문 =====
+  routes.short = async function(params){
+    await loadBase();
+    var sel = pickBranch(params, true);
+    var ids = sel === 'all' ? base.branches.map(function(b){ return b.id; }) : [sel];
+    var st = await loadStock(ids);
+    var html = topbar('부족·주문', true) + branchTabs(sel, true);
+    // 수량 오류
+    var mism = st.orders.filter(function(o){ return ids.indexOf(o.branch_id) >= 0 && o.mismatch && !o.resolved; });
+    if (mism.length){
+      html += '<div class="card section"><div class="sec-h" style="color:var(--danger)">⚠️ 수량이 틀리게 온 것</div>';
+      mism.forEach(function(o){ var it = itemById(o.item_id) || {}; html += '<div class="item"><div class="iname"><div class="t">' + esc(branchName(o.branch_id)) + ' · ' + esc(it.name) + '</div><div class="s">주문 ' + fmtQ(num(o.qty)) + ' → 실제 ' + fmtQ(num(o.received_qty)) + ' ' + esc(it.unit || '') + ' · ' + md(o.received_at) + ' ' + esc(staffName(o.received_by)) + ' 확인</div></div>' + (isManager() ? '<button class="btn sm" data-act="resolve" data-id="' + esc(o.id) + '">처리함</button>' : '') + '</div>'; });
+      html += '</div>';
+    }
+    var any = false, noTarget = 0, noCheck = 0;
+    ids.forEach(function(b){
+      var m = st.byBranch[b];
+      var rows = [], pendingRows = [];
+      for (var k in m){ var s = m[k]; if (s.target <= 0) noTarget++; else if (s.est == null) noCheck++; if (s.shortage > 0) rows.push(s); else if (s.pending > 0) pendingRows.push(s); }
+      if (!rows.length && !pendingRows.length) return;
+      any = true;
+      html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + '<span class="sp"></span>' + (rows.length ? '<button class="btn sm" data-act="copy" data-branch="' + esc(b) + '">카톡용 복사</button>' : '<span class="badge ok">부족 없음</span>') + '</div>';
+      rows.forEach(function(s){
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크</div></div>' +
+                '<span class="badge danger">' + fmtQ(s.shortage) + ' ' + esc(s.item.unit) + ' 부족</span>' + (isManager() ? '<button class="btn sm primary" data-act="order-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '" data-qty="' + s.shortage + '">주문함</button>' : '') + '</div>' +
+                '<div class="expand hidden" id="ex-' + esc(b) + '-' + esc(s.item.id) + '"><div class="inline"><label>수량</label><input class="qty" type="number" step="0.5" min="0" value="' + s.shortage + '" id="oq-' + esc(b) + '-' + esc(s.item.id) + '"><label>며칠 걸려요?</label><input class="qty" type="number" step="1" min="0" value="7" id="od-' + esc(b) + '-' + esc(s.item.id) + '"><button class="btn sm primary" data-act="order-save" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">확인</button></div></div>';
+      });
+      pendingRows.forEach(function(s){
+        var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + '</div></div><span class="badge warn">오는 중</span></div>';
+      });
+      html += '</div>';
+    });
+    if (!any) html += '<div class="card section"><div class="empty">부족한 품목이 없어요 🎉</div></div>';
+    if (noTarget || noCheck) html += '<div class="note">' + (noTarget ? '적정재고가 없는 품목 ' + noTarget + '개는 계산에서 빠져요 (비품 설정에서 넣어 주세요). ' : '') + (noCheck ? '아직 체크 기록이 없는 품목 ' + noCheck + '개는 비품 체크 후에 보여요.' : '') + '</div>';
+    if (isManager()){
+      html += '<div class="group-title">직접 주문 추가 (부족 목록에 없어도)</div><div class="form">' +
+        '<div class="grid2"><div><label>매장</label><select class="in" id="mo-branch">' + base.branches.filter(function(b){ return isOwner() || b.id === session.branchId; }).map(function(b){ return '<option value="' + esc(b.id) + '"' + (b.id === (sel === 'all' ? session.branchId : sel) ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select></div>' +
+        '<div><label>품목</label><select class="in" id="mo-item">' + itemOptions() + '</select></div></div>' +
+        '<div class="grid2"><div><label>수량</label><input class="in" id="mo-qty" type="number" step="0.5" min="0"></div><div><label>며칠 걸려요?</label><input class="in" id="mo-days" type="number" value="7" min="0"></div></div>' +
+        '<button class="btn primary" data-act="manual-order">주문함으로 기록</button></div>';
+    }
+    app.innerHTML = html;
+    app._stock = st;
+  };
+  function itemOptions(selectedId){
+    return groupByCategory(base.items.filter(function(i){ return i.active !== false; }).map(function(i){ return { item: i }; })).map(function(g){ return '<optgroup label="' + esc(g.cat.name) + '">' + g.rows.map(function(x){ return '<option value="' + esc(x.item.id) + '"' + (x.item.id === selectedId ? ' selected' : '') + '>' + esc(x.item.name) + ' (' + esc(x.item.unit) + ')</option>'; }).join('') + '</optgroup>'; }).join('');
+  }
+  async function orderSave(b, itemId, qty, days){
+    if (qty == null || qty <= 0){ toast('수량을 넣어 주세요'); return; }
+    await db.insert('ops_orders', { branch_id: b, item_id: itemId, qty: qty, status: 'ordered', eta_date: addDays(todayStr(), days || 0), ordered_by: session.staffId, ordered_at: new Date().toISOString(), mismatch: false, resolved: false });
+    toast(branchName(b) + ' · ' + (itemById(itemId) || {}).name + ' ' + fmtQ(qty) + ' 주문 기록');
+    render();
+  }
+  function copyShort(b){
+    var st = app._stock; if (!st) return;
+    var m = st.byBranch[b]; var lines = [];
+    for (var k in m){ var s = m[k]; if (s.shortage > 0) lines.push(s.item.name + ' ' + fmtQ(s.shortage) + s.item.unit + ' (재고 ' + fmtQ(s.est) + ')'); }
+    var text = '<' + branchName(b) + ' 비품요청>\n' + lines.join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function(){ toast('복사했어요. 카톡에 붙여넣으세요'); }, function(){ window.prompt('복사해서 쓰세요', text); });
+    else window.prompt('복사해서 쓰세요', text);
+  }
+
+  // ===== 화면: 도착 확인 =====
+  routes.arrive = async function(params){
+    await loadBase();
+    var b = pickBranch(params, false);
+    var since = daysAgo(120);
+    var r = await Promise.all([ db.select('ops_orders', { eq: { branch_id: b }, gte: { ordered_at: since }, order: { col: 'ordered_at', asc: false } }), db.select('ops_transfers', { eq: { to_branch: b }, gte: { created_at: since }, order: { col: 'created_at', asc: false } }) ]);
+    var orders = r[0], transfers = r[1];
+    var html = topbar('도착 확인 · ' + branchName(b), true) + branchTabs(b, false);
+    var pend = orders.filter(function(o){ return o.status === 'ordered'; });
+    var pendT = transfers.filter(function(t){ return !t.received_at; });
+    html += '<div class="card section"><div class="sec-h">오기로 한 것</div>';
+    if (!pend.length && !pendT.length) html += '<div class="empty">지금 오기로 한 물건이 없어요</div>';
+    pend.forEach(function(o){
+      var it = itemById(o.item_id) || {};
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(it.name) + ' <b>' + fmtQ(num(o.qty)) + ' ' + esc(it.unit || '') + '</b></div><div class="s">' + md(o.ordered_at) + ' 주문' + (o.eta_date ? ' · ' + md(o.eta_date) + ' 도착 예정' : '') + '</div></div>' +
+              '<button class="btn sm ok" data-act="recv-ok" data-kind="order" data-id="' + esc(o.id) + '" data-qty="' + esc(o.qty) + '">맞음</button><button class="btn sm danger" data-act="recv-open" data-id="' + esc(o.id) + '">틀림</button></div>' +
+              '<div class="expand hidden" id="rx-' + esc(o.id) + '"><div class="inline"><label>실제로 온 수량</label><input class="qty" type="number" step="0.5" min="0" id="rq-' + esc(o.id) + '"><button class="btn sm primary" data-act="recv-bad" data-kind="order" data-id="' + esc(o.id) + '">저장</button></div></div>';
+    });
+    pendT.forEach(function(t){
+      var it = itemById(t.item_id) || {};
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(it.name) + ' <b>' + fmtQ(num(t.qty)) + ' ' + esc(it.unit || '') + '</b></div><div class="s">' + esc(branchName(t.from_branch)) + '에서 보냄 · ' + md(t.created_at) + (t.memo ? ' · ' + esc(t.memo) : '') + '</div></div>' +
+              '<button class="btn sm ok" data-act="recv-ok" data-kind="transfer" data-id="' + esc(t.id) + '" data-qty="' + esc(t.qty) + '">받음</button><button class="btn sm danger" data-act="recv-open" data-id="' + esc(t.id) + '">틀림</button></div>' +
+              '<div class="expand hidden" id="rx-' + esc(t.id) + '"><div class="inline"><label>실제로 온 수량</label><input class="qty" type="number" step="0.5" min="0" id="rq-' + esc(t.id) + '"><button class="btn sm primary" data-act="recv-bad" data-kind="transfer" data-id="' + esc(t.id) + '">저장</button></div></div>';
+    });
+    html += '</div>';
+    var done = orders.filter(function(o){ return o.status === 'received'; }).slice(0, 15);
+    if (done.length){
+      html += '<div class="card section"><div class="sec-h">최근 받은 것</div>';
+      done.forEach(function(o){ var it = itemById(o.item_id) || {}; html += '<div class="hist"><span>' + md(o.received_at) + '</span><span class="sp">' + esc(it.name) + ' ' + fmtQ(num(o.received_qty)) + esc(it.unit || '') + (o.mismatch ? ' <span class="badge danger">주문 ' + fmtQ(num(o.qty)) + '</span>' : '') + '</span><span>' + esc(staffName(o.received_by)) + '</span></div>'; });
+      html += '</div>';
+    }
+    app.innerHTML = html;
+  };
+  async function receive(kind, id, qty, mismatch){
+    var now = new Date().toISOString();
+    if (kind === 'order') await db.update('ops_orders', { id: id }, { status: 'received', received_qty: qty, received_by: session.staffId, received_at: now, mismatch: !!mismatch });
+    else await db.update('ops_transfers', { id: id }, { received_qty: qty, received_by: session.staffId, received_at: now });
+    toast(mismatch ? '틀린 수량으로 기록했어요. 사장님께 표시돼요' : '도착 확인했어요');
+    render();
+  }
+
+  // ===== 화면: 점간 이동 =====
+  routes.transfer = async function(){
+    await loadBase();
+    var list = await db.select('ops_transfers', { gte: { created_at: daysAgo(60) }, order: { col: 'created_at', asc: false }, limit: 30 });
+    var opts = base.branches.map(function(b){ return '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>'; }).join('');
+    var html = topbar('점간 이동', true);
+    html += '<div class="form">' +
+      '<div class="grid2"><div><label>보내는 매장</label><select class="in" id="tf-from">' + opts.replace('value="' + esc(session.branchId) + '"', 'value="' + esc(session.branchId) + '" selected') + '</select></div><div><label>받는 매장</label><select class="in" id="tf-to">' + opts + '</select></div></div>' +
+      '<div><label>품목</label><select class="in" id="tf-item">' + itemOptions() + '</select></div>' +
+      '<div class="grid2"><div><label>수량</label><input class="in" id="tf-qty" type="number" step="0.5" min="0"></div><div><label>메모 (어디 뒀는지 등)</label><input class="in" id="tf-memo" placeholder="러스크쪽 서랍"></div></div>' +
+      '<button class="btn primary" data-act="tf-save">보냈다고 기록</button></div>';
+    html += '<div class="card section"><div class="sec-h">최근 이동</div>';
+    if (!list.length) html += '<div class="empty">아직 없어요</div>';
+    list.forEach(function(t){ var it = itemById(t.item_id) || {}; html += '<div class="hist"><span>' + md(t.created_at) + '</span><span class="sp">' + esc(branchName(t.from_branch)) + ' → ' + esc(branchName(t.to_branch)) + ' · ' + esc(it.name) + ' ' + fmtQ(num(t.qty)) + esc(it.unit || '') + (t.memo ? ' · ' + esc(t.memo) : '') + '</span>' + (t.received_at ? '<span class="badge ok">받음 ' + fmtQ(num(t.received_qty)) + '</span>' : '<span class="badge warn">가는 중</span>') + '</div>'; });
+    html += '</div>';
+    app.innerHTML = html;
+  };
+  async function transferSave(){
+    var from = document.getElementById('tf-from').value, to = document.getElementById('tf-to').value, item = document.getElementById('tf-item').value, qty = num(document.getElementById('tf-qty').value), memo = document.getElementById('tf-memo').value.trim();
+    if (from === to){ toast('보내는 매장과 받는 매장이 같아요'); return; }
+    if (qty == null || qty <= 0){ toast('수량을 넣어 주세요'); return; }
+    await db.insert('ops_transfers', { from_branch: from, to_branch: to, item_id: item, qty: qty, memo: memo || null, created_by: session.staffId, created_at: new Date().toISOString() });
+    toast('기록했어요. ' + branchName(to) + ' 도착 확인에 떠요');
+    render();
+  }
+
+  // ===== 화면: 비품 설정 =====
+  routes.items = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var b = pickBranch(params, false);
+    var map = {}; base.itemBranch.forEach(function(ib){ if (ib.branch_id === b) map[ib.item_id] = ib; });
+    var html = topbar('비품 설정 · ' + branchName(b), true) + branchTabs(b, false);
+    html += '<div class="muted" style="margin:4px 4px 10px">적정재고 = 이만큼은 있어야 하는 수량. 현재고가 이보다 적으면 부족으로 떠요. 이 매장에서 안 쓰는 품목은 체크를 풀어요.</div>';
+    var all = base.items.filter(function(i){ return i.active !== false; }).map(function(i){ return { item: i }; });
+    groupByCategory(all).forEach(function(g){
+      html += '<div class="card section"><div class="sec-h">' + esc(g.cat.name) + '<span class="sp"></span>' + (isOwner() ? '<button class="btn sm" data-act="cat-rename" data-id="' + esc(g.cat.id || '') + '">이름</button>' : '') + '</div>';
+      g.rows.forEach(function(x){
+        var ib = map[x.item.id]; var on = ib ? ib.active !== false : false; var t = ib ? num(ib.target_qty) : 0;
+        html += '<div class="item"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname" data-act="item-edit" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + esc(x.item.unit) + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
+      });
+      html += '</div>';
+    });
+    html += '<div class="group-title">품목 추가</div><div class="form"><div class="grid2"><div><label>분류</label><select class="in" id="ni-cat">' + base.categories.map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>'; }).join('') + '</select></div><div><label>단위</label><select class="in" id="ni-unit">' + ['묶음','box','포대','줄','봉','개','병','팩'].map(function(u){ return '<option>' + u + '</option>'; }).join('') + '</select></div></div>' +
+      '<div><label>품목 이름</label><input class="in" id="ni-name" placeholder="예: 치아바타 봉투"></div><div class="inline"><button class="btn" data-act="item-add">품목 추가 (모든 매장에 켬)</button>' + (isOwner() ? '<button class="btn" data-act="cat-add">분류 추가</button>' : '') + '</div></div>';
+    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="items-save" data-branch="' + esc(b) + '">' + esc(branchName(b)) + ' 적정재고 저장</button></div></div>';
+    app.innerHTML = html;
+  };
+  async function itemsSave(b){
+    var rows = [];
+    app.querySelectorAll('.ib-target').forEach(function(inp){ var id = inp.getAttribute('data-item'); var on = app.querySelector('.ib-on[data-item="' + id + '"]').checked; rows.push({ item_id: id, branch_id: b, target_qty: num(inp.value) || 0, active: on }); });
+    await db.upsert('ops_item_branch', rows, 'item_id,branch_id');
+    toast('저장했어요');
+    render();
+  }
+  async function itemAdd(){
+    var name = document.getElementById('ni-name').value.trim(); if (!name){ toast('품목 이름을 넣어 주세요'); return; }
+    var cat = document.getElementById('ni-cat').value || null, unit = document.getElementById('ni-unit').value;
+    var maxSort = 0; base.items.forEach(function(i){ if (i.category_id === cat) maxSort = Math.max(maxSort, i.sort_order || 0); });
+    var ins = await db.insert('ops_items', { category_id: cat, name: name, unit: unit, sort_order: maxSort + 1, active: true });
+    var it = ins[0];
+    await db.upsert('ops_item_branch', base.branches.map(function(b){ return { item_id: it.id, branch_id: b.id, target_qty: 0, active: true }; }), 'item_id,branch_id');
+    toast('추가했어요'); render();
+  }
+  async function itemEdit(id){
+    var it = itemById(id); if (!it) return;
+    var name = window.prompt('품목 이름 (비우면 이 품목을 숨겨요)', it.name); if (name === null) return;
+    if (!name.trim()){ if (window.confirm('"' + it.name + '"을(를) 모든 매장에서 숨길까요? 기록은 남아요.')){ await db.update('ops_items', { id: id }, { active: false }); toast('숨겼어요'); render(); } return; }
+    var unit = window.prompt('단위', it.unit) || it.unit;
+    var note = window.prompt('메모 (요청처 등, 없으면 비움)', it.note || ''); if (note === null) note = it.note;
+    await db.update('ops_items', { id: id }, { name: name.trim(), unit: unit.trim(), note: (note || '').trim() || null });
+    toast('고쳤어요'); render();
+  }
+  async function catAdd(){ var name = window.prompt('새 분류 이름'); if (!name || !name.trim()) return; await db.insert('ops_categories', { name: name.trim(), sort_order: base.categories.length + 1 }); toast('추가했어요'); render(); }
+  async function catRename(id){ if (!id) return; var c = base.categories.filter(function(x){ return x.id === id; })[0]; var name = window.prompt('분류 이름', c.name); if (!name || !name.trim()) return; await db.update('ops_categories', { id: id }, { name: name.trim() }); render(); }
+
+  // ===== 화면: 직원 =====
+  routes.staff = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var b = pickBranch(params, false);
+    var html = topbar('직원·비밀번호 · ' + branchName(b), true) + branchTabs(b, false);
+    html += '<div class="muted" style="margin:4px 4px 10px">매뉴얼북과 같은 명단이에요. 여기서 추가하면 매뉴얼북에도 보여요. 👑 사장님 · ⭐ 매니저</div>';
+    var people = base.staff.filter(function(s){ return s.branch_id === b || (!s.branch_id); });
+    html += '<div class="card section">';
+    if (!people.length) html += '<div class="empty">아직 없어요</div>';
+    people.forEach(function(s){
+      var canRole = isOwner() && s.id !== session.staffId;
+      html += '<div class="item' + (s.active === false ? ' disabled' : '') + '"><div class="iname"><div class="t">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + (s.active === false ? ' <span class="badge muted">퇴사</span>' : '') + '</div><div class="s">' + (s.branch_id ? esc(branchName(s.branch_id)) : '전체') + ' · ' + (s.pin ? '비밀번호 있음' : '비밀번호 아직') + '</div></div>' +
+        (canRole ? '<select class="in" style="width:auto;padding:6px" data-act="role" data-id="' + esc(s.id) + '"><option value="staff"' + (s.role === 'staff' || !s.role ? ' selected' : '') + '>근무자</option><option value="manager"' + (s.role === 'manager' ? ' selected' : '') + '>매니저</option><option value="owner"' + (s.role === 'owner' ? ' selected' : '') + '>사장</option></select>' : '') +
+        (s.pin && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">비번 초기화</button>' : '') +
+        (s.id !== session.staffId && (isOwner() || s.role === 'staff') ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : '') + '</div>';
+    });
+    html += '</div>';
+    html += '<div class="group-title">직원 추가</div><div class="form"><div><label>이름</label><input class="in" id="ns-name" placeholder="이름"></div><button class="btn" data-act="staff-add" data-branch="' + esc(b) + '">' + esc(branchName(b)) + '에 추가</button></div>';
+    app.innerHTML = html;
+  };
+
+  // ===== 이벤트 =====
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act]'); if (!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    try {
+      switch (act){
+        case 'back': history.length > 1 ? history.back() : nav('#/home'); break;
+        case 'logout': if (window.confirm('다른 이름으로 들어갈까요?')){ saveSession(null); nav('#/login'); } break;
+        case 'soon': e.preventDefault(); toast('다음 단계에서 만들어요'); break;
+        case 'pick-branch': loginState.branchId = id; render(); break;
+        case 'pick-branch-reset': loginState.branchId = null; render(); break;
+        case 'pick-staff': loginState.staffId = id; render(); break;
+        case 'pick-staff-reset': loginState.staffId = null; render(); break;
+        case 'pin-go': await pinGo(); break;
+        case 'tab-branch': nav('#/' + current.route + '/' + id); break;
+        case 'save-check': el.disabled = true; try { await saveCheck(el.getAttribute('data-branch')); } finally { el.disabled = false; } break;
+        case 'order-open': { var ex = document.getElementById('ex-' + el.getAttribute('data-branch') + '-' + el.getAttribute('data-item')); ex.classList.toggle('hidden'); break; }
+        case 'order-save': { var b1 = el.getAttribute('data-branch'), i1 = el.getAttribute('data-item'); await orderSave(b1, i1, num(document.getElementById('oq-' + b1 + '-' + i1).value), num(document.getElementById('od-' + b1 + '-' + i1).value) || 0); break; }
+        case 'manual-order': await orderSave(document.getElementById('mo-branch').value, document.getElementById('mo-item').value, num(document.getElementById('mo-qty').value), num(document.getElementById('mo-days').value) || 0); break;
+        case 'copy': copyShort(el.getAttribute('data-branch')); break;
+        case 'resolve': await db.update('ops_orders', { id: id }, { resolved: true }); toast('처리함으로 표시'); render(); break;
+        case 'recv-ok': await receive(el.getAttribute('data-kind'), id, num(el.getAttribute('data-qty')), false); break;
+        case 'recv-open': document.getElementById('rx-' + id).classList.toggle('hidden'); break;
+        case 'recv-bad': { var q = num(document.getElementById('rq-' + id).value); if (q == null){ toast('실제 수량을 넣어 주세요'); break; } await receive(el.getAttribute('data-kind'), id, q, true); break; }
+        case 'tf-save': await transferSave(); break;
+        case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
+        case 'item-add': await itemAdd(); break;
+        case 'item-edit': await itemEdit(id); break;
+        case 'cat-add': await catAdd(); break;
+        case 'cat-rename': await catRename(id); break;
+        case 'pin-reset': if (window.confirm('비밀번호를 지울까요? 다음에 들어올 때 새로 정하게 돼요.')){ await db.update('manual_staff', { id: id }, { pin: null }); toast('초기화했어요'); render(); } break;
+        case 'staff-toggle': { var on = el.getAttribute('data-on') === '1'; await db.update('manual_staff', { id: id }, { active: on }); render(); break; }
+        case 'staff-add': { var nm = document.getElementById('ns-name').value.trim(); if (!nm){ toast('이름을 넣어 주세요'); break; } await db.insert('manual_staff', { name: nm, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast('추가했어요'); render(); break; }
+      }
+    } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
+  });
+  app.addEventListener('change', async function(e){
+    var el = e.target.closest('[data-act="role"]'); if (!el) return;
+    try { await db.update('manual_staff', { id: el.getAttribute('data-id') }, { role: el.value }); toast('역할을 바꿨어요'); render(); } catch(err){ toast('실패: ' + (err.message || err)); }
+  });
+  app.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); pinGo(); } });
+  app.addEventListener('input', function(e){
+    if (current.route !== 'check' || !e.target.classList.contains('qty')) return;
+    e.target.classList.toggle('filled', e.target.value !== '');
+    var c = document.getElementById('cnt'); if (c) c.textContent = '(' + app.querySelectorAll('.qty.filled').length + '/' + (app._checkTotal || 0) + ')';
+  });
+
+  // ===== 시작 =====
+  if (DEMO) db = makeMemoryDb(demoSeed());
+  else if (window.supabase && typeof window.supabase.createClient === 'function') db = makeSupabaseDb(window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
+  if (!db){ app.innerHTML = '<div class="note danger">데이터 창고 연결 스크립트를 못 불러왔어요. 인터넷을 확인하고 새로고침해 주세요.</div>'; return; }
+  if (DEMO && session && session.staffId && session.staffId.length > 4) saveSession(null);
+  window.addEventListener('hashchange', render);
+  render();
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function(){});
+})();
+</script>
+</body>
+</html>
