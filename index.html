@@ -469,7 +469,7 @@
     window.scrollTo(0, 0);
   }
   function topbar(title, back, right){
-    return '<div class="topbar">' + (back ? '<button class="back" data-act="back">‹</button>' : '') + '<h1>' + esc(title) + '</h1>' + (right || '') + '</div>';
+    return '<div class="topbar">' + (back ? '<button class="back" data-act="back">‹</button>' : '') + '<h1>' + esc(title) + '</h1>' + (right || '') + (back && session ? '<a class="who" href="#/home" style="margin-left:6px">🏠 홈</a>' : '') + '</div>';
   }
   function whoChip(){ if (!session) return ''; return '<span class="who" data-act="logout">' + esc((session.branchName ? session.branchName + ' · ' : '') + session.name) + '</span>'; }
 
@@ -2168,7 +2168,7 @@
     var st = signState; subReadSkips();
     var r0 = st.docs[0];
     for (var i = 0; i < SUB_KINDS.length; i++){ var k = SUB_KINDS[i]; if (!st.files[k.kind] && !st.skip[k.kind]){ toast(k.title + ' 사진을 올리거나 "나중에 제출"에 체크해 주세요'); return; } }
-    var expIso = st.healthExp ? normBirth(st.healthExp) : null; // 8자리 → YYYY-MM-DD (같은 변환기)
+    var expIso = st.healthExp ? normYmd(st.healthExp, new Date().getFullYear() - 1, new Date().getFullYear() + 10) : null; // 8자리 → YYYY-MM-DD
     if (st.healthExp && !expIso){ toast('보건증 만료일은 숫자 8자리로 (예: 20270315). 모르면 비워 두세요'); return; }
     if (expIso && expIso < todayStr()){ toast('보건증 만료일이 이미 지났어요. 날짜를 확인해 주세요'); return; }
     toast('올리는 중…');
@@ -2291,12 +2291,12 @@
     render();
   }
   // 생년월일: 숫자 8자리(19830115)나 하이픈 포함(1983-01-15)을 받아 'YYYY-MM-DD'로. 잘못된 날짜면 null
-  function normBirth(v){
+  function normBirth(v){ return normYmd(v, 1930, new Date().getFullYear()); }
+  function normYmd(v, minY, maxY){
     var d = String(v || '').replace(/\D/g, '');
     if (d.length !== 8) return null;
     var y = +d.slice(0, 4), m = +d.slice(4, 6), day = +d.slice(6, 8);
-    var now = new Date().getFullYear();
-    if (y < 1930 || y > now || m < 1 || m > 12 || day < 1 || day > 31) return null;
+    if (y < minY || y > maxY || m < 1 || m > 12 || day < 1 || day > 31) return null;
     var dt = new Date(y, m - 1, day); if (dt.getMonth() !== m - 1 || dt.getDate() !== day) return null;
     return d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8);
   }
