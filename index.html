@@ -1720,6 +1720,10 @@
       var cand = exps.filter(function(x){ return !used[x.id] && num(x.amount) === r.amount && daysDiff(x.spent_on, r.date) <= 2 && !(r.last4 && x.card_last4 && x.card_last4 !== r.last4); });
       cand.sort(function(a, b){ return daysDiff(a.spent_on, r.date) - daysDiff(b.spent_on, r.date); });
       if (cand.length){ r.status = 'ok'; r.exp = cand[0]; used[cand[0].id] = true; return; }
+      // 가게 이름이 같으면(주식회사·띄어쓰기 빼고 비교) 날짜가 10일까지 어긋나도 같은 결제로 봄 (영수증 날짜를 잘못 넣는 경우)
+      var rk = merchantKey(r.merchant);
+      var loose = rk ? exps.filter(function(x){ return !used[x.id] && num(x.amount) === r.amount && daysDiff(x.spent_on, r.date) <= 10 && merchantKey(x.merchant) === rk && !(r.last4 && x.card_last4 && x.card_last4 !== r.last4); }) : [];
+      if (loose.length){ r.status = 'ok'; r.exp = loose[0]; used[loose[0].id] = true; return; }
       var key = r.merchant.replace(/\s/g, '').slice(0, 3);
       var near = key ? exps.filter(function(x){ return !used[x.id] && daysDiff(x.spent_on, r.date) <= 1 && !(r.last4 && x.card_last4 && x.card_last4 !== r.last4) && (x.merchant || '').replace(/\s/g, '').slice(0, 3) === key; }) : [];
       if (near.length){ r.status = 'diff'; r.exp = near[0]; used[near[0].id] = true; }
@@ -1730,12 +1734,17 @@
     await loadBase();
     if (!isManager()){ nav('#/expense'); return; }
     var ym = ymOf(params.arg);
-    if (stmtState.ym !== ym) stmtState = { ym: ym, text: '', rows: null };
+    if (stmtState.ym !== ym){
+      stmtState = { ym: ym, text: '', rows: null, filter: 'all' };
+      // 다른 기기(노트북)에서 붙여넣은 명세서도 보이게: 저장해 둔 것 불러오기
+      var saved = await db.select('ops_settings', { eq: { key: 'stmt:' + ym } }).catch(function(){ return []; });
+      if (saved[0] && saved[0].value && saved[0].value.text){ stmtState.text = saved[0].value.text; stmtState.rows = parseStatement(stmtState.text, ym); stmtState.savedAt = saved[0].value.saved_at; }
+    }
     var mr = stmtRange(stmtState.rows, ym);
     var r = await Promise.all([ loadExpensesBetween(mr), loadCards(), loadRules() ]); var cards = r[1], rules = r[2];
     var exps = isOwner() ? r[0] : r[0].filter(function(x){ return x.branch_id === session.branchId; });
     var html = topbar('명세서 대조', true) + monthNav(ym, function(m){ return '#/expense-import/' + m; });
-    html += '<div class="form"><div class="muted">카드사 홈페이지·앱에서 이용대금명세서(엑셀)를 받아 열고, 머리글 줄부터 전체 선택(Ctrl+A)·복사해서 아래에 붙여 넣으세요. 머리글에 "이용일·가맹점명·이용금액·카드번호"가 있으면 그 열을 그대로 읽어요. 결제 주기가 두 달에 걸쳐도 괜찮아요.</div><textarea class="in" id="stmt-text" rows="6" placeholder="카드번호&#9;이용자명&#9;이용일&#9;승인번호&#9;가맹점명&#9;…&#9;이용금액&#10;4902-98**-****-2851&#9;(*)본노엘&#9;26.08.10&#9;31488214&#9;웰빙마트&#9;…&#9;13300">' + esc(stmtState.text) + '</textarea><button class="btn primary" data-act="stmt-run">대조하기</button></div>';
+    html += '<div class="form"><div class="muted">카드사 홈페이지·앱에서 이용대금명세서(엑셀)를 받아 열고, 머리글 줄부터 전체 선택(Ctrl+A)·복사해서 아래에 붙여 넣으세요. 머리글에 "이용일·가맹점명·이용금액·카드번호"가 있으면 그 열을 그대로 읽어요. 결제 주기가 두 달에 걸쳐도 괜찮아요.</div>' + (stmtState.savedAt ? '<div class="note ok">저장된 명세서예요 (' + esc(md(stmtState.savedAt)) + ' 붙여넣음). 폰·노트북 어디서든 같은 화면이 보여요. 새로 붙여넣으면 바뀌어요.</div>' : '') + '<textarea class="in" id="stmt-text" rows="' + (stmtState.rows ? 3 : 6) + '" placeholder="카드번호&#9;이용자명&#9;이용일&#9;승인번호&#9;가맹점명&#9;…&#9;이용금액&#10;4902-98**-****-2851&#9;(*)본노엘&#9;26.08.10&#9;31488214&#9;웰빙마트&#9;…&#9;13300">' + esc(stmtState.text) + '</textarea><button class="btn primary" data-act="stmt-run">대조하기</button></div>';
     if (stmtState.rows){
       var rows = stmtState.rows, used = matchStatement(rows, exps);
       html += '<div class="muted" style="margin:8px 4px 0">명세서 기간 ' + esc(fmtDateK(addDays(mr.from, 3))) + ' ~ ' + esc(fmtDateK(addDays(mr.to, -3))) + ' 안의 영수증과 맞춰 봤어요.</div>';
@@ -1752,19 +1761,30 @@
         gorder.sort(function(a, b){ return groups[b].sum - groups[a].sum; });
         stmtState.groups = gorder.map(function(k){ return groups[k]; });
         var remembered = stmtState.groups.filter(function(g){ return !!rules[g.key]; }).length;
+        // 묶음마다 기본 지점(카드 → 기억 → 내 매장)을 정하고, 지점 탭으로 나눠서 보기
+        stmtState.groups.forEach(function(g){ var c = cardByLast4(cards, g.last4), rule = rules[g.key]; g.card = c; g.rule = rule; g.defB = (c && !c.ask_branch) ? (c.branch_id || '') : (rule ? (rule.branch_id || '') : (isOwner() ? '' : session.branchId)); });
+        var f = stmtState.filter || 'all';
+        var cnt = function(id){ return stmtState.groups.filter(function(g){ return id === 'all' || g.defB === (id === 'common' ? '' : id); }).reduce(function(s, g){ return s + g.idx.length; }, 0); };
+        var ft = function(id, label){ var n = cnt(id); return '<span class="tab' + (f === id ? ' on' : '') + '" data-act="stmt-filter" data-id="' + id + '">' + esc(label) + (n ? ' ' + n : '') + '</span>'; };
+        var visible = stmtState.groups.map(function(g, gi){ return gi; }).filter(function(gi){ var g = stmtState.groups[gi]; return f === 'all' || g.defB === (f === 'common' ? '' : f); });
+        stmtState.visible = visible;
+        var vSum = 0, vN = 0; visible.forEach(function(gi){ vSum += stmtState.groups[gi].sum; vN += stmtState.groups[gi].idx.length; });
         html += '<div class="card section"><div class="sec-h" style="color:var(--danger)">영수증 없음 ' + miss.length + '건 · 가맹점 ' + stmtState.groups.length + '곳<span class="sp"></span>' + won(sumOf(miss)) + '원</div>';
-        html += '<div class="muted" style="padding:8px 14px;border-bottom:1px solid var(--line)">같은 가맹점은 한 줄로 묶었어요. 지점·항목을 고르고 [등록]하면 그 가맹점 결제가 전부 들어가요. 한 번 고른 가맹점은 다음 달부터 자동으로 채워져요' + (remembered ? ' (지금 ' + remembered + '곳 <span class="badge ok">기억</span>)' : '') + '. 다 확인했으면 맨 아래 [전부 등록].</div>';
-        stmtState.groups.forEach(function(g, gi){
-          var c = cardByLast4(cards, g.last4), rule = rules[g.key];
-          var defB = (c && !c.ask_branch) ? (c.branch_id || '') : (rule ? (rule.branch_id || '') : (isOwner() ? '' : session.branchId));
-          html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:170px"><div class="t">' + esc(g.name) + (g.idx.length > 1 ? ' <span class="badge muted">×' + g.idx.length + '</span>' : '') + ' · ' + won(g.sum) + '원' + (rule ? ' <span class="badge ok">기억</span>' : '') + '</div><div class="s">' + esc(g.min === g.max ? fmtDateK(g.min) : fmtDateK(g.min) + ' ~ ' + fmtDateK(g.max)) + (g.last4 ? ' · 끝 ' + esc(g.last4) + (c ? ' ' + esc(c.name) : '') : ' · 카드 여러 장') + '</div></div><select class="in" id="sb-' + gi + '" style="width:auto;padding:6px">' + branchOptions(defB) + '</select><select class="in" id="sk-' + gi + '" style="width:auto;padding:6px">' + catOptions(rule ? rule.category : '기타') + '</select><button class="btn sm primary" data-act="stmt-add" data-g="' + gi + '">등록</button></div>';
+        html += '<div class="muted" style="padding:8px 14px;border-bottom:1px solid var(--line)">같은 가맹점은 한 줄로 묶었어요. 지점·항목을 고르고 [등록]하면 그 가맹점 결제가 전부 들어가요. 한 번 고른 가맹점은 다음 달부터 자동으로 채워져요' + (remembered ? ' (지금 ' + remembered + '곳 <span class="badge ok">기억</span>)' : '') + '. 탭으로 지점별로 나눠 보고, 다 확인했으면 [전부 등록].</div>';
+        if (isOwner()) html += '<div class="tabs" style="padding:8px 14px 4px">' + ft('all', '전체') + ft('common', '공통') + base.branches.map(function(b){ return ft(b.id, b.name); }).join('') + '</div>';
+        visible.forEach(function(gi){
+          var g = stmtState.groups[gi], c = g.card, rule = g.rule;
+          html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:170px"><div class="t">' + esc(g.name) + (g.idx.length > 1 ? ' <span class="badge muted">×' + g.idx.length + '</span>' : '') + ' · ' + won(g.sum) + '원' + (rule ? ' <span class="badge ok">기억</span>' : '') + '</div><div class="s">' + esc(g.min === g.max ? fmtDateK(g.min) : fmtDateK(g.min) + ' ~ ' + fmtDateK(g.max)) + (g.last4 ? ' · 끝 ' + esc(g.last4) + (c ? ' ' + esc(c.name) : '') : ' · 카드 여러 장') + '</div></div><select class="in" id="sb-' + gi + '" style="width:auto;padding:6px">' + branchOptions(g.defB) + '</select><select class="in" id="sk-' + gi + '" style="width:auto;padding:6px">' + catOptions(rule ? rule.category : '기타') + '</select><button class="btn sm primary" data-act="stmt-add" data-g="' + gi + '">등록</button></div>';
         });
-        html += '<div style="padding:10px 14px"><button class="btn primary block" data-act="stmt-add-all">전부 등록 (' + miss.length + '건 · ' + won(sumOf(miss)) + '원)</button></div></div>';
+        if (!visible.length) html += '<div class="empty">이 탭에는 남은 게 없어요</div>';
+        else html += '<div style="padding:10px 14px"><button class="btn primary block" data-act="stmt-add-all">' + (f === 'all' ? '전부 등록' : '이 탭 전부 등록') + ' (' + vN + '건 · ' + won(vSum) + '원)</button></div>';
+        html += '</div>';
       }
       if (diff.length){ html += '<div class="card section"><div class="sec-h" style="color:var(--warn)">금액이 다름 — 영수증을 확인해 주세요</div>'; diff.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.merchant) + ' · 명세서 ' + won(x.amount) + '원</div><div class="s">영수증엔 ' + won(x.exp.amount) + '원 (' + esc(fmtDateK(x.exp.spent_on)) + ' · ' + esc(branchLabel(x.exp.branch_id)) + ')</div></div></div>'; }); html += '</div>'; }
-      if (ok.length){ html += '<div class="card section"><div class="sec-h" style="color:var(--ok)">일치 ✓ ' + ok.length + '건 · ' + won(sumOf(ok)) + '원</div>'; ok.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.exp.merchant || x.merchant) + ' · ' + won(x.amount) + '원</div><div class="s">' + esc(fmtDateK(x.date)) + ' · ' + esc(branchLabel(x.exp.branch_id)) + ' · ' + esc(x.exp.category) + '</div></div><span class="badge ok">✓</span></div>'; }); html += '</div>'; }
+      // 일치한 것·명세서에 없는 영수증은 접어 두고, 누르면 펼침 (500건 스크롤 방지)
+      if (ok.length){ html += '<div class="card section"><div class="sec-h" style="color:var(--ok);cursor:pointer" data-act="exp-toggle" data-id="ok">일치 ✓ ' + ok.length + '건 · ' + won(sumOf(ok)) + '원<span class="sp"></span><span class="muted">눌러서 펼치기</span></div><div class="hidden" id="ex-ok">'; ok.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.exp.merchant || x.merchant) + ' · ' + won(x.amount) + '원</div><div class="s">' + esc(fmtDateK(x.date)) + ' · ' + esc(branchLabel(x.exp.branch_id)) + ' · ' + esc(x.exp.category) + '</div></div><span class="badge ok">✓</span></div>'; }); html += '</div></div>'; }
       var extra = exps.filter(function(x){ return !used[x.id]; });
-      if (extra.length){ html += '<div class="card section"><div class="sec-h">영수증은 있는데 이 명세서엔 없음 ' + extra.length + '건</div><div class="muted" style="padding:6px 14px">다른 카드로 결제했거나, 아직 명세서에 안 올라온 결제일 수 있어요.</div>'; extra.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.merchant || '(가게명 없음)') + ' · ' + won(x.amount) + '원</div><div class="s">' + esc(fmtDateK(x.spent_on)) + ' · ' + esc(branchLabel(x.branch_id)) + (x.card_last4 ? ' · 끝 ' + esc(x.card_last4) : '') + '</div></div></div>'; }); html += '</div>'; }
+      if (extra.length){ html += '<div class="card section"><div class="sec-h" style="cursor:pointer" data-act="exp-toggle" data-id="extra">영수증은 있는데 이 명세서엔 없음 ' + extra.length + '건<span class="sp"></span><span class="muted">눌러서 펼치기</span></div><div class="hidden" id="ex-extra"><div class="muted" style="padding:6px 14px">다른 카드로 결제했거나, 아직 명세서에 안 올라온 결제, 또는 날짜·금액을 잘못 넣은 영수증일 수 있어요. 카드 지출 목록에서 고치거나 지울 수 있어요.</div>'; extra.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.merchant || '(가게명 없음)') + ' · ' + won(x.amount) + '원</div><div class="s">' + esc(fmtDateK(x.spent_on)) + ' · ' + esc(branchLabel(x.branch_id)) + (x.card_last4 ? ' · 끝 ' + esc(x.card_last4) : '') + '</div></div></div>'; }); html += '</div></div>'; }
     }
     app.innerHTML = html;
   };
@@ -1772,6 +1792,8 @@
     var text = document.getElementById('stmt-text').value;
     stmtState.text = text; stmtState.rows = parseStatement(text, stmtState.ym);
     if (!stmtState.rows.length){ toast('날짜와 금액이 있는 줄을 못 찾았어요'); render(); return; }
+    // 붙여넣은 명세서를 저장해서 폰·노트북 어디서든 같은 화면이 보이게
+    try { await db.upsert('ops_settings', [{ key: 'stmt:' + stmtState.ym, value: { text: text, saved_by: session.staffId, saved_at: nowIso() }, updated_at: nowIso() }], 'key'); stmtState.savedAt = nowIso(); } catch(e){ console.warn('명세서 저장 실패', e); }
     var exps = await loadExpensesBetween(stmtRange(stmtState.rows, stmtState.ym)); if (!isOwner()) exps = exps.filter(function(x){ return x.branch_id === session.branchId; });
     matchStatement(stmtState.rows, exps);
     var n = 0;
@@ -1792,8 +1814,8 @@
   async function stmtAddAll(){
     var gs = stmtState.groups || []; if (!gs.length) return;
     if (!window.confirm('영수증 없는 결제 ' + gs.reduce(function(s, g){ return s + g.idx.length; }, 0) + '건을 전부 등록할까요? 화면에 고른 지점·항목 그대로 들어가요.')) return;
-    var cards = await loadCards(), n = 0;
-    for (var gi = 0; gi < gs.length; gi++) n += await stmtAddGroup(gi, cards);
+    var cards = await loadCards(), n = 0, list = stmtState.visible || gs.map(function(g, i){ return i; });
+    for (var k = 0; k < list.length; k++) n += await stmtAddGroup(list[k], cards);
     toast(n + '건 등록했어요'); render();
   }
 
@@ -2497,6 +2519,7 @@
         case 'stmt-run': el.disabled = true; try { await stmtRun(); } finally { el.disabled = false; } break;
         case 'stmt-add': el.disabled = true; try { await stmtAdd(+el.getAttribute('data-g')); } finally { el.disabled = false; } break;
         case 'stmt-add-all': el.disabled = true; try { await stmtAddAll(); } finally { el.disabled = false; } break;
+        case 'stmt-filter': stmtState.filter = id; render(); break;
         case 'cards-add': cardsRead(); cardsState.push({ last4: '', name: '', branch_id: null, ask_branch: false, active: true }); cardsKeep = true; render(); break;
         case 'cards-toggle': { cardsRead(); var cc = cardsState[+el.getAttribute('data-i')]; cc.active = cc.active === false; cardsKeep = true; render(); break; }
         case 'cards-save': await cardsSave(); break;
