@@ -27,6 +27,22 @@ function b64(bytes: Uint8Array): string {
 function esc(s: unknown): string {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 }
+// 메일 제목의 한글을 RFC 2047 base64 조각(각 75자 이하)으로 직접 인코딩한다.
+// denomailer가 한글 제목을 quoted-printable로 바꾸면서 74자마다 줄을 접어 헤더가 깨지기 때문.
+// 앞에 공백 하나를 두면 라이브러리가 "이미 인코딩된 것"으로 다시 감싸지 않고 그대로 보낸다.
+function encodeSubject(s: string): string {
+  if (!/[^\x20-\x7e]/.test(s)) return s;
+  const enc = new TextEncoder();
+  const words: string[] = [];
+  let cur = "";
+  for (const ch of s) {
+    if (enc.encode(cur + ch).length > 42) { words.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) words.push(cur);
+  return " " + words.map((w) => `=?UTF-8?B?${btoa(String.fromCharCode(...enc.encode(w)))}?=`).join(" ");
+}
+// 첨부파일 이름은 영문만 (라이브러리가 파일명을 따옴표 없이 써서 한글·공백이 깨짐)
+const FILE_NAMES: Record<string, string> = { contract: "1_contract", privacy: "2_privacy_consent", pledge: "3_pledge", cctv: "4_cctv_consent", uniform: "5_uniform", guardian: "6_guardian_consent" };
 function kst(d = new Date()): string {
   const t = new Date(d.getTime() + 9 * 3600 * 1000);
   return t.toISOString().slice(0, 16).replace("T", " ");
@@ -66,16 +82,16 @@ Deno.serve(async (req) => {
   const ip = (req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "").split(",")[0].trim() || null;
   const ua = String(body.ua || req.headers.get("user-agent") || "").slice(0, 300) || null;
 
+  const dateK = kst().slice(0, 10);
   // PDF 내려받기
   const attachments: { filename: string; content: string; contentType: string; encoding: "base64" }[] = [];
   for (const r of sendable) {
     const { data: file, error } = await sb.storage.from("documents").download(r.pdf_path!);
     if (error || !file) return await fail(sb, sendable, "PDF를 내려받지 못했어요: " + (error?.message || r.pdf_path));
     const bytes = new Uint8Array(await file.arrayBuffer());
-    attachments.push({ filename: `${r.doc_title}_${staffName}.pdf`, content: b64(bytes), contentType: "application/pdf", encoding: "base64" });
+    attachments.push({ filename: `bonnoel_${FILE_NAMES[r.doc_key] || r.doc_key}_${dateK}.pdf`, content: b64(bytes), contentType: "application/pdf", encoding: "base64" });
   }
 
-  const dateK = kst().slice(0, 10);
   const subject = `[본노엘] 근로계약서 등 입사 서류 교부 - ${staffName} (${dateK})`;
   const list = sendable.map((r) => `<li>${esc(r.doc_title)}${r.signed_at ? ` <span style="color:#777">(서명 ${kst(new Date(r.signed_at))})</span>` : ""}</li>`).join("");
   const html = `<div style="font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:15px;line-height:1.6;color:#222;max-width:560px">
@@ -106,7 +122,7 @@ Deno.serve(async (req) => {
       if (!user || !pass) throw new Error("GMAIL_USER / GMAIL_APP_PASSWORD 비밀값이 아직 없어요 (Edge Functions → Secrets)");
       const client = new SMTPClient({ connection: { hostname: "smtp.gmail.com", port: 465, tls: true, auth: { username: user, password: pass } } });
       try {
-        await client.send({ from: `본노엘 <${user}>`, to, cc: cc || undefined, subject, content: text, html, attachments });
+        await client.send({ from: `본노엘 <${user}>`, to, cc: cc || undefined, subject: encodeSubject(subject), content: text, html, attachments });
       } finally {
         try { await client.close(); } catch (_) { /* 이미 닫혔으면 무시 */ }
       }
