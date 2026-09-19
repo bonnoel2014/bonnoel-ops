@@ -1621,7 +1621,7 @@
     var html = topbar('카드 지출 · ' + title, true) + expTabs(scope, ym);
     html += monthNav(ym, function(m){ return '#/expense-list/' + scope + '/' + m; });
     var sum = 0; list.forEach(function(x){ sum += num(x.amount) || 0; });
-    html += '<div class="inline" style="justify-content:space-between;margin-bottom:8px"><b>' + list.length + '건 · ' + won(sum) + '원</b><span class="inline"><a class="btn sm" href="#/expense-sum/' + ym + '">합계표</a><a class="btn sm" href="#/expense-import/' + ym + '">명세서 대조</a><a class="btn sm primary" href="#/expense">+ 올리기</a></span></div>';
+    html += '<div class="inline" style="justify-content:space-between;margin-bottom:8px"><b>' + list.length + '건 · ' + won(sum) + '원</b><span class="inline"><a class="btn sm" href="#/expense-sum/' + ym + '">합계표</a><a class="btn sm" href="#/expense-import/all">명세서 대조</a><a class="btn sm primary" href="#/expense">+ 올리기</a></span></div>';
     html += '<div class="card">';
     if (!list.length) html += '<div class="empty">이 달 지출이 없어요. 영수증을 올려 주세요.</div>';
     list.forEach(function(x){
@@ -1670,7 +1670,7 @@
     Object.keys(byCard).forEach(function(k){ var c = cardById(cards, k); var label = c ? cardLabel(c) : (k.indexOf('l4:') === 0 ? '끝 ' + k.slice(3) + ' (카드 목록에 없음)' : '카드 모름'); var v = byCard[k]; html += '<div class="item"><div class="iname"><div class="t">' + esc(label) + '</div><div class="s">' + v.n + '건 · 명세서 일치 ' + v.matched + '건</div></div><b>' + won(v.sum) + '</b></div>'; });
     if (!list.length) html += '<div class="empty">이 달 지출이 없어요</div>';
     html += '</div>';
-    html += '<div class="muted" style="margin-top:10px">CSV에는 이 달 지출이 한 줄씩 다 들어가요 (세무사·회계 전달용). 명세서 대조는 <a href="#/expense-import/' + ym + '" style="text-decoration:underline">여기</a>.</div>';
+    html += '<div class="muted" style="margin-top:10px">CSV에는 이 달 지출이 한 줄씩 다 들어가요 (세무사·회계 전달용). 명세서 대조는 <a href="#/expense-import/all" style="text-decoration:underline">여기</a>.</div>';
     app.innerHTML = html;
     app._csv = [['날짜', '지점', '가게', '금액', '항목', '카드', '끝4자리', '메모', '올린 사람', '명세서 일치', '사진']].concat(list.slice().sort(function(a, b){ return a.spent_on < b.spent_on ? -1 : 1; }).map(function(x){ var c = cardById(cards, x.card_id); return [x.spent_on, branchLabel(x.branch_id), x.merchant || '', x.amount, x.category, c ? c.name : '', x.card_last4 || '', x.memo || '', staffName(x.uploaded_by), x.statement_key ? 'Y' : '', x.photo_path ? 'Y' : '']; }));
     app._csvName = '카드지출_' + ym + '.csv';
@@ -1745,26 +1745,31 @@
   routes['expense-import'] = async function(params){
     await loadBase();
     if (!isManager()){ nav('#/expense'); return; }
-    var ym = ymOf(params.arg);
-    // 붙여넣은 명세서는 전부 데이터 창고에 쌓아 둠(1년치도 됨). 화면에는 그 달 날짜의 줄만 보여 줌.
+    // 기본은 "전체 기간": 저장된 명세서 전부(전 지점 공용)를 한 화면에서 대조. 월 주소(#/expense-import/2026-08)로 오면 그 달만.
+    var allMode = !params.arg || params.arg === 'all';
+    var ym = allMode ? monthOf(todayStr()) : ymOf(params.arg);
+    var viewKey = allMode ? 'all' : ym;
+    // 붙여넣은 명세서는 전부 데이터 창고에 쌓아 둠(1년치도 됨).
     if (stmtState.allText == null){
       var savedAll = (await db.select('ops_settings').catch(function(){ return []; })).filter(function(s){ return s.key && s.key.indexOf('stmt:') === 0 && s.value && s.value.text; });
       var seen = {}, lines = [], savedAt = null;
       savedAll.forEach(function(s){ s.value.text.split(/\r?\n/).forEach(function(l){ if (l.trim() && !seen[l]){ seen[l] = 1; lines.push(l); } }); if (!savedAt || s.value.saved_at > savedAt) savedAt = s.value.saved_at; });
       stmtState.allText = lines.join('\n'); stmtState.savedAt = savedAt;
     }
-    if (stmtState.ym !== ym){
-      stmtState.ym = ym; stmtState.filter = 'all'; stmtState.text = '';
+    if (stmtState.view !== viewKey){
+      stmtState.view = viewKey; stmtState.ym = ym; stmtState.allMode = allMode; stmtState.filter = 'all'; stmtState.text = '';
       var allRows = stmtState.allText ? parseStatement(stmtState.allText, ym) : [];
       stmtState.allCount = allRows.length;
       var mr0 = monthRange(ym);
-      stmtState.rows = allRows.filter(function(r){ return r.date >= mr0.from && r.date <= mr0.to; });
+      stmtState.rows = allMode ? allRows : allRows.filter(function(r){ return r.date >= mr0.from && r.date <= mr0.to; });
       if (!stmtState.rows.length) stmtState.rows = null;
     }
     var mr = stmtRange(stmtState.rows, ym);
     var r = await Promise.all([ loadExpensesBetween(mr), loadCards(), loadRules() ]); var cards = r[1], rules = r[2];
     var exps = isOwner() ? r[0] : r[0].filter(function(x){ return x.branch_id === session.branchId; });
-    var html = topbar('명세서 대조', true) + monthNav(ym, function(m){ return '#/expense-import/' + m; });
+    var html = topbar('명세서 대조', true);
+    if (allMode) html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><b>전체 기간 · 전 지점 공용</b><button class="btn sm" data-act="go" data-href="#/expense-import/all">월별로 보기</button></div>';
+    else html += monthNav(ym, function(m){ return '#/expense-import/' + m; }) + '<div style="text-align:right;margin:-4px 0 8px"><button class="btn sm" data-act="go" data-href="#/expense-import/all">전체 기간 보기</button></div>';
     html += '<div class="form"><div class="muted">카드사 홈페이지·앱에서 이용대금명세서(엑셀)를 받아 열고, 머리글 줄부터 전체 선택(Ctrl+A)·복사해서 아래에 붙여 넣으세요. 머리글에 "이용일·가맹점명·이용금액·카드번호"가 있으면 그 열을 그대로 읽어요. 결제 주기가 두 달에 걸쳐도 괜찮아요.</div>' + (stmtState.allCount ? '<div class="note ok">저장된 명세서 ' + stmtState.allCount + '줄 (마지막 붙여넣기 ' + esc(md(stmtState.savedAt)) + '). 지워지지 않고 폰·노트북 어디서든 보여요. 이 달 줄: ' + (stmtState.rows ? stmtState.rows.length : 0) + '개' + (!stmtState.rows ? ' — 다른 달 명세서면 위의 지난달·다음달로 옮겨 보세요' : '') + '. 새로 붙여넣으면 추가돼요(겹치는 줄은 자동으로 뺌).</div>' : '') + '<textarea class="in" id="stmt-text" rows="' + (stmtState.rows ? 3 : 6) + '" placeholder="카드번호&#9;이용자명&#9;이용일&#9;승인번호&#9;가맹점명&#9;…&#9;이용금액&#10;4902-98**-****-2851&#9;(*)본노엘&#9;26.08.10&#9;31488214&#9;웰빙마트&#9;…&#9;13300">' + esc(stmtState.text) + '</textarea><button class="btn primary" data-act="stmt-run">대조하기</button></div>';
     if (stmtState.rows){
       var rows = stmtState.rows, used = matchStatement(rows, exps);
@@ -1821,13 +1826,13 @@
     var allRows = stmtState.allText ? parseStatement(stmtState.allText, stmtState.ym) : [];
     stmtState.allCount = allRows.length; stmtState.text = '';
     var mr0 = monthRange(stmtState.ym);
-    stmtState.rows = allRows.filter(function(r){ return r.date >= mr0.from && r.date <= mr0.to; });
+    stmtState.rows = stmtState.allMode ? allRows : allRows.filter(function(r){ return r.date >= mr0.from && r.date <= mr0.to; });
     if (!allRows.length){ stmtState.rows = null; toast('날짜와 금액이 있는 줄을 못 찾았어요'); render(); return; }
     if (!stmtState.rows.length){ stmtState.rows = null; var months = {}; allRows.forEach(function(r){ months[r.date.slice(0, 7)] = 1; }); toast('저장했어요. 이 달 줄은 없고 ' + Object.keys(months).sort().join(', ') + '에 있어요. 지난달·다음달로 옮겨 보세요'); render(); return; }
     var exps = await loadExpensesBetween(stmtRange(stmtState.rows, stmtState.ym)); if (!isOwner()) exps = exps.filter(function(x){ return x.branch_id === session.branchId; });
     matchStatement(stmtState.rows, exps);
     var n = 0;
-    for (var i = 0; i < stmtState.rows.length; i++){ var r = stmtState.rows[i]; if (r.status === 'ok' && !r.exp.statement_key){ await db.update('ops_expenses', { id: r.exp.id }, { statement_key: stmtState.ym + ':' + r.date + ':' + r.amount, updated_at: nowIso() }); n++; } }
+    for (var i = 0; i < stmtState.rows.length; i++){ var r = stmtState.rows[i]; if (r.status === 'ok' && !r.exp.statement_key){ await db.update('ops_expenses', { id: r.exp.id }, { statement_key: r.date.slice(0, 7) + ':' + r.date + ':' + r.amount, updated_at: nowIso() }); n++; } }
     toast('대조했어요' + (n ? ' · 영수증 ' + n + '건에 ✓ 표시' : ''));
     render();
   }
@@ -1835,7 +1840,7 @@
   async function stmtAddGroup(gi, cards){
     var g = stmtState.groups[gi]; if (!g) return 0;
     var b = document.getElementById('sb-' + gi).value || null, k = document.getElementById('sk-' + gi).value;
-    var rows = g.idx.map(function(i){ var r = stmtState.rows[i], c = cardByLast4(cards, r.last4); return { spent_on: r.date, merchant: r.merchant || null, amount: r.amount, card_id: c ? c.id : null, card_last4: r.last4 || null, branch_id: b, category: k, memo: '명세서에서 등록', photo_path: null, ocr: null, source: 'statement', statement_key: stmtState.ym + ':' + r.date + ':' + r.amount, uploaded_by: session.staffId, created_at: nowIso(), updated_at: nowIso() }; });
+    var rows = g.idx.map(function(i){ var r = stmtState.rows[i], c = cardByLast4(cards, r.last4); return { spent_on: r.date, merchant: r.merchant || null, amount: r.amount, card_id: c ? c.id : null, card_last4: r.last4 || null, branch_id: b, category: k, memo: '명세서에서 등록', photo_path: null, ocr: null, source: 'statement', statement_key: r.date.slice(0, 7) + ':' + r.date + ':' + r.amount, uploaded_by: session.staffId, created_at: nowIso(), updated_at: nowIso() }; });
     await db.insert('ops_expenses', rows);
     await learnRules([{ merchant: g.name, branch_id: b, category: k }]);
     return rows.length;
@@ -1888,14 +1893,14 @@
   }
   async function loadDocsSettings(){ if (docsSettings) return docsSettings; var r = await db.select('ops_settings', { eq: { key: 'docs' } }).catch(function(){ return []; }); docsSettings = Object.assign({ owner_email: 'bonnoel2014@naver.com', seal: null }, r[0] ? r[0].value : {}); return docsSettings; }
   async function saveDocsSettings(patch){ var v = Object.assign({}, await loadDocsSettings(), patch); await db.upsert('ops_settings', [{ key: 'docs', value: v, updated_at: nowIso() }], 'key'); docsSettings = v; }
-  function docOrder(a, b){ var ks = BND().list.map(function(d){ return d.key; }); return ks.indexOf(a.doc_key) - ks.indexOf(b.doc_key); }
+  function docOrder(a, b){ var ks = BND().list.map(function(d){ return d.key; }).concat(['sub_resident', 'sub_bank', 'sub_health']); return ks.indexOf(a.doc_key) - ks.indexOf(b.doc_key); }
   function docsByBatch(rows){
     var m = {}; rows.forEach(function(r){ (m[r.batch_id] = m[r.batch_id] || []).push(r); });
     var out = Object.keys(m).map(function(k){ var list = m[k]; list.sort(docOrder); return { id: k, rows: list, staff_id: list[0].staff_id, branch_id: list[0].branch_id, created_at: list.reduce(function(a, r){ return a < r.created_at ? a : r.created_at; }, list[0].created_at) }; });
     out.sort(function(a, b){ return a.created_at < b.created_at ? 1 : -1; });
     return out;
   }
-  function batchStatus(batch){ var st = batch.rows.map(function(r){ return r.status; }); if (st.every(function(s){ return s === 'sent'; })) return 'sent'; if (st.some(function(s){ return s === 'failed'; })) return 'failed'; if (st.every(function(s){ return s === 'prepared'; })) return 'prepared'; if (st.some(function(s){ return s === 'signed' || s === 'sent'; })) return 'signed'; return 'prepared'; }
+  function batchStatus(batch){ var st = batch.rows.filter(function(r){ return !isSubRow(r); }).map(function(r){ return r.status; }); if (!st.length) return 'prepared'; if (st.every(function(s){ return s === 'sent'; })) return 'sent'; if (st.some(function(s){ return s === 'failed'; })) return 'failed'; if (st.every(function(s){ return s === 'prepared'; })) return 'prepared'; if (st.some(function(s){ return s === 'signed' || s === 'sent'; })) return 'signed'; return 'prepared'; }
   function batchBadge(status){ return { sent: '<span class="badge ok">발송 완료</span>', failed: '<span class="badge danger">발송 실패</span>', signed: '<span class="badge warn">서명됨·미발송</span>', prepared: '<span class="badge warn">서명 대기</span>' }[status] || '<span class="badge muted">없음</span>'; }
   function fmtDT(iso){ if (!iso) return ''; var d = new Date(iso); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
   function docCtx(row, extra){
@@ -1953,7 +1958,7 @@
       people.forEach(function(s){
         var bt = latest[s.id], stt = bt ? batchStatus(bt) : null;
         var sub = '';
-        if (bt){ var sent = bt.rows.filter(function(r){ return r.email_sent_at; })[0]; sub = stt === 'sent' ? '발송 ' + fmtDT(sent && sent.email_sent_at) + ' → ' + esc(sent && sent.email_to) : stt === 'failed' ? esc((bt.rows.filter(function(r){ return r.email_error; })[0] || {}).email_error || '') : stt === 'signed' ? '서명됨 · 메일 미발송' : '준비 ' + fmtDT(bt.created_at) + ' · ' + bt.rows.length + '장'; }
+        if (bt){ var sent = bt.rows.filter(function(r){ return r.email_sent_at; })[0]; sub = stt === 'sent' ? '발송 ' + fmtDT(sent && sent.email_sent_at) + ' → ' + esc(sent && sent.email_to) : stt === 'failed' ? esc((bt.rows.filter(function(r){ return r.email_error; })[0] || {}).email_error || '') : stt === 'signed' ? '서명됨 · 메일 미발송' : '준비 ' + fmtDT(bt.created_at) + ' · ' + bt.rows.filter(function(r){ return !isSubRow(r); }).length + '장'; var subN = bt.rows.filter(function(r){ return isSubRow(r) && (r.status === 'submitted' || r.status === 'removed'); }).length; if (stt !== 'prepared' || subN) sub += ' · 등본·통장 ' + subN + '/2'; }
         html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t">' + esc(s.name) + (s.branch_id ? '' : ' <span class="muted">(전체)</span>') + '</div><div class="s">' + (sub || '서류 없음') + '</div></div>' + batchBadge(stt) + '<span class="inline">';
         if (!bt || stt === 'sent') html += '<a class="btn sm primary" href="#/docs-prep/' + esc(s.id) + '">' + (bt ? '새로 준비' : '준비') + '</a>';
         if (bt && stt === 'prepared') html += '<a class="btn sm" href="#/docs-prep/' + esc(s.id) + '/' + esc(bt.id) + '">수정</a><button class="btn sm danger" data-act="docs-del-batch" data-id="' + esc(bt.id) + '">삭제</button>';
@@ -2055,10 +2060,19 @@
     var stt = batchStatus({ rows: rows });
     var html = topbar('서류 · ' + staffName(rows[0].staff_id), true);
     html += '<div class="inline" style="justify-content:space-between;margin:0 4px 10px">' + batchBadge(stt) + '<span class="muted">' + esc(branchName(rows[0].branch_id)) + ' · 양식 ' + esc(rows[0].template_version) + '</span></div>';
+    var subs = rows.filter(isSubRow); rows = rows.filter(function(r){ return !isSubRow(r); });
     html += '<div class="card">';
     rows.forEach(function(r){
       html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t">' + esc(r.doc_title) + '</div><div class="s">' + (r.signed_at ? '서명 ' + fmtDT(r.signed_at) : '서명 전') + (r.email_sent_at ? ' · 발송 ' + fmtDT(r.email_sent_at) : '') + '</div></div>' + (r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">PDF 열기</button>' : '<span class="badge muted">PDF 없음</span>') + '</div>';
     });
+    html += '</div>';
+    html += '<div class="card section"><div class="sec-h"><span class="sp">제출 서류 (등본·통장사본)</span>' + (isManager() ? '<span class="muted" style="font-weight:400">노무사 전달 후 [지움]으로 원본 삭제</span>' : '') + '</div>';
+    ['sub_resident', 'sub_bank'].forEach(function(k){
+      var d = subDef(k), r = subs.filter(function(x){ return x.doc_key === k; })[0];
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(d.title) + '</div><div class="s">' + (r && r.status === 'submitted' ? '제출 ' + fmtDT(r.signed_at) : r && r.status === 'removed' ? '제출 후 원본 삭제 ' + fmtDT(r.updated_at) : '미제출') + '</div></div><span class="inline">' +
+        (r && r.status === 'submitted' && r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">열기</button>' + (isManager() ? '<button class="btn sm danger" data-act="sub-del" data-id="' + esc(r.id) + '" data-path="' + esc(r.pdf_path) + '">지움</button>' : '') : '') + '</span></div>';
+    });
+    html += '<div class="item"><div class="iname"><div class="t">보건증</div><div class="s">"보건증" 화면에서 따로 관리해요 (만료일·제출 확인)</div></div>' + (isManager() ? '<a class="btn sm" href="#/health-admin">보건증 관리</a>' : '<a class="btn sm" href="#/health">내 보건증</a>') + '</div>';
     html += '</div>';
     var r0 = rows.filter(function(r){ return r.signed_at; })[0] || rows[0];
     html += '<div class="card section"><div class="sec-h">교부 기록</div><div style="padding:10px 14px;font-size:13px;line-height:1.8">' +
@@ -2086,7 +2100,12 @@
       var stt = batchStatus(bt);
       html += '<div class="card section"><div class="sec-h"><span class="sp">' + fmtDT(bt.created_at) + ' 준비 · ' + esc(branchName(bt.branch_id)) + '</span>' + batchBadge(stt) + '</div>';
       if (stt === 'prepared') html += '<div class="note" style="margin:10px 14px">서명을 기다리는 서류예요. <a href="#/sign" style="text-decoration:underline;font-weight:600">서류 서명</a>에서 이름·비밀번호로 들어가 읽고 서명해 주세요.</div>';
-      bt.rows.forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t">' + esc(r.doc_title) + '</div><div class="s">' + (r.signed_at ? '서명 ' + fmtDT(r.signed_at) : '서명 전') + (r.email_sent_at ? ' · ' + esc(r.email_to) + '로 발송' : '') + '</div></div>' + (r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">PDF 열기</button>' : '') + '</div>'; });
+      bt.rows.filter(function(r){ return !isSubRow(r); }).forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t">' + esc(r.doc_title) + '</div><div class="s">' + (r.signed_at ? '서명 ' + fmtDT(r.signed_at) : '서명 전') + (r.email_sent_at ? ' · ' + esc(r.email_to) + '로 발송' : '') + '</div></div>' + (r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">PDF 열기</button>' : '') + '</div>'; });
+      bt.rows.filter(isSubRow).forEach(function(r){
+        var d = subDef(r.doc_key) || { kind: '', accept: 'image/*,application/pdf' };
+        html += '<div class="item" style="background:var(--surface-sunken)"><div class="iname"><div class="t">' + esc(r.doc_title) + ' <span class="muted" style="font-weight:400">(제출 서류)</span></div><div class="s">' + (r.status === 'submitted' ? '제출 ' + fmtDT(r.signed_at) : r.status === 'removed' ? '제출 완료 (원본은 처리 후 삭제됨)' : '아직 안 냈어요') + '</div></div>' +
+          (r.status === 'pending' ? '<label class="btn sm primary">📷 올리기<input type="file" accept="' + d.accept + '" class="hidden sub-file-later" data-kind="' + d.kind + '" data-batch="' + esc(bt.id) + '"></label>' : r.status === 'submitted' && r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">열기</button>' : '') + '</div>';
+      });
       if (stt !== 'prepared') html += '<div style="padding:8px 14px"><a class="btn sm" href="#/docs-view/' + esc(bt.id) + '">교부 기록 보기</a></div>';
       html += '</div>';
     });
@@ -2094,8 +2113,83 @@
   };
 
   // --- 서류 서명 (매장폰 키오스크, 로그인 없이) ---
-  var signState = { branchId: null, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '' };
-  function signReset(){ signState = { branchId: signState.branchId, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '' }; }
+  var signState = { branchId: null, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [] };
+  function signReset(){ signState = { branchId: signState.branchId, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [] }; }
+  // 입사 시 제출 서류 3가지 (등본·통장사본은 서류 표에 sub_* 로, 보건증은 8차 보건증 표로)
+  var SUB_KINDS = [
+    { key: 'sub_resident', kind: 'resident', title: '주민등록등본', hint: '주민센터·정부24에서 뗀 등본. 사진 또는 PDF', accept: 'image/*,application/pdf' },
+    { key: 'sub_bank', kind: 'bank', title: '통장사본', hint: '급여 받을 본인 명의 통장. 은행 앱 캡처·PDF도 돼요', accept: 'image/*,application/pdf' },
+    { key: 'sub_health', kind: 'health', title: '보건증', hint: '발급일·유효기간이 보이게. 없으면 "나중에 제출"', accept: 'image/*' }
+  ];
+  function subDef(kindOrKey){ return SUB_KINDS.filter(function(k){ return k.kind === kindOrKey || k.key === kindOrKey; })[0]; }
+  function isSubRow(r){ return /^sub_/.test(r.doc_key || ''); }
+  async function subPicked(kind, file){
+    if (!file) return;
+    var st = signState, isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name || '');
+    try {
+      if (isPdf){ if (file.size > 8 * 1024 * 1024) throw new Error('PDF가 8MB보다 커요'); st.files[kind] = { blob: file, dataUrl: null, mime: 'application/pdf', name: file.name, ext: 'pdf' }; }
+      else { var r = await resizeImage(file, 1600); st.files[kind] = { blob: r.blob, dataUrl: r.dataUrl, mime: 'image/jpeg', name: file.name, ext: 'jpg' }; }
+      st.skip[kind] = false;
+    } catch(e){ toast(e.message || '파일을 열 수 없어요'); return; }
+    render();
+  }
+  function subReadSkips(){ var st = signState; app.querySelectorAll('.sub-skip').forEach(function(el){ st.skip[el.getAttribute('data-kind')] = el.checked; }); var he = document.getElementById('sub-health-exp'); if (he) st.healthExp = he.value; }
+  // 한 건 올리기: 등본·통장 → ops_documents(sub_*), 보건증 → ops_health_certs(제출·확인 대기). 보건증 표가 아직 없으면 서류 표에 대신 저장
+  async function subUploadOne(staffId, batchId, branchId, kind, f, expIso){
+    var def = subDef(kind), ts = Date.now(), now = nowIso();
+    if (kind === 'health'){
+      var hp = 'health/' + staffId + '/' + ts + '.jpg';
+      await db.upload(DOCS_BUCKET, hp, f.blob, 'image/jpeg');
+      try { await db.insert('ops_health_certs', { staff_id: staffId, expires_on: expIso || null, status: 'submitted', photo_path: hp, source: 'app', submitted_by: staffId, memo: '입사 서류로 제출', created_at: now, updated_at: now }); return; }
+      catch(e){ console.warn('보건증 표 없음 → 서류 표에 저장', e); }
+      await db.insert('ops_documents', { batch_id: batchId, staff_id: staffId, branch_id: branchId, doc_key: def.key, doc_title: def.title, template_version: 'file', data: { mime: 'image/jpeg', expires_on: expIso || null }, status: 'submitted', pdf_path: hp, signed_at: now });
+      return;
+    }
+    var path = staffId + '/' + batchId + '/' + def.key + '_' + ts + '.' + f.ext;
+    await db.upload(DOCS_BUCKET, path, f.blob, f.mime);
+    var old = await db.select('ops_documents', { eq: { batch_id: batchId, doc_key: def.key } });
+    if (old[0]) await db.update('ops_documents', { id: old[0].id }, { status: 'submitted', pdf_path: path, data: { mime: f.mime, name: f.name || '' }, signed_at: now, updated_at: now });
+    else await db.insert('ops_documents', { batch_id: batchId, staff_id: staffId, branch_id: branchId, doc_key: def.key, doc_title: def.title, template_version: 'file', data: { mime: f.mime, name: f.name || '' }, status: 'submitted', pdf_path: path, signed_at: now });
+  }
+  // "내 서류"에서 나중에 올리기 (등본·통장)
+  async function subLaterPicked(batchId, kind, file){
+    if (!file) return;
+    var isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name || ''), f;
+    try {
+      if (isPdf){ if (file.size > 8 * 1024 * 1024) throw new Error('PDF가 8MB보다 커요'); f = { blob: file, mime: 'application/pdf', name: file.name, ext: 'pdf' }; }
+      else { var r = await resizeImage(file, 1600); f = { blob: r.blob, mime: 'image/jpeg', name: file.name, ext: 'jpg' }; }
+      toast('올리는 중…');
+      var rows = await db.select('ops_documents', { eq: { batch_id: batchId } });
+      await subUploadOne(session.staffId, batchId, rows[0] ? rows[0].branch_id : null, kind, f, null);
+      toast('제출했어요'); render();
+    } catch(e){ toast('실패: ' + (e.message || e)); }
+  }
+  async function signFilesNext(){
+    var st = signState; subReadSkips();
+    var r0 = st.docs[0];
+    for (var i = 0; i < SUB_KINDS.length; i++){ var k = SUB_KINDS[i]; if (!st.files[k.kind] && !st.skip[k.kind]){ toast(k.title + ' 사진을 올리거나 "나중에 제출"에 체크해 주세요'); return; } }
+    var expIso = st.healthExp ? normBirth(st.healthExp) : null; // 8자리 → YYYY-MM-DD (같은 변환기)
+    if (st.healthExp && !expIso){ toast('보건증 만료일은 숫자 8자리로 (예: 20270315). 모르면 비워 두세요'); return; }
+    if (expIso && expIso < todayStr()){ toast('보건증 만료일이 이미 지났어요. 날짜를 확인해 주세요'); return; }
+    toast('올리는 중…');
+    for (var j = 0; j < SUB_KINDS.length; j++){
+      var kd = SUB_KINDS[j], f = st.files[kd.kind];
+      if (f){ await subUploadOne(r0.staff_id, st.batchId, r0.branch_id, kd.kind, f, kd.kind === 'health' ? expIso : null); st.subs.push(kd.title); }
+      else if (kd.kind !== 'health'){ // 미제출 표시(나중에 "내 서류"에서 올림). 보건증은 8차 보건증 화면에서 관리
+        var ex = await db.select('ops_documents', { eq: { batch_id: st.batchId, doc_key: kd.key } });
+        if (!ex[0]) await db.insert('ops_documents', { batch_id: st.batchId, staff_id: r0.staff_id, branch_id: r0.branch_id, doc_key: kd.key, doc_title: kd.title, template_version: 'file', data: {}, status: 'pending' });
+      }
+    }
+    st.step = 'doc'; st.idx = 0; render(); window.scrollTo(0, 0);
+  }
+  function subSlotHtml(k, f, skipped, healthExp){
+    var h = '<div class="card" style="padding:12px 14px;margin-bottom:10px"><div class="inline" style="justify-content:space-between"><b>' + esc(k.title) + '</b>' + (f ? '<span class="badge ok">준비됨</span>' : skipped ? '<span class="badge muted">나중에</span>' : '<span class="badge warn">필요</span>') + '</div><div class="muted" style="margin:4px 0 8px">' + esc(k.hint) + '</div>';
+    if (f){ h += (f.dataUrl ? '<img src="' + f.dataUrl + '" alt="' + esc(k.title) + '" style="width:100%;max-height:220px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">' : '<div class="note ok">PDF 파일: ' + esc(f.name) + '</div>') + '<div style="text-align:center;margin-top:6px"><label class="muted" style="cursor:pointer;text-decoration:underline">다른 파일로<input type="file" accept="' + k.accept + '" class="hidden sub-file" data-kind="' + k.kind + '"></label></div>'; }
+    else h += '<label class="btn primary block" style="padding:14px;font-size:16px">📷 사진 찍기 / 파일 고르기<input type="file" accept="' + k.accept + '" class="hidden sub-file" data-kind="' + k.kind + '"></label>';
+    if (k.kind === 'health' && f) h += '<div style="margin-top:8px"><label class="muted">만료일 (보건증에 적힌 유효기간, 숫자 8자리 · 모르면 비워 두기)</label><input class="in birth" id="sub-health-exp" inputmode="numeric" maxlength="10" placeholder="예: 20270315" value="' + esc(healthExp || '') + '"></div>';
+    if (!f) h += '<label class="chk" style="padding:8px 0 0;border:0"><input type="checkbox" class="sub-skip" data-kind="' + k.kind + '"' + (skipped ? ' checked' : '') + '><span>지금 없어요 · 나중에 제출할게요' + (k.kind === 'health' ? ' (앱 "보건증"에서 올릴 수 있어요)' : ' (앱 "내 서류"에서 올릴 수 있어요)') + '</span></label>';
+    return h + '</div>';
+  }
   function isMinor(){ var st = signState; var a = st.info.birth ? BND().age(st.info.birth, todayStr()) : null; return (a != null && a < 18) || st.docs.some(function(r){ return r.data && r.data.minor; }); }
   routes.sign = async function(){
     await loadBase();
@@ -2128,7 +2222,7 @@
       html += '<div style="margin-top:18px"><button class="btn primary" data-act="sign-pin">확인</button></div><div style="margin-top:14px"><span class="muted" data-act="sign-back" style="cursor:pointer">다른 이름</span></div></div>';
       app.innerHTML = html; var p1 = document.getElementById('spin1'); if (p1) p1.focus(); return;
     }
-    var total = st.docs.length + 1;
+    var total = st.docs.length + 2;
     function steps(cur){ var h = '<div class="steps">'; for (var i = 0; i < total; i++) h += '<span class="' + (i < cur ? 'done' : i === cur ? 'on' : '') + '"></span>'; return h + '</div>'; }
     if (st.step === 'info'){
       var inf = st.info, g = st.guardian, minor = isMinor();
@@ -2143,12 +2237,19 @@
       var bi = document.getElementById('si-birth'); if (bi) bi.addEventListener('input', function(){ var b = normBirth(bi.value); var a = b ? BND().age(b, todayStr()) : null; document.getElementById('si-guardian').classList.toggle('hidden', !((a != null && a < 18) || st.docs.some(function(r){ return r.data && r.data.minor; }))); });
       return;
     }
+    if (st.step === 'files'){
+      html += steps(1) + '<div class="muted" style="margin:0 4px 10px"><b>' + esc(s.name) + '</b> 님, 입사 때 내는 서류 3가지예요. 폰으로 찍거나 파일을 골라 주세요. 지금 없는 건 "나중에 제출"에 체크하면 넘어가요.</div>';
+      SUB_KINDS.forEach(function(k){ html += subSlotHtml(k, st.files[k.kind], !!st.skip[k.kind], st.healthExp); });
+      html += '<div class="muted" style="margin:0 4px 8px">올린 파일은 사장님·매니저만 볼 수 있고, 4대보험·급여 처리에만 써요.</div>';
+      html += '<div class="stickybar"><div class="inner"><button class="btn" data-act="sign-back">취소</button><button class="btn primary block" data-act="sign-files-next">다음 (서류 읽기)</button></div></div>';
+      app.innerHTML = html; return;
+    }
     if (st.step === 'doc'){
       var row = st.docs[st.idx], def = BND().byKey(row.doc_key), isG = !!def.guardianSign;
       var settings = await loadDocsSettings().catch(function(){ return {}; });
       var data = Object.assign({}, row.data, { staff: Object.assign({ name: s.name }, st.info), guardian: st.guardian });
       var ctx = docCtx(Object.assign({}, row, { data: data }), { sig: st.sig, gsig: st.gsig, seal: settings.seal, signedAt: todayStr(), signedTime: hm(nowIso()), checks: st.checks[row.doc_key] || {} });
-      html += steps(st.idx + 1) + '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + (st.idx + 1) + '/' + st.docs.length + ' · ' + esc(row.doc_title) + '</b><span class="muted">' + esc(s.name) + '</span></div>';
+      html += steps(st.idx + 2) + '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + (st.idx + 1) + '/' + st.docs.length + ' · ' + esc(row.doc_title) + '</b><span class="muted">' + esc(s.name) + '</span></div>';
       html += '<div class="muted" style="margin:0 4px 8px">끝까지 읽은 뒤 아래 항목에 체크하고 서명해 주세요.</div>';
       html += '<div class="docview">' + BND().render(row.doc_key, ctx) + '</div>';
       if (def.checks.length){ html += '<div class="card" style="margin-top:10px">' + def.checks.map(function(c){ return '<label class="chk"><input type="checkbox" class="sign-chk" data-id="' + esc(c.id) + '"' + ((st.checks[row.doc_key] || {})[c.id] ? ' checked' : '') + '><span>' + esc(c.text) + '</span></label>'; }).join('') + '</div>'; }
@@ -2168,7 +2269,7 @@
     if (st.step === 'done'){
       var r = st.result || {};
       html += '<div class="pin-wrap">';
-      if (r.ok) html += '<div style="font-size:40px">✅</div><div style="font-size:20px;font-weight:600;margin:8px 0">서명이 끝났어요</div><div class="muted">서류 ' + st.docs.length + '장을 <b>' + esc(r.to) + '</b>' + (r.cc ? ' (참조: 사장님)' : '') + '로 보냈어요.<br>메일함(스팸함 포함)을 확인해 주세요. 앱 "내 서류"에서도 언제든 볼 수 있어요.</div>';
+      if (r.ok) html += '<div style="font-size:40px">✅</div><div style="font-size:20px;font-weight:600;margin:8px 0">서명이 끝났어요</div><div class="muted">서류 ' + st.docs.length + '장을 <b>' + esc(r.to) + '</b>' + (r.cc ? ' (참조: 사장님)' : '') + '로 보냈어요.<br>메일함(스팸함 포함)을 확인해 주세요. 앱 "내 서류"에서도 언제든 볼 수 있어요.</div>' + (st.subs.length ? '<div class="muted" style="margin-top:8px">제출한 서류: ' + esc(st.subs.join(', ')) + '</div>' : '') + (SUB_KINDS.some(function(k){ return st.skip[k.kind]; }) ? '<div class="note" style="text-align:left;margin-top:8px">아직 안 낸 서류: ' + esc(SUB_KINDS.filter(function(k){ return st.skip[k.kind]; }).map(function(k){ return k.title; }).join(', ')) + ' — 준비되면 앱 "내 서류"(보건증은 "보건증")에서 올려 주세요.</div>' : '');
       else if (r.fatal) html += '<div style="font-size:40px">⚠️</div><div style="font-size:20px;font-weight:600;margin:8px 0">저장 중 문제가 생겼어요</div><div class="note danger" style="text-align:left">' + esc(r.error) + '</div><div class="muted" style="margin-top:8px">사장님·매니저에게 알려 주세요. 다시 시도해도 돼요.</div>';
       else html += '<div style="font-size:40px">📄</div><div style="font-size:20px;font-weight:600;margin:8px 0">서명은 저장됐어요</div><div class="note" style="text-align:left">메일 발송은 실패했어요: ' + esc(r.error) + '</div><div class="muted" style="margin-top:8px">사장님·매니저가 "입사 서류"에서 <b>재발송</b>하면 돼요. 서명 기록은 이미 남아 있어요.</div>';
       html += '<div style="margin-top:20px"><button class="btn primary" data-act="sign-restart">처음으로</button></div></div>';
@@ -2219,7 +2320,7 @@
         st.docs.push(ins[0]); st.docs.sort(docOrder);
       }
     }
-    st.step = 'doc'; st.idx = 0; render();
+    st.step = 'files'; render(); window.scrollTo(0, 0);
   }
   function signReadChecks(){ var st = signState, row = st.docs[st.idx], m = {}; app.querySelectorAll('.sign-chk').forEach(function(el){ m[el.getAttribute('data-id')] = el.checked; }); st.checks[row.doc_key] = m; return m; }
   async function signDocNext(skipG){
@@ -2795,7 +2896,7 @@
         case 'cards-save': await cardsSave(); break;
         // 입사 서류
         case 'docs-new-staff': { var nn = window.prompt('새 직원 이름'); if (!nn) break; nn = nn.trim(); if (!nn) break; if (base.staff.some(function(x){ return x.name === nn && x.active !== false; })){ toast('이미 명단에 있는 이름이에요'); break; } var nr = await db.insert('manual_staff', { name: nn, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast(nn + ' 추가했어요'); nav('#/docs-prep/' + nr[0].id); break; }
-        case 'docs-del-batch': if (window.confirm('준비한 서류를 지울까요? (서명 전 서류만 지워져요)')){ await db.remove('ops_documents', { batch_id: id }); toast('지웠어요'); if (current.route === 'docs-view') nav('#/docs-admin'); else render(); } break;
+        case 'docs-del-batch': if (window.confirm('준비한 서류를 지울까요? (서명 전 서류만 지워져요)')){ (await db.select('ops_documents', { eq: { batch_id: id } })).forEach(function(r){ if (r.pdf_path) db.removeFile(DOCS_BUCKET, r.pdf_path).catch(function(){}); }); await db.remove('ops_documents', { batch_id: id }); toast('지웠어요'); if (current.route === 'docs-view') nav('#/docs-admin'); else render(); } break;
         case 'docs-resend': await docsResend(id, el); break;
         case 'docs-open-pdf': { var du = await db.signedUrl(DOCS_BUCKET, el.getAttribute('data-path')); window.open(du, '_blank'); break; }
         case 'docs-settings-save': await docsSettingsSave(); break;
@@ -2809,6 +2910,8 @@
         case 'sign-back': signReset(); render(); break;
         case 'sign-pin': await signPin(); break;
         case 'sign-info-next': el.disabled = true; try { await signInfoNext(); } finally { el.disabled = false; } break;
+        case 'sign-files-next': el.disabled = true; try { await signFilesNext(); } finally { el.disabled = false; } break;
+        case 'sub-del': if (window.confirm('원본 파일을 지울까요? "제출했었다"는 기록은 남아요.')){ var spth = el.getAttribute('data-path'); await db.update('ops_documents', { id: id }, { status: 'removed', pdf_path: null, updated_at: nowIso() }); if (spth) db.removeFile(DOCS_BUCKET, spth).catch(function(){}); toast('원본을 지웠어요'); render(); } break;
         case 'sign-prev': signReadChecks(); var sd = sigPadData('sigpad'); if (sd) signState.sig = sd; signState.idx = Math.max(0, signState.idx - 1); render(); break;
         case 'sign-doc-next': el.disabled = true; try { await signDocNext(false); } finally { el.disabled = false; } break;
         case 'sign-gskip': el.disabled = true; try { await signDocNext(true); } finally { el.disabled = false; } break;
@@ -2834,6 +2937,8 @@
     if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.classList.contains('sub-file')){ subReadSkips(); await subPicked(e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
+    if (e.target.classList.contains('sub-file-later')){ await subLaterPicked(e.target.getAttribute('data-batch'), e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'hc-import'){ hcState.importText = e.target.value; if (e.target.value.trim()) hcImportPreview(); return; }   // 붙여넣기만 해도 바로 읽어 보기
     if (e.target.id === 'buy-method'){ buyRecalc(buyIdsForm(), e.target.id); return; }
     { var bmm = /^bm-(.+)$/.exec(e.target.id || ''); if (bmm){ buyRecalc(buyIdsRow(bmm[1]), e.target.id); return; } }
