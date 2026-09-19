@@ -2121,14 +2121,14 @@
     if (st.step === 'info'){
       var inf = st.info, g = st.guardian, minor = isMinor();
       html += steps(0) + '<div class="muted" style="margin:0 4px 10px"><b>' + esc(s.name) + '</b> 님, 계약서에 들어갈 본인 정보를 넣어 주세요. 서명이 끝나면 아래 이메일로 서류 PDF가 발송돼요.</div>';
-      html += '<div class="form"><div class="grid2"><div><label>생년월일</label><input class="in" id="si-birth" type="date" value="' + esc(inf.birth || '') + '"></div><div><label>연락처</label><input class="in" id="si-phone" type="tel" inputmode="tel" placeholder="010-0000-0000" value="' + esc(inf.phone || '') + '"></div></div>';
+      html += '<div class="form"><div class="grid2"><div><label>생년월일 (숫자 8자리)</label><input class="in birth" id="si-birth" inputmode="numeric" maxlength="10" placeholder="예: 19830115" value="' + esc(inf.birth || '') + '"></div><div><label>연락처</label><input class="in" id="si-phone" type="tel" inputmode="tel" placeholder="010-0000-0000" value="' + esc(inf.phone || '') + '"></div></div>';
       html += '<div><label>주소</label><input class="in" id="si-address" placeholder="도로명 주소" value="' + esc(inf.address || '') + '"></div>';
       html += '<div><label>이메일 (서류를 받을 주소)</label><input class="in" id="si-email" type="email" inputmode="email" autocapitalize="off" placeholder="example@gmail.com" value="' + esc(inf.email || '') + '"></div>';
       html += '<div><label>이메일 한 번 더</label><input class="in" id="si-email2" type="email" inputmode="email" autocapitalize="off" value="' + esc(inf.email2 || '') + '"></div></div>';
-      html += '<div id="si-guardian" class="' + (minor ? '' : 'hidden') + '"><div class="group-title">친권자(후견인) 정보 (만 18세 미만)</div><div class="form"><div class="grid2"><div><label>성명</label><input class="in" id="sg-name" value="' + esc(g.name || '') + '"></div><div><label>관계</label><input class="in" id="sg-relation" placeholder="예: 부, 모" value="' + esc(g.relation || '') + '"></div></div><div class="grid2"><div><label>생년월일</label><input class="in" id="sg-birth" type="date" value="' + esc(g.birth || '') + '"></div><div><label>연락처</label><input class="in" id="sg-phone" type="tel" value="' + esc(g.phone || '') + '"></div></div><div><label>주소</label><input class="in" id="sg-address" value="' + esc(g.address || '') + '"></div></div></div>';
+      html += '<div id="si-guardian" class="' + (minor ? '' : 'hidden') + '"><div class="group-title">친권자(후견인) 정보 (만 18세 미만)</div><div class="form"><div class="grid2"><div><label>성명</label><input class="in" id="sg-name" value="' + esc(g.name || '') + '"></div><div><label>관계</label><input class="in" id="sg-relation" placeholder="예: 부, 모" value="' + esc(g.relation || '') + '"></div></div><div class="grid2"><div><label>생년월일 (숫자 8자리)</label><input class="in birth" id="sg-birth" inputmode="numeric" maxlength="10" placeholder="예: 19800101" value="' + esc(g.birth || '') + '"></div><div><label>연락처</label><input class="in" id="sg-phone" type="tel" value="' + esc(g.phone || '') + '"></div></div><div><label>주소</label><input class="in" id="sg-address" value="' + esc(g.address || '') + '"></div></div></div>';
       html += '<div class="stickybar"><div class="inner"><button class="btn" data-act="sign-back">취소</button><button class="btn primary block" data-act="sign-info-next">다음 (서류 읽기)</button></div></div>';
       app.innerHTML = html;
-      var bi = document.getElementById('si-birth'); if (bi) bi.addEventListener('change', function(){ var a = bi.value ? BND().age(bi.value, todayStr()) : null; document.getElementById('si-guardian').classList.toggle('hidden', !((a != null && a < 18) || st.docs.some(function(r){ return r.data && r.data.minor; }))); });
+      var bi = document.getElementById('si-birth'); if (bi) bi.addEventListener('input', function(){ var b = normBirth(bi.value); var a = b ? BND().age(b, todayStr()) : null; document.getElementById('si-guardian').classList.toggle('hidden', !((a != null && a < 18) || st.docs.some(function(r){ return r.data && r.data.minor; }))); });
       return;
     }
     if (st.step === 'doc'){
@@ -2177,18 +2177,30 @@
     var d = bt.rows[0].data || {}; st.info = Object.assign({}, d.staff || {}); delete st.info.name; st.guardian = Object.assign({}, d.guardian || {});
     render();
   }
+  // 생년월일: 숫자 8자리(19830115)나 하이픈 포함(1983-01-15)을 받아 'YYYY-MM-DD'로. 잘못된 날짜면 null
+  function normBirth(v){
+    var d = String(v || '').replace(/\D/g, '');
+    if (d.length !== 8) return null;
+    var y = +d.slice(0, 4), m = +d.slice(4, 6), day = +d.slice(6, 8);
+    var now = new Date().getFullYear();
+    if (y < 1930 || y > now || m < 1 || m > 12 || day < 1 || day > 31) return null;
+    var dt = new Date(y, m - 1, day); if (dt.getMonth() !== m - 1 || dt.getDate() !== day) return null;
+    return d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8);
+  }
+  function fmtBirthTyping(el){ var d = el.value.replace(/\D/g, '').slice(0, 8); var out = d.slice(0, 4); if (d.length > 4) out += '-' + d.slice(4, 6); if (d.length > 6) out += '-' + d.slice(6, 8); if (el.value !== out) el.value = out; }
   async function signInfoNext(){
     var st = signState, g = function(id){ return (document.getElementById(id) || {}).value || ''; };
-    var inf = { birth: g('si-birth'), phone: g('si-phone').trim(), address: g('si-address').trim(), email: g('si-email').trim().toLowerCase(), email2: g('si-email2').trim().toLowerCase() };
-    if (!inf.birth){ toast('생년월일을 넣어 주세요'); return; }
+    var inf = { birth: normBirth(g('si-birth')), phone: g('si-phone').trim(), address: g('si-address').trim(), email: g('si-email').trim().toLowerCase(), email2: g('si-email2').trim().toLowerCase() };
+    if (!inf.birth){ toast('생년월일을 숫자 8자리로 넣어 주세요 (예: 19830115)'); return; }
     if (!inf.phone){ toast('연락처를 넣어 주세요'); return; }
     if (!inf.address){ toast('주소를 넣어 주세요'); return; }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inf.email)){ toast('이메일 주소를 확인해 주세요'); return; }
     if (inf.email !== inf.email2){ toast('이메일 두 개가 서로 달라요'); return; }
     st.info = inf;
     if (isMinor()){
-      st.guardian = { name: g('sg-name').trim(), relation: g('sg-relation').trim(), birth: g('sg-birth'), phone: g('sg-phone').trim(), address: g('sg-address').trim() };
+      st.guardian = { name: g('sg-name').trim(), relation: g('sg-relation').trim(), birth: normBirth(g('sg-birth')) || '', phone: g('sg-phone').trim(), address: g('sg-address').trim() };
       if (!st.guardian.name || !st.guardian.relation){ toast('친권자 성명과 관계를 넣어 주세요'); return; }
+      if (g('sg-birth') && !st.guardian.birth){ toast('친권자 생년월일을 숫자 8자리로 넣어 주세요'); return; }
       if (!st.docs.some(function(r){ return r.doc_key === 'guardian'; })){
         var def = BND().byKey('guardian'), r0 = st.docs[0];
         var ins = await db.insert('ops_documents', { batch_id: st.batchId, staff_id: r0.staff_id, branch_id: r0.branch_id, doc_key: 'guardian', doc_title: def.title, template_version: r0.template_version, data: Object.assign({}, r0.data, { minor: true }), status: 'prepared', prepared_by: r0.prepared_by });
@@ -2580,6 +2592,7 @@
   });
   app.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
   app.addEventListener('input', function(e){
+    if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
     if (/^buy-(list|disc|paid)$/.test(e.target.id || '')){ buyRecalc(buyIdsForm(), e.target.id); return; }
     var bim = /^b[lcp]-(.+)$/.exec(e.target.id || ''); if (bim){ buyRecalc(buyIdsRow(bim[1]), e.target.id); return; }
     if (current.route !== 'check' || !e.target.classList.contains('qty')) return;
