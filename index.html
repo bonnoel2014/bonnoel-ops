@@ -129,6 +129,22 @@
   .hist:last-child{ border-bottom:0; }
   .hist .sp{ flex:1; }
   .hidden{ display:none !important; }
+  .sigpad{ width:100%; height:170px; border:1px dashed var(--line-strong); border-radius:var(--radius-m); background:#fff; touch-action:none; display:block; }
+  .sigprev{ background:#fff; border:1px solid var(--line); border-radius:var(--radius-m); padding:6px; text-align:center; }
+  .sigprev img{ height:60px; }
+  .docview{ background:#fff; color:#111; border:1px solid var(--line); border-radius:var(--radius-m); overflow:hidden; }
+  .docview .bnd .page{ width:auto !important; min-height:0 !important; padding:14px 12px !important; page-break-after:auto !important; border-bottom:1px dashed #ccc; }
+  .docview .bnd .page:last-child{ border-bottom:0; }
+  .docview .bnd{ font-size:13.5px !important; }
+  .docview .bnd h1{ font-size:19px !important; letter-spacing:3px !important; }
+  .docview .bnd table{ font-size:12px !important; }
+  .chk{ display:flex; gap:10px; align-items:flex-start; padding:10px 14px; border-bottom:1px solid var(--line); font-size:15px; cursor:pointer; }
+  .chk:last-child{ border-bottom:0; }
+  .chk input{ width:22px; height:22px; flex:none; margin-top:1px; }
+  .steps{ display:flex; gap:4px; margin:4px 4px 10px; }
+  .steps span{ flex:1; height:5px; border-radius:3px; background:var(--line); }
+  .steps span.on{ background:var(--accent); }
+  .steps span.done{ background:var(--ok); }
   table.grid{ border-collapse:collapse; font-size:11px; min-width:100%; }
   table.grid th, table.grid td{ border:1px solid var(--line); padding:2px 3px; vertical-align:top; min-width:60px; }
   table.grid th{ background:var(--surface-sunken); font-weight:500; color:var(--ink-soft); position:sticky; left:0; }
@@ -158,6 +174,8 @@
 <div id="toast" class="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="docs-templates.js"></script>
 <script>
 (function(){
   'use strict';
@@ -217,6 +235,13 @@
         var j = null; try { j = await res.json(); } catch(e){}
         if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '자동 읽기 함수(read-receipt)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
         return j;
+      },
+      // 입사 서류 PDF 메일 발송 함수
+      sendDocs: async function(batchId){
+        var res = await fetch(SUPABASE_URL + '/functions/v1/send-document', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify({ batch_id: batchId, ua: navigator.userAgent.slice(0, 300) }) });
+        var j = null; try { j = await res.json(); } catch(e){}
+        if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '메일 발송 함수(send-document)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
+        return j;
       }
     };
   }
@@ -246,7 +271,8 @@
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
-      ocr: async function(){ await new Promise(function(r){ setTimeout(r, 900); }); return { ok: true, merchant: '(시연) 성수 식자재마트', spent_on: todayStr(), amount: 34500, card_last4: '1234', summary: '시연 모드라 가짜로 읽었어요', confidence: 0.9 }; }
+      ocr: async function(){ await new Promise(function(r){ setTimeout(r, 900); }); return { ok: true, merchant: '(시연) 성수 식자재마트', spent_on: todayStr(), amount: 34500, card_last4: '1234', summary: '시연 모드라 가짜로 읽었어요', confidence: 0.9 }; },
+      sendDocs: async function(batchId){ await new Promise(function(r){ setTimeout(r, 800); }); var to = ''; (tables.ops_documents || []).forEach(function(r){ if (r.batch_id === batchId && r.pdf_path){ to = r.email_to || to; r.status = 'sent'; r.email_sent_at = new Date().toISOString(); r.email_cc = '(시연) 사장님 메일'; r.signed_ip = '127.0.0.1'; } }); return { ok: true, sent_to: to, cc: '(시연) 사장님 메일' }; }
     };
   }
 
@@ -314,7 +340,7 @@
       ops_sub_offers: [],
       ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
       ops_pay_profiles: [ { staff_id: 'm1', hourly_wage: 12000, pay_type: 'insured', dependents: 1 }, { staff_id: 's2', hourly_wage: 10320, pay_type: 'insured', dependents: 1 }, { staff_id: 's1', hourly_wage: 10320, pay_type: 'freelance', dependents: 1 } ],
-      ops_settings: [], ops_pay_runs: [], ops_merchant_rules: [],
+      ops_settings: [], ops_pay_runs: [], ops_merchant_rules: [], ops_documents: [],
       ops_cards: [
         { id: 'cd1', last4: '1234', name: '사장님 기명카드', branch_id: 'b1', ask_branch: true, active: true, sort_order: 1 },
         { id: 'cd2', last4: '2222', name: '왕십리 카드', branch_id: 'b2', ask_branch: false, active: true, sort_order: 2 },
@@ -426,7 +452,7 @@
     var h = location.hash.replace(/^#\/?/, '') || 'home';
     var parts = h.split('/');
     var route = parts[0]; var params = { arg: parts[1], arg2: parts[2] };
-    if (!session && route !== 'login' && route !== 'clock'){ nav('#/login'); return; }
+    if (!session && route !== 'login' && route !== 'clock' && route !== 'sign'){ nav('#/login'); return; }
     if (session && route === 'login'){ nav('#/home'); return; }
     var fn = routes[route] || routes.home;
     current = { route: route, params: params };
@@ -510,8 +536,13 @@
       html += '<div class="summary"><a href="#/short"><div class="n' + (short ? ' danger' : '') + '">' + short + '</div><div class="l">부족 품목</div></a>' +
               '<a href="#/arrive"><div class="n">' + arrive + '</div><div class="l">도착 확인 필요</div></a>' +
               '<a href="#/short"><div class="n' + (mism ? ' danger' : '') + '">' + mism + '</div><div class="l">수량 오류</div></a></div>';
-      html += '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:8px"><a href="#/leave-admin"><div class="n' + (pend ? ' danger' : '') + '">' + pend + '</div><div class="l">휴무 신청 대기</div></a>' +
-              '<a href="#/leave-admin"><div class="n">' + cov + '</div><div class="l">대타 구하는 중</div></a></div>';
+      var pendDocs = 0;
+      try { // 입사 서류 테이블(supabase-migration-docs.sql)이 아직 없어도 홈은 열리게
+        var pset = {}; (await db.select('ops_documents', { eq: { status: 'prepared' } })).forEach(function(r){ if (ids.indexOf(r.branch_id) >= 0 || !r.branch_id) pset[r.staff_id] = 1; }); pendDocs = Object.keys(pset).length;
+      } catch(e){ console.warn('입사 서류 테이블 없음', e); }
+      html += '<div class="summary" style="margin-top:8px"><a href="#/leave-admin"><div class="n' + (pend ? ' danger' : '') + '">' + pend + '</div><div class="l">휴무 신청 대기</div></a>' +
+              '<a href="#/leave-admin"><div class="n">' + cov + '</div><div class="l">대타 구하는 중</div></a>' +
+              '<a href="#/docs-admin"><div class="n' + (pendDocs ? ' danger' : '') + '">' + pendDocs + '</div><div class="l">서류 서명 대기</div></a></div>';
       try { // 카드 지출 테이블(supabase-migration-expense.sql)이 아직 없어도 홈은 열리게
         var ymNow = monthOf(todayStr()), mr = monthRange(ymNow);
         var exps = (await db.select('ops_expenses', { gte: { spent_on: mr.from } })).filter(function(x){ return x.spent_on <= mr.to && (isOwner() || x.branch_id === session.branchId); });
@@ -539,6 +570,9 @@
     if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 실제 근무시간 (급여 근거)');
     if (isOwner()) html += row('#/pay', 'tile-yellow', '💰', '급여 초안', '월별 급여 계산·명세서 (사장님만)');
     if (isManager()) html += row('#/expense-list', 'tile-purple', '💳', '카드 지출', '월별·지점별 지출 목록 · 합계 · 명세서 대조');
+    if (isManager()) html += row('#/docs-admin', 'tile-purple', '📝', '입사 서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부');
+    if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
+    html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
     html += '</div>';
     html += '<div class="group-title">자료</div><div class="card">';
     html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
@@ -1149,11 +1183,12 @@
     var today = todayStr();
     var recs = await db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: addDays(today, -1) }, order: { col: 'clock_in', asc: false } });
     var people = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || !s.branch_id); });
+    var pendDocIds = {}; try { (await db.select('ops_documents', { eq: { status: 'prepared' } })).forEach(function(r){ pendDocIds[r.staff_id] = 1; }); } catch(e){}
     var st = clockState;
     if (!st.staffId){
       html += '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + esc(branchName(b)) + '</b><span class="muted" data-act="clock-branch-reset" style="cursor:pointer">매장 바꾸기</span></div>';
       html += '<div class="muted" style="margin:0 4px 10px">내 이름을 누르고 비밀번호 4자리를 넣으면 출근·퇴근이 기록돼요.</div><div class="name-grid">';
-      people.forEach(function(s){ var open = openRecordOf(recs, s.id); html += '<button class="btn" data-act="clock-pick" data-id="' + esc(s.id) + '" style="' + (open ? 'background:var(--ok-soft);border-color:var(--ok)' : '') + '">' + esc(s.name) + (open ? '<br><span style="font-size:12px;font-weight:400">근무 중 ' + hm(open.clock_in) + '~</span>' : '') + '</button>'; });
+      people.forEach(function(s){ var open = openRecordOf(recs, s.id); html += '<button class="btn" data-act="clock-pick" data-id="' + esc(s.id) + '" style="' + (open ? 'background:var(--ok-soft);border-color:var(--ok)' : '') + '">' + esc(s.name) + (open ? '<br><span style="font-size:12px;font-weight:400">근무 중 ' + hm(open.clock_in) + '~</span>' : (pendDocIds[s.id] ? '<br><span style="font-size:12px;font-weight:400;color:var(--warn)">서류 서명 필요</span>' : '')) + '</button>'; });
       html += '</div>';
       var todayRecs = recs.filter(function(r){ return r.work_date === today; });
       if (todayRecs.length){
@@ -1173,6 +1208,7 @@
         var open = openRecordOf(recs, s.id);
         var mine = recs.filter(function(r){ return r.staff_id === s.id; }).slice(0, 3);
         html += '<div class="pin-wrap"><div style="font-size:22px;font-weight:700">' + esc(s.name) + '</div><div class="muted" style="margin:4px 0 18px">' + esc(fmtDateK(today)) + ' 지금 ' + hm(nowIso()) + '</div>';
+        if (pendDocIds[s.id]) html += '<div class="note" style="text-align:left;margin:0 0 14px">입사 서류(근로계약서 등)를 아직 안 썼어요. 출근은 되지만 오늘 안에 <a href="#/sign" style="text-decoration:underline;font-weight:600">서류 서명</a>을 꼭 해 주세요.</div>';
         if (open) html += '<div class="muted" style="margin-bottom:10px">출근 ' + hm(open.clock_in) + ' (' + fmtH(minutesBetween(open.clock_in, nowIso())) + ' 지남)</div><button class="btn primary" data-act="clock-out" data-id="' + esc(open.id) + '" style="font-size:22px;padding:18px 40px">퇴근하기</button>';
         else html += '<button class="btn primary" data-act="clock-in" style="font-size:22px;padding:18px 40px;background:var(--ok);border-color:var(--ok)">출근하기</button>';
         html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div></div>';
@@ -1768,6 +1804,392 @@
     cardsState = null; toast('저장했어요'); render();
   }
 
+  // ===== 입사 서류 (근로계약서 전자 서명·자동 교부) =====
+  var DOCS_BUCKET = 'documents';
+  var docsSettings = null;
+  function BND(){ if (!window.BN_DOCS) throw new Error('서류 양식(docs-templates.js)을 못 불러왔어요. 새로고침해 주세요'); return window.BN_DOCS; }
+  function uuid4(){
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    var a = new Uint8Array(16); crypto.getRandomValues(a); a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80;
+    var h = Array.prototype.map.call(a, function(b){ return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+  }
+  async function loadDocsSettings(){ if (docsSettings) return docsSettings; var r = await db.select('ops_settings', { eq: { key: 'docs' } }).catch(function(){ return []; }); docsSettings = Object.assign({ owner_email: 'bonnoel2014@naver.com', seal: null }, r[0] ? r[0].value : {}); return docsSettings; }
+  async function saveDocsSettings(patch){ var v = Object.assign({}, await loadDocsSettings(), patch); await db.upsert('ops_settings', [{ key: 'docs', value: v, updated_at: nowIso() }], 'key'); docsSettings = v; }
+  function docOrder(a, b){ var ks = BND().list.map(function(d){ return d.key; }); return ks.indexOf(a.doc_key) - ks.indexOf(b.doc_key); }
+  function docsByBatch(rows){
+    var m = {}; rows.forEach(function(r){ (m[r.batch_id] = m[r.batch_id] || []).push(r); });
+    var out = Object.keys(m).map(function(k){ var list = m[k]; list.sort(docOrder); return { id: k, rows: list, staff_id: list[0].staff_id, branch_id: list[0].branch_id, created_at: list.reduce(function(a, r){ return a < r.created_at ? a : r.created_at; }, list[0].created_at) }; });
+    out.sort(function(a, b){ return a.created_at < b.created_at ? 1 : -1; });
+    return out;
+  }
+  function batchStatus(batch){ var st = batch.rows.map(function(r){ return r.status; }); if (st.every(function(s){ return s === 'sent'; })) return 'sent'; if (st.some(function(s){ return s === 'failed'; })) return 'failed'; if (st.every(function(s){ return s === 'prepared'; })) return 'prepared'; if (st.some(function(s){ return s === 'signed' || s === 'sent'; })) return 'signed'; return 'prepared'; }
+  function batchBadge(status){ return { sent: '<span class="badge ok">발송 완료</span>', failed: '<span class="badge danger">발송 실패</span>', signed: '<span class="badge warn">서명됨·미발송</span>', prepared: '<span class="badge warn">서명 대기</span>' }[status] || '<span class="badge muted">없음</span>'; }
+  function fmtDT(iso){ if (!iso) return ''; var d = new Date(iso); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function docCtx(row, extra){
+    var d = row.data || {};
+    return Object.assign({ staff: d.staff || {}, c: d.c || {}, uniform: d.uniform || [], guardian: d.guardian || {}, checks: (d.checks || {}), sig: null, gsig: null, seal: null, signedAt: row.signed_at ? row.signed_at.slice(0, 10) : null, docId: row.id }, extra || {});
+  }
+  async function sha256(blob){ if (!(window.crypto && crypto.subtle)) return null; try { var h = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); return Array.prototype.map.call(new Uint8Array(h), function(b){ return (b < 16 ? '0' : '') + b.toString(16); }).join(''); } catch(e){ return null; } }
+  async function docPdf(key, ctx){
+    if (!window.html2pdf) throw new Error('PDF 도구(html2pdf)를 못 불러왔어요. 인터넷을 확인하고 새로고침해 주세요');
+    // 바깥 상자만 화면 밖으로 밀고, 안쪽 요소(위치 스타일 없음)를 html2pdf에 넘긴다. 바깥 요소를 넘기면 복제본도 화면 밖에 놓여 빈 PDF가 나온다.
+    var stage = document.getElementById('pdf-stage');
+    if (!stage){ stage = document.createElement('div'); stage.id = 'pdf-stage'; stage.style.cssText = 'position:absolute;left:-10000px;top:0;width:190mm;background:#fff;'; document.body.appendChild(stage); }
+    stage.innerHTML = '<div id="pdf-inner" style="width:190mm;background:#fff">' + BND().render(key, ctx) + '</div>';
+    var inner = document.getElementById('pdf-inner');
+    var opt = { margin: [10, 10, 10, 10], image: { type: 'jpeg', quality: 0.9 }, html2canvas: { scale: 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0, windowWidth: 900 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.kp'] } };
+    try {
+      var blob = await html2pdf().set(opt).from(inner).outputPdf('blob');
+      if (!blob || blob.size < 8000) throw new Error('PDF가 비어 있어요 (' + (blob ? blob.size : 0) + ' bytes). 새로고침 후 다시 시도해 주세요');
+      return blob;
+    }
+    finally { stage.innerHTML = ''; }
+  }
+  // 손가락 서명판
+  function initSigPad(id){
+    var cv = document.getElementById(id); if (!cv) return;
+    var ratio = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = w * ratio; cv.height = h * ratio;
+    var c = cv.getContext('2d'); c.scale(ratio, ratio); c.lineWidth = 2.5; c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = '#111';
+    var drawing = false, last = null; cv._dirty = false;
+    function pos(e){ var r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    cv.addEventListener('pointerdown', function(e){ e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch(err){} drawing = true; last = pos(e); c.beginPath(); c.moveTo(last.x, last.y); c.lineTo(last.x + 0.2, last.y + 0.2); c.stroke(); cv._dirty = true; });
+    cv.addEventListener('pointermove', function(e){ if (!drawing) return; e.preventDefault(); var p = pos(e); c.beginPath(); c.moveTo(last.x, last.y); c.lineTo(p.x, p.y); c.stroke(); last = p; });
+    function up(){ drawing = false; }
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('pointerleave', up);
+  }
+  function sigPadData(id){ var cv = document.getElementById(id); if (!cv || !cv._dirty) return null; return cv.toDataURL('image/png'); }
+  function sigPadClear(id){ var cv = document.getElementById(id); if (!cv) return; var c = cv.getContext('2d'); c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height); c.restore(); cv._dirty = false; }
+  function sigPadHtml(id, label){ return '<div class="card" style="padding:10px 12px;margin-top:10px"><div class="inline" style="justify-content:space-between;margin-bottom:6px"><b>' + esc(label || '서명') + '</b><button class="btn sm" data-act="sig-clear" data-id="' + id + '">지우기</button></div><canvas class="sigpad" id="' + id + '"></canvas><div class="muted" style="margin-top:6px">손가락으로 이름을 써 주세요.</div></div>'; }
+
+  // --- 서류 관리 (사장님·매니저) ---
+  routes['docs-admin'] = async function(){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var all = await db.select('ops_documents', { order: { col: 'created_at', asc: false } });
+    var settings = await loadDocsSettings();
+    var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
+    var batches = docsByBatch(all), latest = {};
+    batches.forEach(function(bt){ if (!latest[bt.staff_id]) latest[bt.staff_id] = bt; });
+    var html = topbar('입사 서류', true);
+    html += '<div class="muted" style="margin:4px 4px 10px">① 직원을 골라 <b>준비</b>(계약 조건 입력) → ② 신입이 매장폰 <a href="#/sign" style="text-decoration:underline">서류 서명</a>에서 이름·비밀번호로 들어와 읽고 서명 → ③ PDF가 직원 메일과 사장님 메일로 자동 발송돼요. 주민등록번호는 받지 않아요(별도 서면).</div>';
+    ids.forEach(function(b){
+      var people = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || (!s.branch_id && b === ids[0])); });
+      html += '<div class="card section"><div class="sec-h"><span class="sp">' + esc(branchName(b)) + '</span><button class="btn sm" data-act="docs-new-staff" data-branch="' + esc(b) + '">+ 새 직원</button></div>';
+      if (!people.length) html += '<div class="empty">직원이 없어요</div>';
+      people.forEach(function(s){
+        var bt = latest[s.id], stt = bt ? batchStatus(bt) : null;
+        var sub = '';
+        if (bt){ var sent = bt.rows.filter(function(r){ return r.email_sent_at; })[0]; sub = stt === 'sent' ? '발송 ' + fmtDT(sent && sent.email_sent_at) + ' → ' + esc(sent && sent.email_to) : stt === 'failed' ? esc((bt.rows.filter(function(r){ return r.email_error; })[0] || {}).email_error || '') : stt === 'signed' ? '서명됨 · 메일 미발송' : '준비 ' + fmtDT(bt.created_at) + ' · ' + bt.rows.length + '장'; }
+        html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t">' + esc(s.name) + (s.branch_id ? '' : ' <span class="muted">(전체)</span>') + '</div><div class="s">' + (sub || '서류 없음') + '</div></div>' + batchBadge(stt) + '<span class="inline">';
+        if (!bt || stt === 'sent') html += '<a class="btn sm primary" href="#/docs-prep/' + esc(s.id) + '">' + (bt ? '새로 준비' : '준비') + '</a>';
+        if (bt && stt === 'prepared') html += '<a class="btn sm" href="#/docs-prep/' + esc(s.id) + '/' + esc(bt.id) + '">수정</a><button class="btn sm danger" data-act="docs-del-batch" data-id="' + esc(bt.id) + '">삭제</button>';
+        if (bt && (stt === 'signed' || stt === 'failed')) html += '<button class="btn sm primary" data-act="docs-resend" data-id="' + esc(bt.id) + '">재발송</button>';
+        if (bt && stt !== 'prepared') html += '<a class="btn sm" href="#/docs-view/' + esc(bt.id) + '">보기</a>';
+        html += '</span></div>';
+      });
+      html += '</div>';
+    });
+    if (isOwner()){
+      html += '<div class="group-title">설정 (사장님)</div><div class="form">';
+      html += '<div><label>사장님 사본 받을 메일</label><input class="in" id="docs-owner-email" type="email" value="' + esc(settings.owner_email || '') + '" placeholder="bonnoel2014@naver.com"></div>';
+      html += '<div><label>직인 이미지 (계약서 사용자 서명란에 찍힘, 투명 배경 PNG 권장)</label>' + (settings.seal ? '<div class="sigprev" style="margin-bottom:6px"><img src="' + settings.seal + '" alt="직인" style="height:50px"></div>' : '') + '<div class="inline"><input type="file" id="docs-seal-file" accept="image/png,image/jpeg">' + (settings.seal ? '<button class="btn sm" data-act="docs-seal-remove">직인 지우기</button>' : '') + '</div></div>';
+      html += '<button class="btn primary" data-act="docs-settings-save">설정 저장</button></div>';
+    }
+    html += '<div class="muted" style="margin-top:14px">양식 버전 ' + esc(BND().version) + ' · 노무사 양식 문구 그대로. 유니폼 지급대장만 앱에서 만든 표예요.</div>';
+    app.innerHTML = html;
+  };
+  async function docsSettingsSave(){
+    var em = (document.getElementById('docs-owner-email') || {}).value || '';
+    if (em && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ toast('메일 주소 형식을 확인해 주세요'); return; }
+    var patch = { owner_email: em.trim() };
+    var f = document.getElementById('docs-seal-file'); var file = f && f.files && f.files[0];
+    if (file){ if (file.size > 400000){ toast('직인 이미지는 400KB 이하로 줄여 주세요'); return; } patch.seal = await new Promise(function(res, rej){ var rd = new FileReader(); rd.onload = function(){ res(rd.result); }; rd.onerror = rej; rd.readAsDataURL(file); }); }
+    await saveDocsSettings(patch); toast('저장했어요'); render();
+  }
+
+  // --- 서류 준비 (계약 조건 입력) ---
+  var prepState = null, prepKeep = false;
+  routes['docs-prep'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var s = base.staff.filter(function(x){ return x.id === params.arg; })[0];
+    if (!s){ toast('직원을 찾을 수 없어요'); nav('#/docs-admin'); return; }
+    if (!prepKeep || !prepState || prepState.staffId !== s.id){
+      var old = null;
+      if (params.arg2){ var rows = await db.select('ops_documents', { eq: { batch_id: params.arg2 } }); rows.sort(docOrder); old = rows[0] ? rows[0].data : null; prepState = { staffId: s.id, batchId: params.arg2, rows: rows }; } else prepState = { staffId: s.id, batchId: null, rows: [] };
+      var c = (old && old.c) || {};
+      var wage = c.wage; if (wage == null){ try { var pp = await db.select('ops_pay_profiles', { eq: { staff_id: s.id } }); wage = pp[0] && num(pp[0].hourly_wage) ? num(pp[0].hourly_wage) : 10320; } catch(e){ wage = 10320; } }
+      var days = c.days;
+      if (!days){ days = {}; try { var pats = await db.select('ops_shift_patterns', { eq: { staff_id: s.id } }); pats.forEach(function(p){ if (p.active === false || p.week_start) return; var brk = p.break_start && p.break_end ? toMin(p.break_end) - toMin(p.break_start) : 0; days[p.weekday] = { s: p.start_time.slice(0, 5), e: p.end_time.slice(0, 5), brk: brk >= 45 ? 60 : brk > 0 ? 30 : 0 }; }); } catch(e){} }
+      var start = c.start || todayStr();
+      prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || (start.slice(0, 4) + '-12-31'), payDay: c.payDay || 6, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor) };
+      prepState.uniform = (old && old.uniform && old.uniform.length) ? old.uniform : [{ item: '', size: '', qty: 1 }];
+    }
+    prepKeep = false;
+    var f = prepState.f;
+    var html = topbar('서류 준비 · ' + s.name, true);
+    html += '<div class="muted" style="margin:4px 4px 10px">계약서에 들어갈 조건이에요. 시급은 급여 설정, 근무시간은 근무 패턴에서 가져왔어요. 고친 뒤 저장하면 ' + esc(s.name) + ' 앞으로 서류가 걸려요.</div>';
+    html += '<div class="form">';
+    html += '<div class="grid2"><div><label>주된 근무지</label><select class="in" id="pp-branch">' + base.branches.map(function(b){ return '<option value="' + esc(b.id) + '"' + (b.id === f.branchId ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select></div><div><label>담당업무</label><input class="in" id="pp-duty" value="' + esc(f.duty) + '"></div></div>';
+    html += '<div class="grid2"><div><label>계약 시작일(입사일)</label><input class="in" id="pp-start" type="date" value="' + esc(f.start) + '"></div><div><label>계약 종료일</label><input class="in" id="pp-end" type="date" value="' + esc(f.end) + '"' + (f.noEnd ? ' disabled' : '') + '><label style="margin-top:4px"><input type="checkbox" id="pp-noend"' + (f.noEnd ? ' checked' : '') + '> 기간 정함 없음</label></div></div>';
+    html += '<div class="grid2"><div><label>시급 (원)</label><input class="in" id="pp-wage" type="number" step="10" value="' + esc(f.wage) + '"></div><div><label>임금계약 종료일</label><input class="in" id="pp-wageend" type="date" value="' + esc(f.wageEnd) + '"></div></div>';
+    html += '<div class="grid2"><div><label>급여일 (익월 ○일)</label><input class="in" id="pp-payday" type="number" min="1" max="31" value="' + esc(f.payDay) + '"></div><div><label>식대 (월, 원)</label><input class="in" id="pp-meal" type="number" step="10000" value="' + esc(f.meal) + '"></div></div>';
+    html += '<div><label><input type="checkbox" id="pp-prob"' + (f.probation ? ' checked' : '') + '> 수습기간 3개월 적용</label> &nbsp; <label><input type="checkbox" id="pp-minor"' + (f.minor ? ' checked' : '') + '> 만 18세 미만 (친권자 동의서 추가)</label></div>';
+    html += '<div><label>요일별 근무시간 · 휴게 (비우면 휴무)</label><table class="slip-t" style="margin:0"><tr><th style="width:44px">요일</th><th>시작</th><th>끝</th><th>휴게</th></tr>';
+    [1, 2, 3, 4, 5, 6, 0].forEach(function(i){ var d = f.days[i] || {}; html += '<tr><td class="c"><b>' + WD[i] + '</b></td><td><input class="in pp-ds" data-d="' + i + '" type="time" value="' + esc(d.s || '') + '" style="padding:6px"></td><td><input class="in pp-de" data-d="' + i + '" type="time" value="' + esc(d.e || '') + '" style="padding:6px"></td><td><select class="in pp-db" data-d="' + i + '" style="padding:6px"><option value="0"' + (!d.brk ? ' selected' : '') + '>없음</option><option value="30"' + (d.brk === 30 ? ' selected' : '') + '>30분</option><option value="60"' + (d.brk === 60 ? ' selected' : '') + '>60분</option></select></td></tr>'; });
+    html += '</table></div>';
+    html += '<div><label>유니폼 지급 (품목 · 사이즈 · 수량)</label>';
+    prepState.uniform.forEach(function(u, i){ html += '<div class="inline" style="margin-bottom:6px"><input class="in pp-ui" data-i="' + i + '" placeholder="예: 앞치마" value="' + esc(u.item || '') + '" style="flex:2;min-width:110px"><input class="in pp-us" data-i="' + i + '" placeholder="사이즈" value="' + esc(u.size || '') + '" style="flex:1;min-width:60px"><input class="in pp-uq" data-i="' + i + '" type="number" min="1" value="' + esc(u.qty || 1) + '" style="width:64px"><button class="btn sm" data-act="prep-uni-del" data-i="' + i + '">✕</button></div>'; });
+    html += '<button class="btn sm" data-act="prep-uni-add">+ 품목 추가</button></div>';
+    html += '</div>';
+    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="prep-save">' + (prepState.batchId ? '수정 저장' : '서류 준비 완료 (서명 대기로)') + '</button></div></div>';
+    app.innerHTML = html;
+    var ne = document.getElementById('pp-noend'); if (ne) ne.addEventListener('change', function(){ document.getElementById('pp-end').disabled = ne.checked; });
+  };
+  function prepRead(){
+    var f = prepState.f, g = function(id){ return document.getElementById(id); };
+    if (!g('pp-branch')) return;
+    f.branchId = g('pp-branch').value; f.duty = g('pp-duty').value.trim(); f.start = g('pp-start').value; f.noEnd = g('pp-noend').checked; f.end = f.noEnd ? '' : g('pp-end').value;
+    f.wage = num(g('pp-wage').value); f.wageEnd = g('pp-wageend').value; f.payDay = num(g('pp-payday').value); f.meal = num(g('pp-meal').value); f.probation = g('pp-prob').checked; f.minor = g('pp-minor').checked;
+    var days = {}; app.querySelectorAll('.pp-ds').forEach(function(el){ var i = el.getAttribute('data-d'); var s = el.value, e = app.querySelector('.pp-de[data-d="' + i + '"]').value, brk = +app.querySelector('.pp-db[data-d="' + i + '"]').value; if (s && e) days[i] = { s: s, e: e, brk: brk }; }); f.days = days;
+    prepState.uniform = Array.prototype.map.call(app.querySelectorAll('.pp-ui'), function(el){ var i = el.getAttribute('data-i'); return { item: el.value.trim(), size: app.querySelector('.pp-us[data-i="' + i + '"]').value.trim(), qty: num(app.querySelector('.pp-uq[data-i="' + i + '"]').value) || 1 }; });
+  }
+  async function prepSave(){
+    prepRead();
+    var f = prepState.f, s = base.staff.filter(function(x){ return x.id === prepState.staffId; })[0];
+    if (!f.start){ toast('계약 시작일을 넣어 주세요'); return; }
+    if (!f.noEnd && !f.end){ toast('계약 종료일을 넣거나 "기간 정함 없음"을 켜 주세요'); return; }
+    if (!f.wage || f.wage < 10320){ if (!window.confirm('시급이 2026년 최저임금(10,320원)보다 낮아요. 그래도 저장할까요?')) return; }
+    if (!Object.keys(f.days).length){ if (!window.confirm('근무시간이 비어 있어요. 계약서 근무시간 표가 빈칸으로 나가요. 계속할까요?')) return; }
+    var bn = branchName(f.branchId), addr = (BND().company.sites.filter(function(x){ return bn.indexOf(x[0]) === 0; })[0] || [])[1] || '';
+    var c = { branchId: f.branchId, branchName: bn, branchAddr: addr, start: f.start, end: f.noEnd ? '' : f.end, probation: f.probation, duty: f.duty, wage: f.wage, wageEnd: f.wageEnd, payDay: f.payDay, meal: f.meal, days: f.days, preparedBy: session.name };
+    var data = { c: c, uniform: prepState.uniform.filter(function(u){ return u.item; }), minor: f.minor, staff: { name: s.name }, checks: {} };
+    var batchId = prepState.batchId || uuid4();
+    var keys = BND().list.filter(function(d){ return !d.minorOnly || f.minor; });
+    var rows = keys.map(function(d){ return { batch_id: batchId, staff_id: s.id, branch_id: f.branchId, doc_key: d.key, doc_title: d.title, template_version: BND().version, data: data, status: 'prepared', prepared_by: session.staffId }; });
+    if (prepState.batchId){ if (prepState.rows.some(function(r){ return r.status !== 'prepared'; })){ toast('이미 서명된 묶음은 고칠 수 없어요. 새로 준비해 주세요'); return; } await db.remove('ops_documents', { batch_id: batchId }); }
+    await db.insert('ops_documents', rows);
+    prepState = null; toast(s.name + ' 서류 ' + rows.length + '장을 서명 대기로 걸었어요'); nav('#/docs-admin');
+  }
+
+  // --- 서류 보기 (묶음 하나) ---
+  routes['docs-view'] = async function(params){
+    await loadBase();
+    var rows = await db.select('ops_documents', { eq: { batch_id: params.arg } }); rows.sort(docOrder);
+    if (!rows.length){ toast('서류가 없어요'); nav('#/home'); return; }
+    if (!isManager() && rows[0].staff_id !== session.staffId){ nav('#/home'); return; }
+    var stt = batchStatus({ rows: rows });
+    var html = topbar('서류 · ' + staffName(rows[0].staff_id), true);
+    html += '<div class="inline" style="justify-content:space-between;margin:0 4px 10px">' + batchBadge(stt) + '<span class="muted">' + esc(branchName(rows[0].branch_id)) + ' · 양식 ' + esc(rows[0].template_version) + '</span></div>';
+    html += '<div class="card">';
+    rows.forEach(function(r){
+      html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t">' + esc(r.doc_title) + '</div><div class="s">' + (r.signed_at ? '서명 ' + fmtDT(r.signed_at) : '서명 전') + (r.email_sent_at ? ' · 발송 ' + fmtDT(r.email_sent_at) : '') + '</div></div>' + (r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">PDF 열기</button>' : '<span class="badge muted">PDF 없음</span>') + '</div>';
+    });
+    html += '</div>';
+    var r0 = rows.filter(function(r){ return r.signed_at; })[0] || rows[0];
+    html += '<div class="card section"><div class="sec-h">교부 기록</div><div style="padding:10px 14px;font-size:13px;line-height:1.8">' +
+      '받는 사람: <b>' + esc(r0.email_to || '-') + '</b><br>참조: ' + esc(r0.email_cc || '-') + '<br>보낸 시각: ' + esc(r0.email_sent_at ? fmtDT(r0.email_sent_at) : '-') +
+      (r0.email_error ? '<br><span style="color:var(--danger)">오류: ' + esc(r0.email_error) + '</span>' : '') +
+      '<br>서명 기기: <span class="muted">' + esc(r0.signed_ua || '-') + '</span><br>접속 IP: ' + esc(r0.signed_ip || '-') +
+      (r0.pdf_sha256 ? '<br>PDF 지문: <code>' + esc(r0.pdf_sha256.slice(0, 16)) + '…</code>' : '') + '</div></div>';
+    if (isManager()){
+      html += '<div class="inline" style="margin-top:12px">';
+      if (rows.some(function(r){ return r.pdf_path; })) html += '<button class="btn primary" data-act="docs-resend" data-id="' + esc(params.arg) + '">' + (stt === 'sent' ? '다시 보내기' : '메일 발송') + '</button>';
+      if (stt === 'prepared') html += '<button class="btn danger" data-act="docs-del-batch" data-id="' + esc(params.arg) + '">삭제</button>';
+      html += '</div>';
+    }
+    app.innerHTML = html;
+  };
+
+  // --- 내 서류 (모두) ---
+  routes['my-docs'] = async function(){
+    await loadBase();
+    var rows = await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } });
+    var html = topbar('내 서류', true);
+    var batches = docsByBatch(rows);
+    if (!batches.length) html += '<div class="empty">아직 서류가 없어요. 사장님·매니저가 준비하면 여기와 매장폰 "서류 서명"에 떠요.</div>';
+    batches.forEach(function(bt){
+      var stt = batchStatus(bt);
+      html += '<div class="card section"><div class="sec-h"><span class="sp">' + fmtDT(bt.created_at) + ' 준비 · ' + esc(branchName(bt.branch_id)) + '</span>' + batchBadge(stt) + '</div>';
+      if (stt === 'prepared') html += '<div class="note" style="margin:10px 14px">서명을 기다리는 서류예요. <a href="#/sign" style="text-decoration:underline;font-weight:600">서류 서명</a>에서 이름·비밀번호로 들어가 읽고 서명해 주세요.</div>';
+      bt.rows.forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t">' + esc(r.doc_title) + '</div><div class="s">' + (r.signed_at ? '서명 ' + fmtDT(r.signed_at) : '서명 전') + (r.email_sent_at ? ' · ' + esc(r.email_to) + '로 발송' : '') + '</div></div>' + (r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">PDF 열기</button>' : '') + '</div>'; });
+      if (stt !== 'prepared') html += '<div style="padding:8px 14px"><a class="btn sm" href="#/docs-view/' + esc(bt.id) + '">교부 기록 보기</a></div>';
+      html += '</div>';
+    });
+    app.innerHTML = html;
+  };
+
+  // --- 서류 서명 (매장폰 키오스크, 로그인 없이) ---
+  var signState = { branchId: null, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '' };
+  function signReset(){ signState = { branchId: signState.branchId, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '' }; }
+  function isMinor(){ var st = signState; var a = st.info.birth ? BND().age(st.info.birth, todayStr()) : null; return (a != null && a < 18) || st.docs.some(function(r){ return r.data && r.data.minor; }); }
+  routes.sign = async function(){
+    await loadBase();
+    var st = signState;
+    var b = st.branchId || (session ? (isOwner() ? null : session.branchId) : null);
+    if (!b){ try { b = localStorage.getItem(KIOSK_KEY) || null; } catch(e){} }
+    var html = topbar('서류 서명', !!session);
+    if (!b){
+      html += '<div class="group-title">이 폰이 있는 매장</div><div class="card">' + base.branches.map(function(x){ return '<div class="row" data-act="sign-branch" data-id="' + esc(x.id) + '"><div class="tile" style="background:var(--tile-green)">🏬</div><div class="rt"><div class="rtitle">' + esc(x.name) + '</div></div><div class="chev">›</div></div>'; }).join('') + '</div>';
+      app.innerHTML = html; return;
+    }
+    st.branchId = b;
+    if (!st.staffId){
+      var pending = await db.select('ops_documents', { eq: { status: 'prepared' } });
+      var byStaff = {}; pending.forEach(function(r){ byStaff[r.staff_id] = byStaff[r.staff_id] || r.branch_id; });
+      var people = base.staff.filter(function(s){ return s.active !== false && byStaff[s.id]; });
+      people.sort(function(x, y){ return (byStaff[x.id] === b ? 0 : 1) - (byStaff[y.id] === b ? 0 : 1); });
+      html += '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + esc(branchName(b)) + '</b><span class="muted" data-act="sign-branch-reset" style="cursor:pointer">매장 바꾸기</span></div>';
+      html += '<div class="muted" style="margin:0 4px 10px">내 이름을 누르고 비밀번호 4자리를 넣으면 서명할 서류가 나와요. 여기 이름이 없으면 사장님·매니저에게 "서류 준비"를 부탁하세요.</div>';
+      if (!people.length) html += '<div class="empty">서명을 기다리는 서류가 없어요.</div>';
+      html += '<div class="name-grid">' + people.map(function(s){ return '<button class="btn" data-act="sign-pick" data-id="' + esc(s.id) + '">' + esc(s.name) + (byStaff[s.id] !== b ? '<br><span style="font-size:12px;font-weight:400">' + esc(branchName(byStaff[s.id])) + '</span>' : '') + '</button>'; }).join('') + '</div>';
+      app.innerHTML = html; return;
+    }
+    var s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
+    if (!st.ok){
+      var first = !s.pin;
+      html += '<div class="pin-wrap"><div style="font-size:20px;font-weight:600;margin-bottom:6px">' + esc(s.name) + '</div><div class="muted" style="margin-bottom:14px">' + (first ? '처음이시네요. 앞으로 쓸 비밀번호 4자리를 정해 주세요.' : '비밀번호 4자리') + '</div>';
+      html += '<input class="pin" id="spin1" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
+      if (first) html += '<div class="muted" style="margin:12px 0 6px">한 번 더</div><input class="pin" id="spin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
+      html += '<div style="margin-top:18px"><button class="btn primary" data-act="sign-pin">확인</button></div><div style="margin-top:14px"><span class="muted" data-act="sign-back" style="cursor:pointer">다른 이름</span></div></div>';
+      app.innerHTML = html; var p1 = document.getElementById('spin1'); if (p1) p1.focus(); return;
+    }
+    var total = st.docs.length + 1;
+    function steps(cur){ var h = '<div class="steps">'; for (var i = 0; i < total; i++) h += '<span class="' + (i < cur ? 'done' : i === cur ? 'on' : '') + '"></span>'; return h + '</div>'; }
+    if (st.step === 'info'){
+      var inf = st.info, g = st.guardian, minor = isMinor();
+      html += steps(0) + '<div class="muted" style="margin:0 4px 10px"><b>' + esc(s.name) + '</b> 님, 계약서에 들어갈 본인 정보를 넣어 주세요. 서명이 끝나면 아래 이메일로 서류 PDF가 발송돼요.</div>';
+      html += '<div class="form"><div class="grid2"><div><label>생년월일</label><input class="in" id="si-birth" type="date" value="' + esc(inf.birth || '') + '"></div><div><label>연락처</label><input class="in" id="si-phone" type="tel" inputmode="tel" placeholder="010-0000-0000" value="' + esc(inf.phone || '') + '"></div></div>';
+      html += '<div><label>주소</label><input class="in" id="si-address" placeholder="도로명 주소" value="' + esc(inf.address || '') + '"></div>';
+      html += '<div><label>이메일 (서류를 받을 주소)</label><input class="in" id="si-email" type="email" inputmode="email" autocapitalize="off" placeholder="example@gmail.com" value="' + esc(inf.email || '') + '"></div>';
+      html += '<div><label>이메일 한 번 더</label><input class="in" id="si-email2" type="email" inputmode="email" autocapitalize="off" value="' + esc(inf.email2 || '') + '"></div></div>';
+      html += '<div id="si-guardian" class="' + (minor ? '' : 'hidden') + '"><div class="group-title">친권자(후견인) 정보 (만 18세 미만)</div><div class="form"><div class="grid2"><div><label>성명</label><input class="in" id="sg-name" value="' + esc(g.name || '') + '"></div><div><label>관계</label><input class="in" id="sg-relation" placeholder="예: 부, 모" value="' + esc(g.relation || '') + '"></div></div><div class="grid2"><div><label>생년월일</label><input class="in" id="sg-birth" type="date" value="' + esc(g.birth || '') + '"></div><div><label>연락처</label><input class="in" id="sg-phone" type="tel" value="' + esc(g.phone || '') + '"></div></div><div><label>주소</label><input class="in" id="sg-address" value="' + esc(g.address || '') + '"></div></div></div>';
+      html += '<div class="stickybar"><div class="inner"><button class="btn" data-act="sign-back">취소</button><button class="btn primary block" data-act="sign-info-next">다음 (서류 읽기)</button></div></div>';
+      app.innerHTML = html;
+      var bi = document.getElementById('si-birth'); if (bi) bi.addEventListener('change', function(){ var a = bi.value ? BND().age(bi.value, todayStr()) : null; document.getElementById('si-guardian').classList.toggle('hidden', !((a != null && a < 18) || st.docs.some(function(r){ return r.data && r.data.minor; }))); });
+      return;
+    }
+    if (st.step === 'doc'){
+      var row = st.docs[st.idx], def = BND().byKey(row.doc_key), isG = !!def.guardianSign;
+      var settings = await loadDocsSettings().catch(function(){ return {}; });
+      var data = Object.assign({}, row.data, { staff: Object.assign({ name: s.name }, st.info), guardian: st.guardian });
+      var ctx = docCtx(Object.assign({}, row, { data: data }), { sig: st.sig, gsig: st.gsig, seal: settings.seal, signedAt: todayStr(), signedTime: hm(nowIso()), checks: st.checks[row.doc_key] || {} });
+      html += steps(st.idx + 1) + '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + (st.idx + 1) + '/' + st.docs.length + ' · ' + esc(row.doc_title) + '</b><span class="muted">' + esc(s.name) + '</span></div>';
+      html += '<div class="muted" style="margin:0 4px 8px">끝까지 읽은 뒤 아래 항목에 체크하고 서명해 주세요.</div>';
+      html += '<div class="docview">' + BND().render(row.doc_key, ctx) + '</div>';
+      if (def.checks.length){ html += '<div class="card" style="margin-top:10px">' + def.checks.map(function(c){ return '<label class="chk"><input type="checkbox" class="sign-chk" data-id="' + esc(c.id) + '"' + ((st.checks[row.doc_key] || {})[c.id] ? ' checked' : '') + '><span>' + esc(c.text) + '</span></label>'; }).join('') + '</div>'; }
+      if (isG){
+        html += st.gsig ? '<div class="sigprev" style="margin-top:10px"><img src="' + st.gsig + '" alt="친권자 서명"><div class="muted"><span data-act="gsig-redo" style="cursor:pointer;text-decoration:underline">친권자 서명 다시 그리기</span></div></div>' : sigPadHtml('gsigpad', '친권자(후견인) 서명');
+        html += '<div class="muted" style="margin:8px 4px">친권자가 지금 함께 있지 않으면 <b>서명 없이 넘기기</b>를 누르세요. 서명 없는 동의서가 메일로 가고, 종이로 서명받아 제출하면 돼요.</div>';
+      } else {
+        html += st.sig ? '<div class="sigprev" style="margin-top:10px"><img src="' + st.sig + '" alt="서명"><div class="muted">이 서명이 이 서류에 들어가요 · <span data-act="sig-redo" style="cursor:pointer;text-decoration:underline">다시 그리기</span></div></div>' : sigPadHtml('sigpad', '본인 서명');
+      }
+      html += '<div class="stickybar"><div class="inner">' + (st.idx > 0 ? '<button class="btn" data-act="sign-prev">이전</button>' : '<button class="btn" data-act="sign-back">취소</button>') + (isG ? '<button class="btn" data-act="sign-gskip">서명 없이 넘기기</button>' : '') + '<button class="btn primary block" data-act="sign-doc-next">' + (st.idx + 1 < st.docs.length ? '서명하고 다음' : '서명하고 완료') + '</button></div></div>';
+      app.innerHTML = html; initSigPad('sigpad'); initSigPad('gsigpad'); return;
+    }
+    if (st.step === 'finish'){
+      html += steps(total) + '<div class="pin-wrap"><div style="font-size:20px;font-weight:600;margin-bottom:10px">서류를 만들어 보내는 중이에요</div><div class="muted" id="sign-progress">' + esc(st.progress || '잠시만요…') + '</div><div class="muted" style="margin-top:10px">이 화면을 닫지 마세요 (30초쯤 걸려요)</div></div>';
+      app.innerHTML = html; return;
+    }
+    if (st.step === 'done'){
+      var r = st.result || {};
+      html += '<div class="pin-wrap">';
+      if (r.ok) html += '<div style="font-size:40px">✅</div><div style="font-size:20px;font-weight:600;margin:8px 0">서명이 끝났어요</div><div class="muted">서류 ' + st.docs.length + '장을 <b>' + esc(r.to) + '</b>' + (r.cc ? ' (참조: 사장님)' : '') + '로 보냈어요.<br>메일함(스팸함 포함)을 확인해 주세요. 앱 "내 서류"에서도 언제든 볼 수 있어요.</div>';
+      else if (r.fatal) html += '<div style="font-size:40px">⚠️</div><div style="font-size:20px;font-weight:600;margin:8px 0">저장 중 문제가 생겼어요</div><div class="note danger" style="text-align:left">' + esc(r.error) + '</div><div class="muted" style="margin-top:8px">사장님·매니저에게 알려 주세요. 다시 시도해도 돼요.</div>';
+      else html += '<div style="font-size:40px">📄</div><div style="font-size:20px;font-weight:600;margin:8px 0">서명은 저장됐어요</div><div class="note" style="text-align:left">메일 발송은 실패했어요: ' + esc(r.error) + '</div><div class="muted" style="margin-top:8px">사장님·매니저가 "입사 서류"에서 <b>재발송</b>하면 돼요. 서명 기록은 이미 남아 있어요.</div>';
+      html += '<div style="margin-top:20px"><button class="btn primary" data-act="sign-restart">처음으로</button></div></div>';
+      app.innerHTML = html; return;
+    }
+    app.innerHTML = html + '<div class="empty">…</div>';
+  };
+  async function signPin(){
+    var st = signState, s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
+    var p1 = (document.getElementById('spin1') || {}).value || '';
+    if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
+    if (!s.pin){ var p2 = (document.getElementById('spin2') || {}).value || ''; if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; } await db.update('manual_staff', { id: s.id }, { pin: p1 }); s.pin = p1; }
+    else if (s.pin !== p1){ toast('비밀번호가 틀려요'); return; }
+    var rows = await db.select('ops_documents', { eq: { staff_id: s.id, status: 'prepared' } });
+    if (!rows.length){ toast('서명할 서류가 없어요'); signReset(); render(); return; }
+    var batches = docsByBatch(rows); var bt = batches[0];
+    st.batchId = bt.id; st.docs = bt.rows; st.ok = true; st.step = 'info'; st.idx = 0;
+    var d = bt.rows[0].data || {}; st.info = Object.assign({}, d.staff || {}); delete st.info.name; st.guardian = Object.assign({}, d.guardian || {});
+    render();
+  }
+  async function signInfoNext(){
+    var st = signState, g = function(id){ return (document.getElementById(id) || {}).value || ''; };
+    var inf = { birth: g('si-birth'), phone: g('si-phone').trim(), address: g('si-address').trim(), email: g('si-email').trim().toLowerCase(), email2: g('si-email2').trim().toLowerCase() };
+    if (!inf.birth){ toast('생년월일을 넣어 주세요'); return; }
+    if (!inf.phone){ toast('연락처를 넣어 주세요'); return; }
+    if (!inf.address){ toast('주소를 넣어 주세요'); return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inf.email)){ toast('이메일 주소를 확인해 주세요'); return; }
+    if (inf.email !== inf.email2){ toast('이메일 두 개가 서로 달라요'); return; }
+    st.info = inf;
+    if (isMinor()){
+      st.guardian = { name: g('sg-name').trim(), relation: g('sg-relation').trim(), birth: g('sg-birth'), phone: g('sg-phone').trim(), address: g('sg-address').trim() };
+      if (!st.guardian.name || !st.guardian.relation){ toast('친권자 성명과 관계를 넣어 주세요'); return; }
+      if (!st.docs.some(function(r){ return r.doc_key === 'guardian'; })){
+        var def = BND().byKey('guardian'), r0 = st.docs[0];
+        var ins = await db.insert('ops_documents', { batch_id: st.batchId, staff_id: r0.staff_id, branch_id: r0.branch_id, doc_key: 'guardian', doc_title: def.title, template_version: r0.template_version, data: Object.assign({}, r0.data, { minor: true }), status: 'prepared', prepared_by: r0.prepared_by });
+        st.docs.push(ins[0]); st.docs.sort(docOrder);
+      }
+    }
+    st.step = 'doc'; st.idx = 0; render();
+  }
+  function signReadChecks(){ var st = signState, row = st.docs[st.idx], m = {}; app.querySelectorAll('.sign-chk').forEach(function(el){ m[el.getAttribute('data-id')] = el.checked; }); st.checks[row.doc_key] = m; return m; }
+  async function signDocNext(skipG){
+    var st = signState, row = st.docs[st.idx], def = BND().byKey(row.doc_key);
+    var m = signReadChecks();
+    var missing = def.checks.filter(function(c){ return !m[c.id]; });
+    if (missing.length){ toast('동의 항목에 모두 체크해 주세요'); return; }
+    if (def.guardianSign){
+      if (!skipG){ var gd = sigPadData('gsigpad'); if (gd) st.gsig = gd; if (!st.gsig){ toast('친권자 서명을 그리거나 "서명 없이 넘기기"를 눌러 주세요'); return; } }
+    } else {
+      var d = sigPadData('sigpad'); if (d) st.sig = d;
+      if (!st.sig){ toast('서명을 그려 주세요'); return; }
+    }
+    if (st.idx + 1 < st.docs.length){ st.idx++; render(); window.scrollTo(0, 0); return; }
+    st.step = 'finish'; st.busy = true; render();
+    signFinish();
+  }
+  function setSignProgress(t){ signState.progress = t; var p = document.getElementById('sign-progress'); if (p) p.textContent = t; }
+  async function signFinish(){
+    var st = signState;
+    try {
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      var settings = await loadDocsSettings().catch(function(){ return {}; });
+      var s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
+      var dir = st.staffId + '/' + st.batchId + '/', ts = Date.now();
+      var sigPath = null, gsigPath = null;
+      if (st.sig){ sigPath = dir + 'signature_' + ts + '.png'; await db.upload(DOCS_BUCKET, sigPath, await (await fetch(st.sig)).blob(), 'image/png'); }
+      if (st.gsig){ gsigPath = dir + 'guardian_signature_' + ts + '.png'; await db.upload(DOCS_BUCKET, gsigPath, await (await fetch(st.gsig)).blob(), 'image/png'); }
+      var signedAt = todayStr(), signedTime = hm(nowIso()), now = nowIso();
+      for (var i = 0; i < st.docs.length; i++){
+        var row = st.docs[i];
+        setSignProgress('PDF 만드는 중 (' + (i + 1) + '/' + st.docs.length + ') · ' + row.doc_title);
+        var data = Object.assign({}, row.data, { staff: Object.assign({ name: s.name }, st.info), guardian: st.guardian, checks: st.checks[row.doc_key] || {}, guardian_signed: !!st.gsig, minor: (row.data && row.data.minor) || isMinor() });
+        var ctx = docCtx(Object.assign({}, row, { data: data, signed_at: null }), { sig: st.sig, gsig: st.gsig, seal: settings.seal, signedAt: signedAt, signedTime: signedTime, checks: st.checks[row.doc_key] || {} });
+        var blob = await docPdf(row.doc_key, ctx);
+        var path = dir + row.doc_key + '_' + ts + '.pdf';
+        await db.upload(DOCS_BUCKET, path, blob, 'application/pdf');
+        var sha = await sha256(blob);
+        await db.update('ops_documents', { id: row.id }, { status: 'signed', data: data, signature_path: row.doc_key === 'guardian' ? gsigPath : sigPath, pdf_path: path, pdf_sha256: sha, signed_at: now, signed_ua: navigator.userAgent.slice(0, 300), email_to: st.info.email, updated_at: now });
+      }
+      setSignProgress('메일 보내는 중…');
+      try { var r = await db.sendDocs(st.batchId); st.result = { ok: true, to: r.sent_to || st.info.email, cc: r.cc }; }
+      catch(e){ st.result = { ok: false, error: e.message || String(e) }; }
+    } catch(e){ console.error(e); st.result = { ok: false, fatal: true, error: e.message || String(e) }; }
+    st.busy = false; st.step = 'done'; render();
+  }
+  async function docsResend(batchId, el){
+    if (el) el.disabled = true;
+    try { var r = await db.sendDocs(batchId); toast((r.sent_to || '직원') + '로 보냈어요'); }
+    catch(e){ toast('발송 실패: ' + (e.message || e)); }
+    finally { if (el) el.disabled = false; }
+    render();
+  }
+
   // ===== 이벤트 =====
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
@@ -1856,6 +2278,29 @@
         case 'cards-add': cardsRead(); cardsState.push({ last4: '', name: '', branch_id: null, ask_branch: false, active: true }); cardsKeep = true; render(); break;
         case 'cards-toggle': { cardsRead(); var cc = cardsState[+el.getAttribute('data-i')]; cc.active = cc.active === false; cardsKeep = true; render(); break; }
         case 'cards-save': await cardsSave(); break;
+        // 입사 서류
+        case 'docs-new-staff': { var nn = window.prompt('새 직원 이름'); if (!nn) break; nn = nn.trim(); if (!nn) break; if (base.staff.some(function(x){ return x.name === nn && x.active !== false; })){ toast('이미 명단에 있는 이름이에요'); break; } var nr = await db.insert('manual_staff', { name: nn, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast(nn + ' 추가했어요'); nav('#/docs-prep/' + nr[0].id); break; }
+        case 'docs-del-batch': if (window.confirm('준비한 서류를 지울까요? (서명 전 서류만 지워져요)')){ await db.remove('ops_documents', { batch_id: id }); toast('지웠어요'); if (current.route === 'docs-view') nav('#/docs-admin'); else render(); } break;
+        case 'docs-resend': await docsResend(id, el); break;
+        case 'docs-open-pdf': { var du = await db.signedUrl(DOCS_BUCKET, el.getAttribute('data-path')); window.open(du, '_blank'); break; }
+        case 'docs-settings-save': await docsSettingsSave(); break;
+        case 'docs-seal-remove': await saveDocsSettings({ seal: null }); toast('직인을 지웠어요'); render(); break;
+        case 'prep-uni-add': prepRead(); prepState.uniform.push({ item: '', size: '', qty: 1 }); prepKeep = true; render(); break;
+        case 'prep-uni-del': prepRead(); prepState.uniform.splice(+el.getAttribute('data-i'), 1); if (!prepState.uniform.length) prepState.uniform.push({ item: '', size: '', qty: 1 }); prepKeep = true; render(); break;
+        case 'prep-save': el.disabled = true; try { await prepSave(); } finally { el.disabled = false; } break;
+        case 'sign-branch': signState.branchId = id; try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} render(); break;
+        case 'sign-branch-reset': signState.branchId = null; try { localStorage.removeItem(KIOSK_KEY); } catch(err){} if (session && !isOwner()){ toast('내 매장에서만 서명할 수 있어요'); break; } render(); break;
+        case 'sign-pick': signState.staffId = id; signState.ok = false; render(); break;
+        case 'sign-back': signReset(); render(); break;
+        case 'sign-pin': await signPin(); break;
+        case 'sign-info-next': el.disabled = true; try { await signInfoNext(); } finally { el.disabled = false; } break;
+        case 'sign-prev': signReadChecks(); var sd = sigPadData('sigpad'); if (sd) signState.sig = sd; signState.idx = Math.max(0, signState.idx - 1); render(); break;
+        case 'sign-doc-next': el.disabled = true; try { await signDocNext(false); } finally { el.disabled = false; } break;
+        case 'sign-gskip': el.disabled = true; try { await signDocNext(true); } finally { el.disabled = false; } break;
+        case 'sig-clear': sigPadClear(id); break;
+        case 'sig-redo': signReadChecks(); signState.sig = null; render(); break;
+        case 'gsig-redo': signReadChecks(); signState.gsig = null; render(); break;
+        case 'sign-restart': signReset(); render(); break;
       }
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
@@ -1865,7 +2310,7 @@
     var el = e.target.closest('[data-act="role"]'); if (!el) return;
     try { await db.update('manual_staff', { id: el.getAttribute('data-id') }, { role: el.value }); toast('역할을 바꿨어요'); render(); } catch(err){ toast('실패: ' + (err.message || err)); }
   });
-  app.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); pinGo(); } });
+  app.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
   app.addEventListener('input', function(e){
     if (current.route !== 'check' || !e.target.classList.contains('qty')) return;
     e.target.classList.toggle('filled', e.target.value !== '');
