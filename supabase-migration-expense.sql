@@ -65,7 +65,8 @@ from (values
   ('6365', '중계 카드 1', '중계점', false, 4),
   ('9468', '중계 카드 2', '중계점', false, 5),
   ('2098', '답십리 카드', '답십리점', false, 6),
-  ('2189', '미정 카드', null, true, 7)
+  ('2189', '왕십리 1층 매장 카드', '왕십리점', false, 7),
+  ('7702', '왕십리 베이킹실 카드', '왕십리점', false, 8)
 ) as v(last4, name, branch, ask, ord)
 where not exists (select 1 from ops_cards c where c.last4 = v.last4);
 
@@ -80,3 +81,8 @@ create table if not exists ops_merchant_rules (
 alter table ops_merchant_rules enable row level security;
 drop policy if exists "anon full access" on ops_merchant_rules;
 create policy "anon full access" on ops_merchant_rules for all using (true) with check (true);
+
+-- 6. 가맹점 기억 씨앗: 8/4 페이스토리 49,000원 = 성동구청 음식물 쓰레기 스티커(왕십리 1층 카드 2189) — 사장님 확인 2026-09-19
+insert into ops_merchant_rules (merchant_key, merchant_name, branch_id, category)
+select '페이스토리', '주식회사 페이스토리', (select id from manual_branches where name = '왕십리점' limit 1), '공과금·통신'
+where not exists (select 1 from ops_merchant_rules where merchant_key = '페이스토리');
