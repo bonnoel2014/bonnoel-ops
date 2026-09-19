@@ -4,6 +4,7 @@
 
 **앱 주소: https://sungpil-1225.github.io/bonnoel-ops/** (GitHub Pages. main에 push하면 1분 안에 자동 반영) 홈 화면 하나에 아이콘별로 도구가 붙습니다.
 
+- 6차(완성): **입사 서류**(사장님·매니저가 계약 조건 준비 → 신입이 매장폰 `#/sign`에서 이름·비밀번호로 들어와 근로계약서·임금계약서, 개인정보 동의서, 서약서, CCTV 동의서, 유니폼 지급대장(+미성년자 친권자 동의서)을 읽고 손가락 서명 → PDF를 직원 메일 + 사장님 메일로 자동 발송, 교부 기록 보관) · **내 서류**(직원이 다시 보기) — 테이블·저장소는 [`supabase-migration-docs.sql`](supabase-migration-docs.sql), 양식은 [`docs-templates.js`](docs-templates.js), 메일 함수는 [`supabase/functions/send-document/index.ts`](supabase/functions/send-document/index.ts). 설정 순서는 아래 "입사 서류 설정". 설계: [기획/입사서류_설계.md](기획/입사서류_설계.md)
 - 5차(완성): **영수증 올리기**(법인카드 영수증 사진 → 가게명·날짜·금액·카드 끝자리 자동 읽기 → 지점·항목 확인 → 저장) · **카드 지출**(월별·지점별 목록, 수정·삭제, 사진 보기) · **합계표**(지점×항목, 카드별, CSV) · **명세서 대조**(카드사 이용내역 붙여넣기 → 일치 ✓ / 금액 다름 / 영수증 없음 → 바로 등록) · **카드 설정**(사장님) — 테이블·저장소는 [`supabase-migration-expense.sql`](supabase-migration-expense.sql), 자동 읽기 함수는 [`supabase/functions/read-receipt/index.ts`](supabase/functions/read-receipt/index.ts). 설정 순서는 아래 "카드 지출 설정".
 - 1차(지금): **홈** · **비품 체크** · **부족·주문** · **도착 확인** · **점간 이동** · **비품 설정** · **직원·비밀번호** + 매뉴얼북·로그북 링크
 - 4차(완성): **급여 설정**(시급·4대보험/3.3%·부양가족·이메일·요율) · **급여 초안**(출퇴근 기록 → 기본급·주휴·야간·연장·4대보험 공제, 소득세는 간이세액표 값 입력, 확정은 사장님) · **명세서**(휴람 양식, 인쇄·PDF) — 테이블은 [`supabase-migration-pay.sql`](supabase-migration-pay.sql)
@@ -55,6 +56,20 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 명세서 대조에서 "영수증 없음"은 **같은 가맹점끼리 한 줄로 묶여요** (우버택시 245건 → 한 줄). 지점·항목을 고르고 [등록]하면 그 가맹점 결제가 전부 들어가고, 다 골랐으면 [전부 등록] 한 번이면 끝. 한 번 고른 가맹점은 **기억**해서 다음 달부터 자동으로 채워져요(초록 "기억" 표시). 영수증 올리기에서도 같은 가게면 항목이 자동으로 채워져요.
 
 명세서 대조 규칙: 같은 금액 + 날짜 2일 이내(+카드 끝 4자리가 있으면 같아야) = 일치. 날짜·가게는 같은데 금액만 다르면 "금액 다름". 취소(−금액) 줄은 뺌. 지점이 `공통(사장님)`인 지출은 특정 매장에 넣지 않은 것.
+
+## 입사 서류 설정 (6차) — 처음 한 번
+
+근로계약서를 매장폰에서 전자서명하고, 서명 즉시 PDF가 직원 메일과 사장님 메일로 자동 발송됩니다(근로기준법 17조의 전자문서 교부). "교부를 못 받았다"는 말이 나올 수 없게 서명 시각·기기·IP·발송 기록이 남습니다.
+
+1. **테이블·저장소 만들기**: Supabase 대시보드 → SQL Editor → New query → [`supabase-migration-docs.sql`](supabase-migration-docs.sql) 전체 붙여넣기 → Run. (서류 표 `ops_documents`와 `documents` 저장소가 생김. 여러 번 실행해도 안전)
+2. **메일 함수 올리기**: Edge Functions → Deploy a new function → **Via Editor** → 이름 `send-document` → [`supabase/functions/send-document/index.ts`](supabase/functions/send-document/index.ts) 내용을 전부 붙여넣기 → Deploy → 함수 상세에서 **Verify JWT** 끄기.
+3. **비밀값 넣기**: Edge Functions → Secrets → `GMAIL_USER` = bonnoel.news@gmail.com, `GMAIL_APP_PASSWORD` = 그 계정의 앱 비밀번호 16자리(카드뉴스 발송에 쓰는 것과 같은 값), `OWNER_EMAIL` = bonnoel2014@naver.com. (선택) `APP_KEY` = index.html의 `sb_publishable_…` 값.
+4. **앱 설정**: 홈 → 입사 서류 → 아래 "설정(사장님)"에서 사본 메일 확인, 직인 이미지(투명 PNG)가 있으면 등록.
+5. **써 보기**: 입사 서류 → 직원 [준비] → 조건 확인 후 저장 → 매장폰에서 홈 → **서류 서명**(또는 주소 뒤에 `#/sign`) → 이름·비밀번호 → 정보 입력 → 서류 읽고 체크·서명 → 완료 화면에 "○○로 보냈어요"가 뜨면 성공. 실패하면 "입사 서류"에서 상태가 "발송 실패"로 남고 [재발송]으로 다시 보낼 수 있어요.
+
+지메일 SMTP가 서버에서 막히면(발송 실패에 연결 오류가 뜨면) Secrets에 `MAIL_PROVIDER`=resend, `RESEND_API_KEY`, `MAIL_FROM`(인증한 도메인 주소)을 넣어 Resend로 바꿀 수 있어요.
+
+양식 문구는 노무사 양식 그대로이고, 다음만 다릅니다: 주민등록번호 칸은 "별도 서면 제출"(앱에 주민번호를 저장하지 않음), 서약서의 주민번호 칸 → 생년월일, 근무장소에 "(주된 근무지: 지점·주소)" 덧붙임, 유니폼 지급대장은 양식이 없어 앱에서 만든 표. 문구를 고치면 `docs-templates.js`의 `VERSION`을 올리세요(예전 서명은 예전 버전으로 남음).
 
 ## 시연 모드
 

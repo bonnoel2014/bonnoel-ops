@@ -40,15 +40,15 @@
   function age(birth, on){ if (!birth) return null; var b = new Date(birth + 'T00:00:00'), d = new Date((on || new Date().toISOString().slice(0, 10)) + 'T00:00:00'); var a = d.getFullYear() - b.getFullYear(); if (d.getMonth() < b.getMonth() || (d.getMonth() === b.getMonth() && d.getDate() < b.getDate())) a--; return a; }
 
   var CSS = '<style>' +
-    '.bnd{font-family:"Noto Sans KR","Malgun Gothic",sans-serif;color:#111;background:#fff;font-size:10.5pt;line-height:1.55}' +
+    '.bnd{font-family:"Noto Sans KR","Malgun Gothic",sans-serif;color:#111;background:#fff;font-size:10pt;line-height:1.5}' +
     '.bnd .page{width:190mm;padding:2mm 3mm 4mm;box-sizing:border-box;background:#fff;page-break-after:always;position:relative}' +
     '.bnd .page:last-child{page-break-after:auto}' +
     '.bnd h1{font-size:19pt;text-align:center;margin:0 0 12px;letter-spacing:6px;font-weight:700}' +
-    '.bnd h2{font-size:11pt;margin:11px 0 3px;font-weight:700}' +
+    '.bnd h2{font-size:10.5pt;margin:9px 0 2px;font-weight:700}' +
     '.bnd p{margin:0 0 4px;text-align:justify;word-break:keep-all}' +
     '.bnd .kp{page-break-inside:avoid}' +
     '.bnd table{width:100%;border-collapse:collapse;margin:6px 0;font-size:9.5pt;page-break-inside:avoid}' +
-    '.bnd th,.bnd td{border:1px solid #333;padding:4px 6px;vertical-align:middle}' +
+    '.bnd th,.bnd td{border:1px solid #333;padding:3px 5px;vertical-align:middle}' +
     '.bnd th{background:#f0ede6;font-weight:600;text-align:center;white-space:nowrap}' +
     '.bnd td.c{text-align:center}' +
     '.bnd .bl{display:inline-block;border-bottom:1px solid #333;min-width:60px;height:1em;vertical-align:baseline}' +
@@ -102,12 +102,12 @@
       '<tr><th rowspan="3">근로자</th><th>성명</th><td>' + v(s.name) + '</td><th>주민등록번호</th><td class="small muted">별도 서면 제출</td></tr>' +
       '<tr><th>연락처</th><td>' + v(s.phone) + '</td><th>입사일</th><td>' + (c.start ? kd(c.start) : v('')) + '</td></tr>' +
       '<tr><th>주소</th><td colspan="3">' + v(s.address, 200) + '</td></tr></table>' +
-      '<table><tr><th>요일</th><th>시업시간</th><th>종업시간</th><th>휴게시간</th></tr>' +
-      [1, 2, 3, 4, 5, 6, 0].map(function(i){ return '<tr>' + dayRow(i) + '</tr>'; }).join('') + '</table>' +
-      '<p class="small">※연장.야간.휴일근로 동의 ' + box(ch.ot) + ' &nbsp; ' + sig(ctx.sig, s.name, '【동의자 성명(서명)】') + '</p>' +
       foot(ctx, '근로계약서') +
       '</div>';
     h += '<div class="page">' +
+      '<table><tr><th>요일</th><th>시업시간</th><th>종업시간</th><th>휴게시간</th></tr>' +
+      [1, 2, 3, 4, 5, 6, 0].map(function(i){ return '<tr>' + dayRow(i) + '</tr>'; }).join('') + '</table>' +
+      '<p class="small">※연장.야간.휴일근로 동의 ' + box(ch.ot) + ' &nbsp; ' + sig(ctx.sig, s.name, '【동의자 성명(서명)】') + '</p>' +
       '<p>⑤ 약정된 근로일에 부득이한 사정으로 결근 시 본인의 책임하에 대체 근무자를 확보한 후 휴무하여야 한다.</p>' +
       '<h2>제5조【휴일 및 휴가】</h2>' +
       '<p>① 1주 소정근로일을 개근하지 않았거나 1주 소정근로시간이 15시간 미만인 경우 주휴일의 적용이 없다.</p>' +
