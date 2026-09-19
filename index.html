@@ -1597,27 +1597,49 @@
   // --- 카드사 명세서 대조 ---
   // 엑셀에서 복사한 표(탭 구분)를 한 줄씩 읽어 날짜·금액·가게·끝4자리를 찾음. 열 순서는 카드사마다 달라서 형태로 판단.
   function parseStatement(text, ym){
-    var out = [];
+    var out = [], col = null;
+    var toDate = function(t){ var m; t = t.trim();
+      if ((m = t.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/))) return m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]);
+      if ((m = t.match(/^(\d{2})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/))) return '20' + m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]);   // 26.08.10
+      if ((m = t.match(/^(20\d{2})(\d{2})(\d{2})$/))) return m[1] + '-' + m[2] + '-' + m[3];
+      if ((m = t.match(/^(\d{1,2})[.\/](\d{1,2})\.?$/))) return ym.slice(0, 4) + '-' + pad(+m[1]) + '-' + pad(+m[2]);
+      return null; };
+    var toAmt = function(t){ t = t.replace(/\s/g, ''); if (!/^-?[\d,]+원?$/.test(t)) return null; var n = parseInt(t.replace(/[^\d-]/g, ''), 10); return isNaN(n) ? null : n; };
+    var last4Of = function(t){ var m = /[*xX]/.test(t) && t.match(/(\d{4})\D*$/); return m ? m[1] : null; };
     text.split(/\r?\n/).forEach(function(line){
-      line = line.trim(); if (!line) return;
-      var toks = (line.indexOf('\t') >= 0 ? line.split('\t') : line.split(/\s{2,}|,(?!\d{3}\b)/)).map(function(t){ return t.trim(); }).filter(Boolean);
-      var date = null, last4 = null, merchant = '', amts = [];
-      toks.forEach(function(t){
-        var m;
-        if (!date && (m = t.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/))){ date = m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]); return; }
-        if (!date && (m = t.match(/^(20\d{2})(\d{2})(\d{2})$/))){ date = m[1] + '-' + m[2] + '-' + m[3]; return; }
-        if (!date && (m = t.match(/^(\d{1,2})[.\/](\d{1,2})\.?$/))){ date = ym.slice(0, 4) + '-' + pad(+m[1]) + '-' + pad(+m[2]); return; }
-        if (!last4 && /[*xX]/.test(t) && (m = t.match(/(\d{4})\D*$/))){ last4 = m[1]; return; }
-        if (/^-?[\d,]+원?$/.test(t)){ var n = parseInt(t.replace(/[^\d-]/g, ''), 10); if (!isNaN(n) && Math.abs(n) >= 100 && String(Math.abs(n)).length <= 8) amts.push({ n: n, comma: t.indexOf(',') >= 0 }); return; }
-        if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) return;
-        if (/[가-힣A-Za-z]/.test(t) && !/^(일시불|할부|승인|취소|국내|해외|일반|체크|신용)$/.test(t) && t.length > merchant.length) merchant = t;
-      });
-      var amount = null, withComma = amts.filter(function(a){ return a.comma; });
-      if (withComma.length) amount = withComma[0].n; else if (amts.length) amount = amts.sort(function(a, b){ return Math.abs(b.n) - Math.abs(a.n); })[0].n;
+      if (!line.trim()) return;
+      var toks = (line.indexOf('\t') >= 0 ? line.split('\t') : line.split(/\s{2,}|,(?!\d{3}\b)/)).map(function(t){ return t.trim(); });
+      // 머리글 줄이면 열 위치를 기억해 둠 (카드사마다 열 순서가 달라서). 머리글이 없으면 아래에서 형태로 추측.
+      var hi = function(re){ for (var i = 0; i < toks.length; i++) if (re.test(toks[i].replace(/\s/g, ''))) return i; return -1; };
+      var ai = hi(/^(이용금액|승인금액|결제금액|거래금액|이용액|금액)$/), di = hi(/^(이용일자?|승인일자?|거래일자?|결제일자?|이용일시|승인일시|일자)$/);
+      if (ai >= 0 && di >= 0){ col = { date: di, amount: ai, merchant: hi(/^(가맹점명?|이용가맹점|이용처|거래처|사용처|상호)$/), card: hi(/^(카드번호|카드)$/) }; return; }
+      var date = null, amount = null, last4 = null, merchant = '';
+      if (col){
+        date = toDate(toks[col.date] || ''); amount = toAmt(toks[col.amount] || '');
+        if (col.merchant >= 0) merchant = toks[col.merchant] || '';
+        if (col.card >= 0) last4 = last4Of(toks[col.card] || '');
+        if (!last4) toks.forEach(function(t){ if (!last4) last4 = last4Of(t); });
+      }
+      if (date == null || amount == null){
+        date = null; amount = null; var amts = [];
+        toks.filter(Boolean).forEach(function(t){
+          if (!date && (date = toDate(t))) return;
+          if (!last4 && (last4 = last4Of(t))) return;
+          if (/^0\d{5,}$/.test(t)) return;   // 0으로 시작하는 긴 숫자 = 승인번호
+          var n = toAmt(t); if (n != null){ if (Math.abs(n) >= 100 && (t.indexOf(',') >= 0 || String(Math.abs(n)).length <= 7)) amts.push({ n: n, comma: t.indexOf(',') >= 0 }); return; }
+          if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) return;
+          if (!merchant && /[가-힣A-Za-z]/.test(t) && !/^(일시불|할부|승인|취소|국내|해외|일반|체크|신용)$/.test(t)) merchant = t;
+        });
+        var withComma = amts.filter(function(a){ return a.comma; });
+        if (withComma.length) amount = withComma[0].n; else if (amts.length) amount = amts.sort(function(a, b){ return Math.abs(b.n) - Math.abs(a.n); })[0].n;
+      }
       if (date && amount != null) out.push({ date: date, amount: Math.abs(amount), last4: last4, merchant: merchant, raw: line, cancel: amount < 0 || /취소/.test(line) });
     });
     return out;
   }
+  // 명세서 줄들이 걸친 기간 (+앞뒤 3일). 카드사 명세서는 달력 월이 아니라 결제 주기라 두 달에 걸칠 수 있음
+  function stmtRange(rows, ym){ if (!rows || !rows.length) return monthRange(ym); var min = rows[0].date, max = rows[0].date; rows.forEach(function(r){ if (r.date < min) min = r.date; if (r.date > max) max = r.date; }); return { from: addDays(min, -3), to: addDays(max, 3) }; }
+  async function loadExpensesBetween(mr){ return (await db.select('ops_expenses', { gte: { spent_on: mr.from }, order: { col: 'spent_on', asc: false } })).filter(function(x){ return x.spent_on <= mr.to; }); }
   function daysDiff(a, b){ return Math.abs((dateObj(a) - dateObj(b)) / 86400000); }
   // 명세서 줄 ↔ 영수증: 같은 금액 + 날짜 2일 이내 (+ 끝4자리 있으면 같아야) = 일치. 날짜·가게는 같은데 금액만 다르면 "금액 다름".
   function matchStatement(rows, exps){
@@ -1639,12 +1661,14 @@
     if (!isManager()){ nav('#/expense'); return; }
     var ym = ymOf(params.arg);
     if (stmtState.ym !== ym) stmtState = { ym: ym, text: '', rows: null };
-    var r = await Promise.all([ loadExpenses(ym), loadCards() ]); var cards = r[1];
+    var mr = stmtRange(stmtState.rows, ym);
+    var r = await Promise.all([ loadExpensesBetween(mr), loadCards() ]); var cards = r[1];
     var exps = isOwner() ? r[0] : r[0].filter(function(x){ return x.branch_id === session.branchId; });
     var html = topbar('명세서 대조', true) + monthNav(ym, function(m){ return '#/expense-import/' + m; });
-    html += '<div class="form"><div class="muted">카드사 홈페이지·앱에서 이 달 이용내역을 엑셀로 받아 열고, 표를 전체 선택(Ctrl+A)·복사해서 아래에 붙여 넣으세요. 한 줄에 날짜·가게·금액이 있으면 돼요. 카드번호(끝 4자리)가 있으면 더 정확해요.</div><textarea class="in" id="stmt-text" rows="6" placeholder="2026.09.03&#9;성수식자재마트&#9;156,000&#9;1234-****-****-1234">' + esc(stmtState.text) + '</textarea><button class="btn primary" data-act="stmt-run">대조하기</button></div>';
+    html += '<div class="form"><div class="muted">카드사 홈페이지·앱에서 이용대금명세서(엑셀)를 받아 열고, 머리글 줄부터 전체 선택(Ctrl+A)·복사해서 아래에 붙여 넣으세요. 머리글에 "이용일·가맹점명·이용금액·카드번호"가 있으면 그 열을 그대로 읽어요. 결제 주기가 두 달에 걸쳐도 괜찮아요.</div><textarea class="in" id="stmt-text" rows="6" placeholder="카드번호&#9;이용자명&#9;이용일&#9;승인번호&#9;가맹점명&#9;…&#9;이용금액&#10;4902-98**-****-2851&#9;(*)본노엘&#9;26.08.10&#9;31488214&#9;웰빙마트&#9;…&#9;13300">' + esc(stmtState.text) + '</textarea><button class="btn primary" data-act="stmt-run">대조하기</button></div>';
     if (stmtState.rows){
       var rows = stmtState.rows, used = matchStatement(rows, exps);
+      html += '<div class="muted" style="margin:8px 4px 0">명세서 기간 ' + esc(fmtDateK(addDays(mr.from, 3))) + ' ~ ' + esc(fmtDateK(addDays(mr.to, -3))) + ' 안의 영수증과 맞춰 봤어요.</div>';
       var g = function(s){ return rows.filter(function(x){ return x.status === s; }); };
       var sumOf = function(list){ var s = 0; list.forEach(function(x){ s += x.amount; }); return s; };
       var ok = g('ok'), diff = g('diff'), miss = g('missing'), cancel = g('cancel');
@@ -1666,7 +1690,7 @@
     var text = document.getElementById('stmt-text').value;
     stmtState.text = text; stmtState.rows = parseStatement(text, stmtState.ym);
     if (!stmtState.rows.length){ toast('날짜와 금액이 있는 줄을 못 찾았어요'); render(); return; }
-    var exps = await loadExpenses(stmtState.ym); if (!isOwner()) exps = exps.filter(function(x){ return x.branch_id === session.branchId; });
+    var exps = await loadExpensesBetween(stmtRange(stmtState.rows, stmtState.ym)); if (!isOwner()) exps = exps.filter(function(x){ return x.branch_id === session.branchId; });
     matchStatement(stmtState.rows, exps);
     var n = 0;
     for (var i = 0; i < stmtState.rows.length; i++){ var r = stmtState.rows[i]; if (r.status === 'ok' && !r.exp.statement_key){ await db.update('ops_expenses', { id: r.exp.id }, { statement_key: stmtState.ym + ':' + r.date + ':' + r.amount, updated_at: nowIso() }); n++; } }
