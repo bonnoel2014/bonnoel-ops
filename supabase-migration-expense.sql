@@ -68,3 +68,15 @@ from (values
   ('2189', '미정 카드', null, true, 7)
 ) as v(last4, name, branch, ask, ord)
 where not exists (select 1 from ops_cards c where c.last4 = v.last4);
+
+-- 5. 가맹점 기억 (한 번 고른 지점·항목을 같은 가맹점에 다음부터 자동으로 채움)
+create table if not exists ops_merchant_rules (
+  merchant_key text primary key,        -- 가맹점 이름을 정리한 키 (띄어쓰기·(주)·뒤 번호 뺀 것)
+  merchant_name text,
+  branch_id uuid references manual_branches(id) on delete set null,   -- null = 공통(사장님)
+  category text not null default '기타',
+  updated_at timestamptz not null default now()
+);
+alter table ops_merchant_rules enable row level security;
+drop policy if exists "anon full access" on ops_merchant_rules;
+create policy "anon full access" on ops_merchant_rules for all using (true) with check (true);
