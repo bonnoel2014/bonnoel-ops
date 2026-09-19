@@ -273,7 +273,7 @@
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
       ocr: async function(b64, mime, kind){ await new Promise(function(r){ setTimeout(r, 900); }); if (kind === 'staff_purchase') return { ok: true, bought_on: todayStr(), list_total: 5500, discount: 1100, paid: 4400, pay_method: '카드', cash_receipt: false, branch: '중계점', items: '(시연) 버터프레첼 1개', confidence: 0.9 }; return { ok: true, merchant: '(시연) 성수 식자재마트', spent_on: todayStr(), amount: 34500, card_last4: '1234', summary: '시연 모드라 가짜로 읽었어요', confidence: 0.9 }; },
-      sendDocs: async function(batchId){ await new Promise(function(r){ setTimeout(r, 800); }); var to = ''; (tables.ops_documents || []).forEach(function(r){ if (r.batch_id === batchId && r.pdf_path){ to = r.email_to || to; r.status = 'sent'; r.email_sent_at = new Date().toISOString(); r.email_cc = '(시연) 사장님 메일'; r.signed_ip = '127.0.0.1'; } }); return { ok: true, sent_to: to, cc: '(시연) 사장님 메일' }; }
+      sendDocs: async function(batchId){ await new Promise(function(r){ setTimeout(r, 800); }); var to = ''; (tables.ops_documents || []).forEach(function(r){ if (r.batch_id === batchId && r.pdf_path && ['signed','failed','sent'].indexOf(r.status) >= 0){ to = r.email_to || to; r.status = 'sent'; r.email_sent_at = new Date().toISOString(); r.email_cc = '(시연) 사장님 메일'; r.signed_ip = '127.0.0.1'; } }); return { ok: true, sent_to: to, cc: '(시연) 사장님 메일' }; }
     };
   }
 
