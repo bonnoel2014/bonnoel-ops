@@ -4,7 +4,7 @@
 
 **앱 주소: https://sungpil-1225.github.io/bonnoel-ops/** (GitHub Pages. main에 push하면 1분 안에 자동 반영) 홈 화면 하나에 아이콘별로 도구가 붙습니다.
 
-- 6차(완성): **입사 서류**(사장님·매니저가 계약 조건 준비 → 신입이 매장폰 `#/sign`에서 이름·비밀번호로 들어와 근로계약서·임금계약서, 개인정보 동의서, 서약서, CCTV 동의서, 유니폼 지급대장(+미성년자 친권자 동의서)을 읽고 손가락 서명 → PDF를 직원 메일 + 사장님 메일로 자동 발송, 교부 기록 보관) · **내 서류**(직원이 다시 보기) — 테이블·저장소는 [`supabase-migration-docs.sql`](supabase-migration-docs.sql), 양식은 [`docs-templates.js`](docs-templates.js), 메일 함수는 [`supabase/functions/send-document/index.ts`](supabase/functions/send-document/index.ts). 설정 순서는 아래 "입사 서류 설정". 설계: [기획/입사서류_설계.md](기획/입사서류_설계.md)
+- 6차(완성): **입사 서류**(사장님·매니저가 계약 조건 준비 → 신입이 매장폰 `#/sign`에서 이름·비밀번호로 들어와 근로계약서·임금계약서, 개인정보 동의서, 서약서, CCTV 동의서, 유니폼 지급대장(+미성년자 친권자 동의서)을 읽고 손가락 서명 → PDF를 직원 메일 + 사장님 메일로 자동 발송, 교부 기록 보관 → 이어서 등본·통장사본·보건증 제출(지금 없으면 나중에)) · **내 서류**(직원이 다시 보기, 미제출 서류는 여기서 올리기) — 테이블·저장소는 [`supabase-migration-docs.sql`](supabase-migration-docs.sql), 양식은 [`docs-templates.js`](docs-templates.js), 메일 함수는 [`supabase/functions/send-document/index.ts`](supabase/functions/send-document/index.ts). 설정 순서는 아래 "입사 서류 설정". 설계: [기획/입사서류_설계.md](기획/입사서류_설계.md)
 - 7차(완성): **직원 구매**(직원 할인으로 산 빵 영수증 사진 → 날짜·정가·할인·낸 금액 자동 읽기 → 저장, 결제 방식별 할인 자동 계산) · **직원 구매 내역**(사장님·매니저: 날짜별 할인·낸 금액 합계(마감용), 사람별, 수정·삭제, CSV) — 테이블은 [`supabase-migration-staffbuy.sql`](supabase-migration-staffbuy.sql), 자동 읽기는 같은 `read-receipt` 함수(다시 배포 필요). 아래 "직원 구매 설정".
 - 8차(완성): **보건증**(모두: 내 만료일·남은 날짜, 새 보건증 사진 올리면 "제출") · **보건증 관리**(사장님·매니저: 전 직원 급한 순서, 만료·30일 이내·없음 빨강, 60일 이내 노랑, 제출 사진 확인 후 만료일 넣고 "완료", 구글 시트 붙여넣기로 한 번에 넣기) · 홈 숫자 + 로그인·매장폰 이름표 빨간 표시 — 테이블은 [`supabase-migration-health.sql`](supabase-migration-health.sql). 아래 "보건증 설정".
 - 5차(완성): **영수증 올리기**(법인카드 영수증 사진 → 가게명·날짜·금액·카드 끝자리 자동 읽기 → 지점·항목 확인 → 저장) · **카드 지출**(월별·지점별 목록, 수정·삭제, 사진 보기) · **합계표**(지점×항목, 카드별, CSV) · **명세서 대조**(카드사 이용내역 붙여넣기 → 일치 ✓ / 금액 다름 / 영수증 없음 → 바로 등록) · **카드 설정**(사장님) — 테이블·저장소는 [`supabase-migration-expense.sql`](supabase-migration-expense.sql), 자동 읽기 함수는 [`supabase/functions/read-receipt/index.ts`](supabase/functions/read-receipt/index.ts). 설정 순서는 아래 "카드 지출 설정".
@@ -72,6 +72,8 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 지메일 SMTP가 서버에서 막히면(발송 실패에 연결 오류가 뜨면) Secrets에 `MAIL_PROVIDER`=resend, `RESEND_API_KEY`, `MAIL_FROM`(인증한 도메인 주소)을 넣어 Resend로 바꿀 수 있어요.
 
 양식 문구는 노무사 양식 그대로이고, 다음만 다릅니다: 주민등록번호 칸은 "별도 서면 제출"(앱에 주민번호를 저장하지 않음), 서약서의 주민번호 칸 → 생년월일, 근무장소에 "(주된 근무지: 지점·주소)" 덧붙임, 유니폼 지급대장은 양식이 없어 앱에서 만든 표. 문구를 고치면 `docs-templates.js`의 `VERSION`을 올리세요(예전 서명은 예전 버전으로 남음).
+
+**입사 시 제출 서류(등본·통장사본·보건증)**: 서류 서명 화면 끝에 사진/PDF를 올리는 칸이 하나 더 붙습니다. 등본·통장사본은 사진 찍기 또는 파일 고르기(PDF도 가능), 보건증은 사진 + 만료일(숫자 8자리)을 넣으면 "보건증" 화면(8차)의 제출 목록에 자동으로 들어갑니다. 지금 없으면 "나중에 제출"에 체크하고 넘어가고, 나중에 "내 서류"에서 등본·통장사본을 올릴 수 있어요. 새 테이블은 필요 없고(같은 `ops_documents`·`documents` 저장소를 씀), 사장님·매니저는 "입사 서류" 목록의 "등본·통장 n/2" 표시와 [보기] → [지움](노무사에게 전달한 뒤 원본만 삭제, 제출 기록은 남음)으로 관리합니다.
 
 ## 직원 구매 설정 (7차) — 처음 한 번
 
