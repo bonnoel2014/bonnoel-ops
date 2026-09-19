@@ -207,7 +207,17 @@
       insert: async function(table, rows){ var r = await sb.from(table).insert(rows).select(); if (r.error) throw r.error; return r.data; },
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
-      remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; }
+      remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
+      // 영수증 사진 저장소 + 자동 읽기 함수
+      upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
+      signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
+      removeFile: async function(bucket, path){ var r = await sb.storage.from(bucket).remove([path]); if (r.error) throw r.error; },
+      ocr: async function(b64, mime){
+        var res = await fetch(SUPABASE_URL + '/functions/v1/read-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify({ image_base64: b64, media_type: mime }) });
+        var j = null; try { j = await res.json(); } catch(e){}
+        if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '자동 읽기 함수(read-receipt)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
+        return j;
+      }
     };
   }
 
@@ -232,7 +242,11 @@
       insert: async function(table, rows){ rows = Array.isArray(rows) ? rows : [rows]; tables[table] = tables[table] || []; var out = rows.map(function(r){ var x = Object.assign({ id: uid(), created_at: new Date().toISOString() }, r); tables[table].push(x); return x; }); return clone(out); },
       update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
       upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
-      remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); }
+      remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); },
+      upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
+      signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
+      removeFile: async function(){},
+      ocr: async function(){ await new Promise(function(r){ setTimeout(r, 900); }); return { ok: true, merchant: '(시연) 성수 식자재마트', spent_on: todayStr(), amount: 34500, card_last4: '1234', summary: '시연 모드라 가짜로 읽었어요', confidence: 0.9 }; }
     };
   }
 
@@ -301,6 +315,19 @@
       ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
       ops_pay_profiles: [ { staff_id: 'm1', hourly_wage: 12000, pay_type: 'insured', dependents: 1 }, { staff_id: 's2', hourly_wage: 10320, pay_type: 'insured', dependents: 1 }, { staff_id: 's1', hourly_wage: 10320, pay_type: 'freelance', dependents: 1 } ],
       ops_settings: [], ops_pay_runs: [],
+      ops_cards: [
+        { id: 'cd1', last4: '1234', name: '사장님 기명카드', branch_id: 'b1', ask_branch: true, active: true, sort_order: 1 },
+        { id: 'cd2', last4: '2222', name: '왕십리 카드', branch_id: 'b2', ask_branch: false, active: true, sort_order: 2 },
+        { id: 'cd3', last4: '3333', name: '중계 카드', branch_id: 'b3', ask_branch: false, active: true, sort_order: 3 },
+        { id: 'cd4', last4: '4444', name: '답십리 카드', branch_id: 'b4', ask_branch: false, active: true, sort_order: 4 }
+      ],
+      ops_expenses: [
+        { id: 'e1', spent_on: addDays(todayStr(), -3), merchant: '왕십리 청과', amount: 48000, card_id: 'cd2', card_last4: '2222', branch_id: 'b2', category: '식자재', memo: null, photo_path: null, source: 'receipt', statement_key: null, uploaded_by: 'm1', created_at: daysAgo(3) },
+        { id: 'e2', spent_on: addDays(todayStr(), -2), merchant: '다이소 왕십리점', amount: 12000, card_id: 'cd2', card_last4: '2222', branch_id: 'b2', category: '비품·소모품', memo: '집게·바구니', photo_path: null, source: 'receipt', statement_key: null, uploaded_by: 's2', created_at: daysAgo(2) },
+        { id: 'e3', spent_on: addDays(todayStr(), -2), merchant: '성수 식자재마트', amount: 156000, card_id: 'cd1', card_last4: '1234', branch_id: 'b1', category: '식자재', memo: null, photo_path: null, source: 'receipt', statement_key: null, uploaded_by: 's3', created_at: daysAgo(2) },
+        { id: 'e4', spent_on: addDays(todayStr(), -1), merchant: '쿠팡', amount: 89000, card_id: 'cd1', card_last4: '1234', branch_id: null, category: '포장재', memo: '4매장 공용 박스', photo_path: null, source: 'receipt', statement_key: null, uploaded_by: 'o1', created_at: daysAgo(1) },
+        { id: 'e5', spent_on: addDays(todayStr(), -1), merchant: '중계 마트', amount: 23500, card_id: 'cd3', card_last4: '3333', branch_id: 'b3', category: '식자재', memo: null, photo_path: null, source: 'receipt', statement_key: null, uploaded_by: 'm2', created_at: daysAgo(1) }
+      ],
       ops_attendance: [
         { id: 'a1', staff_id: 'm1', branch_id: 'b2', work_date: addDays(todayStr(), -1), clock_in: new Date(addDays(todayStr(), -1) + 'T07:28:00').toISOString(), clock_out: new Date(addDays(todayStr(), -1) + 'T16:33:00').toISOString(), in_by: 'm1', out_by: 'm1', edits: [] },
         { id: 'a2', staff_id: 's2', branch_id: 'b2', work_date: addDays(todayStr(), -1), clock_in: new Date(addDays(todayStr(), -1) + 'T12:58:00').toISOString(), clock_out: new Date(addDays(todayStr(), -1) + 'T22:05:00').toISOString(), in_by: 's2', out_by: 's2', edits: [] },
@@ -485,6 +512,13 @@
               '<a href="#/short"><div class="n' + (mism ? ' danger' : '') + '">' + mism + '</div><div class="l">수량 오류</div></a></div>';
       html += '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:8px"><a href="#/leave-admin"><div class="n' + (pend ? ' danger' : '') + '">' + pend + '</div><div class="l">휴무 신청 대기</div></a>' +
               '<a href="#/leave-admin"><div class="n">' + cov + '</div><div class="l">대타 구하는 중</div></a></div>';
+      try { // 카드 지출 테이블(supabase-migration-expense.sql)이 아직 없어도 홈은 열리게
+        var ymNow = monthOf(todayStr()), mr = monthRange(ymNow);
+        var exps = (await db.select('ops_expenses', { gte: { spent_on: mr.from } })).filter(function(x){ return x.spent_on <= mr.to && (isOwner() || x.branch_id === session.branchId); });
+        var expSum = 0; exps.forEach(function(x){ expSum += num(x.amount) || 0; });
+        html += '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:8px"><a href="#/expense-sum/' + ymNow + '"><div class="n" style="font-size:20px">' + won(expSum) + '<span style="font-size:13px">원</span></div><div class="l">이번 달 카드 지출' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
+                '<a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n">' + exps.length + '</div><div class="l">영수증 ' + exps.filter(function(x){ return !x.statement_key; }).length + '장 명세서 미대조</div></a></div>';
+      } catch(e){ console.warn('카드 지출 테이블 없음', e); }
     }
     function row(href, tileBg, icon, title, sub, disabled){
       return '<a class="row' + (disabled ? ' disabled' : '') + '" href="' + href + '"' + (disabled ? ' data-act="soon"' : '') + (href.indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + tileBg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">' + (disabled ? '<span class="badge muted">준비 중</span>' : '›') + '</div></a>';
@@ -495,6 +529,7 @@
     html += row('#/arrive', 'tile-green', '📥', '도착 확인', '온 물건 수량 맞는지');
     html += row('#/leave', 'tile-yellow', '🌴', '휴무 신청', '쉬고 싶은 날 신청·내 신청 상태');
     html += row('#/subs', 'tile-red', '🙋', '대타 지원', '우리 매장 대타 구하는 근무');
+    html += row('#/expense', 'tile-orange', '🧾', '영수증 올리기', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
     html += '</div>';
     html += '<div class="group-title">매장 운영</div><div class="card">';
     html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
@@ -503,6 +538,7 @@
     if (isManager()) html += row('#/leave-admin', 'tile-yellow', '✅', '대타 관리', '휴무 수락·대타 컨펌');
     if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 실제 근무시간 (급여 근거)');
     if (isOwner()) html += row('#/pay', 'tile-yellow', '💰', '급여 초안', '월별 급여 계산·명세서 (사장님만)');
+    if (isManager()) html += row('#/expense-list', 'tile-purple', '💳', '카드 지출', '월별·지점별 지출 목록 · 합계 · 명세서 대조');
     html += '</div>';
     html += '<div class="group-title">자료</div><div class="card">';
     html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
@@ -512,6 +548,7 @@
       html += '<div class="group-title">설정</div><div class="card">';
       html += row('#/patterns', 'tile-gray', '🕒', '근무 패턴', '사람별 고정 요일·시간');
       if (isOwner()) html += row('#/pay-setup', 'tile-gray', '💵', '급여 설정', '시급·고용형태·요율 (사장님만)');
+      if (isOwner()) html += row('#/expense-cards', 'tile-gray', '💳', '카드 설정', '법인카드 끝 4자리·지점 (사장님만)');
       html += row('#/items', 'tile-gray', '⚙️', '비품 설정', '품목·단위·적정재고');
       html += row('#/staff', 'tile-gray', '👥', '직원·비밀번호', '역할 정하기·비밀번호 초기화');
       html += '</div>';
@@ -1248,22 +1285,36 @@
   async function loadPaySettings(){ if (paySettings) return paySettings; var r = await db.select('ops_settings', { eq: { key: 'pay' } }).catch(function(){ return []; }); paySettings = Object.assign({}, PAY_DEFAULT, r[0] ? r[0].value : {}); return paySettings; }
   function won(n){ return (Math.round(n) || 0).toLocaleString('ko-KR'); }
   function floor10(n){ return Math.floor(n / 10) * 10; }
-  function computePay(recs, sch, profile, S, ym){
-    var wage = num(profile.hourly_wage) || 0;
-    var daily = {}, night = 0, days = [];
-    recs.forEach(function(r){ var n = recNet(r, sch); if (!n) return; daily[r.work_date] = (daily[r.work_date] || 0) + n.net; night += n.night; });
+  function computePay(recs, sch, profile, S, ym, flags){
+    flags = flags || {};
+    var wage = num(profile.hourly_wage) || 0, staffId = recs.length ? recs[0].staff_id : null;
+    var daily = {}, night = 0, days = [], extraByWeek = {};
+    recs.forEach(function(r){ var n = recNet(r, sch); if (!n) return; daily[r.work_date] = (daily[r.work_date] || 0) + n.net; night += n.night;
+      var own = poolFor(sch, r.branch_id, r.work_date).some(function(p){ return p.staff_id === r.staff_id && p.weekday === wdOf(r.work_date); });
+      if (!own){ var ws0 = weekStart(r.work_date); extraByWeek[ws0] = (extraByWeek[ws0] || 0) + n.net; } });
+    // 소정근로시간(근무 패턴) 주별 합계
+    var mdays = monthDays(ym), plannedByWeek = {};
+    if (staffId) mdays.forEach(function(d){ var ws0 = weekStart(d); base.branches.forEach(function(br){ poolFor(sch, br.id, d).forEach(function(p){ if (p.staff_id !== staffId || p.weekday !== wdOf(d)) return; var m = toMin(p.end_time) - toMin(p.start_time) - (p.break_start ? toMin(p.break_end) - toMin(p.break_start) : 0); plannedByWeek[ws0] = (plannedByWeek[ws0] || 0) + m; }); }); });
     var total = 0, dailyOT = 0, weekly = {}, weeklyDailyOT = {};
     Object.keys(daily).sort().forEach(function(d){ var m = daily[d]; total += m; var ot = Math.max(0, m - 480); dailyOT += ot; var ws = weekStart(d); weekly[ws] = (weekly[ws] || 0) + m; weeklyDailyOT[ws] = (weeklyDailyOT[ws] || 0) + ot; days.push({ date: d, min: m }); });
-    var weeklyOT = 0, juhyuMin = 0, weeks = [];
-    Object.keys(weekly).sort().forEach(function(ws){ var w = weekly[ws]; weeklyOT += Math.max(0, Math.max(0, w - 2400) - weeklyDailyOT[ws]); var jh = w >= 900 ? Math.min(w, 2400) / 2400 * 480 : 0; juhyuMin += jh; weeks.push({ ws: ws, min: w, juhyu: Math.round(jh) }); });
+    var weeklyOT = 0, juhyuMin = 0, weeks = [], tempWeeks = [], juhyuFlag = flags.juhyu || 'auto';
+    Object.keys(weekly).sort().forEach(function(ws){ var w = weekly[ws], planned = plannedByWeek[ws] || 0, extra = extraByWeek[ws] || 0; weeklyOT += Math.max(0, Math.max(0, w - 2400) - weeklyDailyOT[ws]);
+      var eligible = juhyuFlag === 'yes' || (juhyuFlag === 'auto' && planned >= 900);
+      var jh = 0;
+      if (eligible){ var basis = planned > 0 ? Math.min(planned, w) : w; jh = Math.min(basis, 2400) / 2400 * 480; }
+      else if (w >= 900){ tempWeeks.push({ ws: ws, min: w, extra: extra, would: Math.round(Math.min(w, 2400) / 2400 * 480 / 60 * wage) }); }
+      juhyuMin += jh; weeks.push({ ws: ws, min: w, planned: planned, extra: extra, juhyu: Math.round(jh), eligible: eligible }); });
+    var juhyuType = weeks.some(function(w){ return w.eligible; }) ? 'regular' : 'none';
+    var bonusPerDay = num(flags.daily_bonus) || 0;
     var otMin = dailyOT + weeklyOT;
-    var base = total / 60 * wage, juhyu = juhyuMin / 60 * wage, nightPay = night / 60 * wage * S.night_premium, otPay = otMin / 60 * wage * S.ot_premium;
-    var gross = Math.round(base + juhyu + nightPay + otPay);
+    var basePay = total / 60 * wage, juhyu = juhyuMin / 60 * wage, nightPay = night / 60 * wage * S.night_premium, otPay = otMin / 60 * wage * S.ot_premium;
+    var bonus = Object.keys(daily).length * bonusPerDay;
+    var gross = Math.round(basePay + juhyu + nightPay + otPay + bonus);
     var d = { np: 0, hi: 0, ltc: 0, ei: 0, tax: 0, local: 0 }, shortTime = total < 3600 && weeks.every(function(w){ return w.min < 900; });
     if (profile.pay_type === 'freelance'){ d.tax = floor10(gross * 0.03); d.local = floor10(gross * 0.003); }
     else if (profile.pay_type === 'none' || shortTime){ /* 초단시간(주 15h·월 60h 미만) 또는 공제 없음: 4대보험 없음, 소득세는 간이세액표 값 입력 */ }
     else { var npBase = Math.min(Math.max(gross, S.np_min), S.np_max); d.np = floor10(npBase * S.np_rate / 100); d.hi = floor10(gross * S.hi_rate / 100); d.ltc = floor10(d.hi * S.ltc_rate / 100); d.ei = floor10(gross * S.ei_rate / 100); }
-    return { wage: wage, pay_type: profile.pay_type || 'insured', short_time: shortTime, days: days.length, total_min: total, night_min: night, ot_min: otMin, juhyu_min: Math.round(juhyuMin), weeks: weeks, base: Math.round(base), juhyu: Math.round(juhyu), night_pay: Math.round(nightPay), ot_pay: Math.round(otPay), gross: gross, ded: d, dayList: days };
+    return { wage: wage, pay_type: profile.pay_type || 'insured', short_time: shortTime, juhyu_type: juhyuType, juhyu_flag: juhyuFlag, temp_weeks: tempWeeks, bonus: bonus, bonus_per_day: bonusPerDay, days: days.length, total_min: total, night_min: night, ot_min: otMin, juhyu_min: Math.round(juhyuMin), weeks: weeks, base: Math.round(basePay), juhyu: Math.round(juhyu), night_pay: Math.round(nightPay), ot_pay: Math.round(otPay), gross: gross, ded: d, dayList: days };
   }
   function payTotals(run){ var x = run.data, tax = run.income_tax != null ? num(run.income_tax) : x.ded.tax; var local = x.pay_type === 'freelance' ? x.ded.local : floor10((tax || 0) * 0.1); var dedSum = x.ded.np + x.ded.hi + x.ded.ltc + x.ded.ei + (tax || 0) + local; var adj = num(run.adjust) || 0; return { tax: tax || 0, local: local, dedSum: dedSum, adj: adj, net: x.gross + adj - dedSum }; }
 
@@ -1271,14 +1322,14 @@
     await loadBase();
     if (!isOwner()){ toast('급여는 사장님만 볼 수 있어요'); nav('#/home'); return; }
     var b = pickBranch(params, false);
-    var r = await Promise.all([ db.select('ops_pay_profiles'), loadPaySettings() ]);
-    var profs = {}; r[0].forEach(function(p){ profs[p.staff_id] = p; }); var S = r[1];
+    var r = await Promise.all([ db.select('ops_pay_profiles'), loadPaySettings(), db.select('ops_settings', { eq: { key: 'staff_flags' } }) ]);
+    var profs = {}; r[0].forEach(function(p){ profs[p.staff_id] = p; }); var S = r[1]; var FL = r[2][0] ? r[2][0].value : {};
     var people = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || !s.branch_id); }).sort(function(x, y){ return x.name.localeCompare(y.name); });
     var html = topbar('급여 설정 · ' + branchName(b), true) + branchTabs(b, false);
     html += '<div class="muted" style="margin:4px 4px 10px">사람마다 시급·고용형태를 넣어야 급여 초안이 계산돼요. 최저시급 ' + won(S.min_wage) + '원보다 적으면 빨갛게 표시돼요.</div>';
     html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + ' ' + people.length + '명</div>';
-    people.forEach(function(s){ var p = profs[s.id] || {}; var low = p.hourly_wage != null && num(p.hourly_wage) > 0 && num(p.hourly_wage) < S.min_wage; html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:80px"><div class="t">' + esc(s.name) + '</div>' + (s.branch_id !== b ? '<div class="s">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</div>' : '') + '</div><input class="qty pp-wage" data-staff="' + esc(s.id) + '" type="number" step="10" min="0" placeholder="시급" value="' + (p.hourly_wage || '') + '" style="width:92px' + (low ? ';border-color:var(--danger);background:var(--danger-soft)' : '') + '"><select class="in pp-type" data-staff="' + esc(s.id) + '" style="width:auto;padding:6px"><option value="insured"' + (p.pay_type !== 'freelance' ? ' selected' : '') + '>4대보험</option><option value="freelance"' + (p.pay_type === 'freelance' ? ' selected' : '') + '>3.3%</option><option value="none"' + (p.pay_type === 'none' ? ' selected' : '') + '>공제 없음</option></select><input class="qty pp-dep" data-staff="' + esc(s.id) + '" type="number" min="1" max="11" value="' + (p.dependents || 1) + '" title="부양가족 수(본인 포함)" style="width:52px"><input class="in pp-email" data-staff="' + esc(s.id) + '" type="email" placeholder="이메일 (명세서 발송용, 선택)" value="' + esc(p.email || '') + '" style="flex:1;min-width:160px;padding:6px 8px;font-size:14px"></div>'; });
-    html += '</div><div class="muted" style="margin:6px 4px">칸 순서: 시급 · 고용형태 · 부양가족 수(본인 포함, 소득세용) · 이메일. 4대보험이어도 그 달 60시간 미만이고 매주 15시간 미만이면(초단시간) 노무사 방식대로 4대보험을 떼지 않아요.</div>';
+    people.forEach(function(s){ var p = profs[s.id] || {}; var low = p.hourly_wage != null && num(p.hourly_wage) > 0 && num(p.hourly_wage) < S.min_wage; html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:80px"><div class="t">' + esc(s.name) + '</div>' + (s.branch_id !== b ? '<div class="s">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</div>' : '') + '</div><input class="qty pp-wage" data-staff="' + esc(s.id) + '" type="number" step="10" min="0" placeholder="시급" value="' + (p.hourly_wage || '') + '" style="width:92px' + (low ? ';border-color:var(--danger);background:var(--danger-soft)' : '') + '"><select class="in pp-type" data-staff="' + esc(s.id) + '" style="width:auto;padding:6px"><option value="insured"' + (p.pay_type !== 'freelance' ? ' selected' : '') + '>4대보험</option><option value="freelance"' + (p.pay_type === 'freelance' ? ' selected' : '') + '>3.3%</option><option value="none"' + (p.pay_type === 'none' ? ' selected' : '') + '>공제 없음</option></select><input class="qty pp-dep" data-staff="' + esc(s.id) + '" type="number" min="1" max="11" value="' + (p.dependents || 1) + '" title="부양가족 수(본인 포함)" style="width:52px"><input class="in pp-email" data-staff="' + esc(s.id) + '" type="email" placeholder="이메일 (명세서 발송용, 선택)" value="' + esc(p.email || '') + '" style="flex:1;min-width:160px;padding:6px 8px;font-size:14px"><div class="inline" style="width:100%;margin-top:4px"><label class="muted">주휴</label><select class="in pp-juhyu" data-staff="' + esc(s.id) + '" style="width:auto;padding:6px">' + [['auto','자동(패턴 15h↑)'],['yes','대상'],['no','비대상']].map(function(o){ var cur = (FL[s.id] || {}).juhyu || 'auto'; return '<option value="' + o[0] + '"' + (cur === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select><label class="muted">근무일당 추가</label><input class="qty pp-bonus" data-staff="' + esc(s.id) + '" type="number" step="100" min="0" placeholder="0" value="' + ((FL[s.id] || {}).daily_bonus || '') + '" style="width:80px"><span class="muted">원 × 근무일</span></div></div>'; });
+    html += '</div><div class="muted" style="margin:6px 4px">칸 순서: 시급 · 고용형태 · 부양가족 수(본인 포함, 소득세용) · 이메일 · 주휴 구분(자동이면 근무 패턴이 주 15시간 이상인 사람만 대상, 대타로 넘긴 주는 표시만) · 근무일당 추가수당. 4대보험이어도 그 달 60시간 미만이고 매주 15시간 미만이면(초단시간) 노무사 방식대로 4대보험을 떼지 않아요.</div>';
     if (isOwner()){
       html += '<div class="group-title">요율·기준 (사장님만, 매년 확인)</div><div class="form"><div class="grid2">' +
         [['np_rate','국민연금 근로자 %'],['hi_rate','건강보험 근로자 %'],['ltc_rate','장기요양 (건강보험료의 %)'],['ei_rate','고용보험 근로자 %'],['np_min','국민연금 기준 하한(원)'],['np_max','국민연금 기준 상한(원)'],['night_premium','야간 가산 (0.5 = 50%)'],['ot_premium','연장 가산 (0.5 = 50%)'],['min_wage','최저시급(원)'],['pay_day','지급일 (매월 며칠)']].map(function(f){ return '<div><label>' + f[1] + '</label><input class="in ps-f" data-key="' + f[0] + '" type="number" step="any" value="' + S[f[0]] + '"></div>'; }).join('') +
@@ -1290,7 +1341,11 @@
   async function payProfilesSave(){
     var rows = [];
     app.querySelectorAll('.pp-wage').forEach(function(inp){ var id = inp.getAttribute('data-staff'); var q = function(c){ return app.querySelector(c + '[data-staff="' + id + '"]'); }; rows.push({ staff_id: id, hourly_wage: num(inp.value) || 0, pay_type: q('.pp-type').value, dependents: parseInt(q('.pp-dep').value) || 1, email: (q('.pp-email').value || '').trim() || null, updated_at: nowIso() }); });
-    await db.upsert('ops_pay_profiles', rows, 'staff_id'); toast('저장했어요'); render();
+    await db.upsert('ops_pay_profiles', rows, 'staff_id');
+    var fl = (await db.select('ops_settings', { eq: { key: 'staff_flags' } }))[0]; fl = fl ? fl.value : {};
+    app.querySelectorAll('.pp-juhyu').forEach(function(sel){ var id = sel.getAttribute('data-staff'); fl[id] = Object.assign({}, fl[id] || {}, { juhyu: sel.value, daily_bonus: num((app.querySelector('.pp-bonus[data-staff="' + id + '"]') || {}).value) || 0 }); });
+    await db.upsert('ops_settings', [{ key: 'staff_flags', value: fl, updated_at: nowIso() }], 'key');
+    toast('저장했어요'); render();
   }
   async function paySettingsSave(){
     var v = {}; app.querySelectorAll('.ps-f').forEach(function(inp){ var k = inp.getAttribute('data-key'); v[k] = k === 'company' ? inp.value.trim() : num(inp.value); });
@@ -1303,7 +1358,8 @@
     var b = pickBranch(params, false);
     var ym = /^\d{4}-\d{2}$/.test(params.arg2 || '') ? params.arg2 : addMonths(monthOf(todayStr()), -1);
     var days = monthDays(ym);
-    var r = await Promise.all([ db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: days[0] } }), loadSchedule([b], days[0], days[days.length - 1]), db.select('ops_pay_profiles'), loadPaySettings(), db.select('ops_pay_runs', { eq: { branch_id: b, ym: ym } }) ]);
+    var r = await Promise.all([ db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: days[0] } }), loadSchedule([b], days[0], days[days.length - 1]), db.select('ops_pay_profiles'), loadPaySettings(), db.select('ops_pay_runs', { eq: { branch_id: b, ym: ym } }), db.select('ops_settings', { eq: { key: 'staff_flags' } }) ]);
+    var FL = r[5][0] ? r[5][0].value : {};
     var recs = r[0].filter(function(x){ return x.work_date <= days[days.length - 1] && x.clock_out; }), sch = r[1], S = r[3];
     var profs = {}; r[2].forEach(function(p){ profs[p.staff_id] = p; });
     var runs = {}; r[4].forEach(function(x){ runs[x.staff_id] = x; });
@@ -1317,11 +1373,11 @@
     if (!ids.length) html += '<div class="empty">이 달에 퇴근까지 찍힌 기록이 없어요</div>';
     ids.forEach(function(id){
       var p = profs[id]; if (!p || !num(p.hourly_wage)){ noProf.push(staffName(id)); }
-      var calc = computePay(byStaff[id], sch, p || { hourly_wage: 0, pay_type: 'insured' }, S, ym);
+      var calc = computePay(byStaff[id], sch, p || { hourly_wage: 0, pay_type: 'insured' }, S, ym, FL[id]);
       var run = runs[id] || { data: calc, income_tax: null, adjust: 0, status: 'draft' };
       if (run.status !== 'confirmed') run.data = calc; // 확정 전엔 항상 최신 기록으로
       var t = payTotals(run); sumNet += t.net;
-      html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:120px"><div class="t">' + esc(staffName(id)) + (run.status === 'confirmed' ? ' <span class="badge ok">확정</span>' : ' <span class="badge muted">초안</span>') + '</div><div class="s">' + calc.days + '일 ' + fmtH(calc.total_min) + ' · 시급 ' + won(calc.wage) + ' · ' + (calc.pay_type === 'freelance' ? '3.3%' : calc.short_time ? '초단시간(4대보험 없음)' : calc.pay_type === 'none' ? '공제 없음' : '4대보험') + '</div><div class="s">기본 ' + won(calc.base) + ' + 주휴 ' + won(calc.juhyu) + ' + 야간 ' + won(calc.night_pay) + ' + 연장 ' + won(calc.ot_pay) + ' = <b>' + won(calc.gross) + '</b></div><div class="s">공제 ' + won(t.dedSum) + ' → 실지급 <b>' + won(t.net) + '원</b></div></div>' +
+      html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:120px"><div class="t">' + esc(staffName(id)) + (run.status === 'confirmed' ? ' <span class="badge ok">확정</span>' : ' <span class="badge muted">초안</span>') + '</div><div class="s">' + calc.days + '일 ' + fmtH(calc.total_min) + ' · 시급 ' + won(calc.wage) + ' · ' + (calc.pay_type === 'freelance' ? '3.3%' : calc.short_time ? '초단시간(4대보험 없음)' : calc.pay_type === 'none' ? '공제 없음' : '4대보험') + '</div><div class="s">기본 ' + won(calc.base) + ' + 주휴 ' + won(calc.juhyu) + ' + 야간 ' + won(calc.night_pay) + ' + 연장 ' + won(calc.ot_pay) + (calc.bonus ? ' + 근무일당 ' + won(calc.bonus) : '') + ' = <b>' + won(calc.gross) + '</b></div><div class="s">' + (calc.juhyu_type === 'regular' ? '<span class="badge ok">주휴 대상</span>' : '<span class="badge muted">주휴 비대상</span>') + (calc.temp_weeks && calc.temp_weeks.length ? ' <span class="badge warn">대타로 15h 넘은 주 ' + calc.temp_weeks.length + '주 · 주휴 미적용 (적용 시 +' + won(calc.temp_weeks.reduce(function(a, w){ return a + w.would; }, 0)) + ')</span>' : '') + '</div><div class="s">공제 ' + won(t.dedSum) + ' → 실지급 <b>' + won(t.net) + '원</b></div></div>' +
         '<div class="inline" style="width:100%;margin-top:6px"><label class="muted">소득세</label><input class="qty pr-tax" data-staff="' + esc(id) + '" type="number" step="10" value="' + (run.income_tax != null ? run.income_tax : '') + '" placeholder="' + (calc.pay_type === 'freelance' ? '자동' : '0') + '" style="width:90px"' + (calc.pay_type === 'freelance' ? ' disabled' : '') + '><label class="muted">조정</label><input class="qty pr-adj" data-staff="' + esc(id) + '" type="number" step="10" value="' + (run.adjust || '') + '" placeholder="0" style="width:90px"><input class="in pr-memo" data-staff="' + esc(id) + '" placeholder="조정 사유" value="' + esc(run.adjust_memo || '') + '" style="flex:1;min-width:120px;padding:6px 8px;font-size:14px">' + (run.id ? '<a class="btn sm" href="#/slip/' + esc(run.id) + '">명세서</a>' : '<span class="muted">저장 후 명세서</span>') + (isOwner() && run.id ? '<button class="btn sm ' + (run.status === 'confirmed' ? '' : 'ok') + '" data-act="pay-confirm" data-id="' + esc(run.id) + '" data-on="' + (run.status === 'confirmed' ? '0' : '1') + '">' + (run.status === 'confirmed' ? '확정 풀기' : '확정') + '</button>' : '') + '</div></div>';
     });
     html += '<div class="sec-h" style="border-top:1px solid var(--line);border-bottom:0">실지급 합계<span class="sp"></span>' + won(sumNet) + '원</div></div>';
@@ -1329,12 +1385,12 @@
     html += '<div class="muted" style="margin-top:8px">주휴 = 주 15시간 이상인 주에 (주 시간÷40)×8시간 · 야간 22~06시 ×' + S.night_premium + ' · 연장 = 하루 8시간 또는 주 40시간 초과 ×' + S.ot_premium + ' · 국민연금 ' + S.np_rate + '% · 건강 ' + S.hi_rate + '% · 장기요양 ' + S.ltc_rate + '% · 고용 ' + S.ei_rate + '% · 10원 미만 버림</div>';
     html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="pay-save" data-branch="' + esc(b) + '" data-ym="' + ym + '">초안 저장 (' + ym.slice(5) + '월)</button></div></div>';
     app.innerHTML = html;
-    app._pay = { ids: ids, byStaff: byStaff, sch: sch, profs: profs, S: S, runs: runs };
+    app._pay = { ids: ids, byStaff: byStaff, sch: sch, profs: profs, S: S, runs: runs, FL: FL };
   };
   async function paySave(b, ym){
     var P = app._pay; if (!P) return; var rows = [];
     P.ids.forEach(function(id){
-      var run = P.runs[id]; var calc = run && run.status === 'confirmed' ? run.data : computePay(P.byStaff[id], P.sch, P.profs[id] || { hourly_wage: 0, pay_type: 'insured' }, P.S, ym);
+      var run = P.runs[id]; var calc = run && run.status === 'confirmed' ? run.data : computePay(P.byStaff[id], P.sch, P.profs[id] || { hourly_wage: 0, pay_type: 'insured' }, P.S, ym, P.FL[id]);
       var q = function(c){ return app.querySelector(c + '[data-staff="' + id + '"]'); };
       rows.push({ ym: ym, branch_id: b, staff_id: id, data: calc, income_tax: q('.pr-tax').disabled ? null : num(q('.pr-tax').value), adjust: num(q('.pr-adj').value) || 0, adjust_memo: q('.pr-memo').value.trim() || null, pay_date: addMonths(ym, 1) + '-' + pad(P.S.pay_day || 10), status: run ? run.status : 'draft', updated_at: nowIso() });
     });
@@ -1348,7 +1404,7 @@
     if (!isOwner()){ toast('명세서는 사장님만 볼 수 있어요'); nav('#/home'); return; }
     var S = await loadPaySettings(), x = run.data, t = payTotals(run), s = base.staff.filter(function(z){ return z.id === run.staff_id; })[0] || {};
     var days = monthDays(run.ym), title = run.ym.slice(0, 4) + '년 ' + run.ym.slice(5) + '월 임금명세서';
-    var payRows = [['기본급', x.base], ['주휴수당', x.juhyu], ['야간근로수당', x.night_pay], ['연장근로수당', x.ot_pay]]; if (t.adj) payRows.push(['조정' + (run.adjust_memo ? ' (' + run.adjust_memo + ')' : ''), t.adj]);
+    var payRows = [['기본급', x.base], ['주휴수당', x.juhyu], ['야간근로수당', x.night_pay], ['연장근로수당', x.ot_pay]]; if (x.bonus) payRows.push(['근속수당 (근무일당 ' + won(x.bonus_per_day) + '원)', x.bonus]); if (t.adj) payRows.push(['조정' + (run.adjust_memo ? ' (' + run.adjust_memo + ')' : ''), t.adj]);
     var dedRows = x.pay_type === 'freelance' ? [['사업소득세 (3%)', t.tax], ['지방소득세 (0.3%)', t.local]] : (x.short_time || x.pay_type === 'none') ? [['근로소득세', t.tax], ['지방소득세', t.local]] : [['근로소득세', t.tax], ['지방소득세', t.local], ['국민연금', x.ded.np], ['건강보험', x.ded.hi], ['장기요양보험', x.ded.ltc], ['고용보험', x.ded.ei]];
     var n = Math.max(payRows.length, dedRows.length), body = '';
     for (var i = 0; i < n; i++){ var p = payRows[i] || ['', ''], d = dedRows[i] || ['', '']; body += '<tr><td>' + esc(p[0]) + '</td><td class="r">' + (p[1] === '' ? '' : won(p[1])) + '</td><td>' + esc(d[0]) + '</td><td class="r">' + (d[1] === '' ? '' : won(d[1])) + '</td></tr>'; }
@@ -1356,11 +1412,300 @@
     html += '<div class="slip"><h2>' + esc(title) + '</h2><div class="slip-meta"><div>회사명: ' + esc(S.company) + '(' + esc(branchName(run.branch_id)) + ')<br>산정기간: ' + days[0] + ' ~ ' + days[days.length - 1] + '</div><div>지급일자: ' + esc(run.pay_date || '') + '<br>' + (run.status === 'confirmed' ? '확정' : '<b>초안</b>') + '</div></div>';
     html += '<table class="slip-t"><tr><th>성명</th><td>' + esc(s.name) + '</td><th>구분</th><td>' + (x.pay_type === 'freelance' ? '사업소득(3.3%)' : x.short_time ? '근로소득(초단시간 · 4대보험 미적용)' : x.pay_type === 'none' ? '근로소득(공제 없음)' : '근로소득(4대보험)') + '</td></tr><tr><th>시급</th><td>' + won(x.wage) + '원</td><th>근무일수</th><td>' + x.days + '일</td></tr></table>';
     html += '<table class="slip-t"><tr><th colspan="4">세부 내역</th></tr><tr><th colspan="2">지급</th><th colspan="2">공제</th></tr><tr><th>지급항목</th><th>지급금액</th><th>공제항목</th><th>공제금액</th></tr>' + body + '<tr><th>지급총액</th><td class="r"><b>' + won(x.gross + t.adj) + '</b></td><th>공제총액</th><td class="r"><b>' + won(t.dedSum) + '</b></td></tr><tr><td colspan="2"></td><th>실지급액</th><td class="r"><b>' + won(t.net) + '</b></td></tr></table>';
-    html += '<table class="slip-t"><tr><th colspan="2">근로시간</th></tr><tr><td>총 근로시간</td><td class="r">' + fmtH(x.total_min) + ' (' + x.total_min + '분)</td></tr><tr><td>연장근로시간</td><td class="r">' + x.ot_min + '분</td></tr><tr><td>야간근로시간</td><td class="r">' + x.night_min + '분</td></tr><tr><td>주휴시간</td><td class="r">' + x.juhyu_min + '분</td></tr></table>';
+    html += '<table class="slip-t"><tr><th colspan="2">근로시간</th></tr><tr><td>총 근로시간</td><td class="r">' + fmtH(x.total_min) + ' (' + x.total_min + '분)</td></tr><tr><td>연장근로시간</td><td class="r">' + x.ot_min + '분</td></tr><tr><td>야간근로시간</td><td class="r">' + x.night_min + '분</td></tr><tr><td>주휴시간</td><td class="r">' + x.juhyu_min + '분</td></tr><tr><td>주휴 구분</td><td class="r">' + (x.juhyu_type === 'regular' ? '주휴 대상 (소정근로 주 15시간 이상)' : '주휴 비대상 (소정근로 주 15시간 미만)') + (x.temp_weeks && x.temp_weeks.length ? ' · 대타로 15시간 넘은 주 ' + x.temp_weeks.map(function(w){ return fmtDateK(w.ws); }).join(', ') + ' → 주휴 미적용' : '') + '</td></tr></table>';
     html += '<table class="slip-t"><tr><th colspan="2">계산방법</th></tr><tr><td>기본급</td><td>총 근로시간 × 시급</td></tr><tr><td>주휴수당</td><td>주 15시간 이상인 주: (주 근로시간 ÷ 40) × 8시간 × 시급</td></tr><tr><td>야간근로수당</td><td>22시~06시 시간 × 시급 × ' + S.night_premium + '</td></tr><tr><td>연장근로수당</td><td>1일 8시간 또는 1주 40시간 초과 시간 × 시급 × ' + S.ot_premium + '</td></tr>' + (x.pay_type === 'freelance' ? '<tr><td>사업소득세</td><td>지급총액 × 3% · 지방소득세 0.3%</td></tr>' : (x.short_time || x.pay_type === 'none') ? '<tr><td>근로소득세</td><td>간이세액표 적용</td></tr><tr><td>4대보험</td><td>주 15시간·월 60시간 미만 초단시간 근로자 → 미적용</td></tr>' : '<tr><td>근로소득세</td><td>간이세액표 적용</td></tr><tr><td>지방소득세</td><td>근로소득세 × 10%</td></tr><tr><td>국민연금</td><td>기준소득월액 × ' + S.np_rate + '%</td></tr><tr><td>건강보험</td><td>보수월액 × ' + S.hi_rate + '%</td></tr><tr><td>장기요양보험</td><td>건강보험료 × ' + S.ltc_rate + '%</td></tr><tr><td>고용보험</td><td>보수월액 × ' + S.ei_rate + '%</td></tr>') + '</table>';
     html += '<table class="slip-t"><tr><th>날짜</th><th>인정 시간</th></tr>' + (x.dayList || []).map(function(d){ return '<tr><td>' + esc(fmtDateK(d.date)) + '</td><td class="r">' + fmtH(d.min) + '</td></tr>'; }).join('') + '</table></div>';
     app.innerHTML = html;
   };
+
+  // ===== 카드 지출 (법인카드 영수증) =====
+  var EXP_CATS = ['식자재', '포장재', '비품·소모품', '수리·설비', '공과금·통신', '식대·회식', '차량·교통', '기타'];
+  var expState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
+  var stmtState = { ym: null, text: '', rows: null };
+  var cardsState = null, cardsKeep = false;
+  function monthRange(ym){ var d = monthDays(ym); return { from: d[0], to: d[d.length - 1] }; }
+  function branchLabel(id){ return id ? branchName(id) : '공통(사장님)'; }
+  function cardLabel(c){ return c ? c.name + ' (' + c.last4 + ')' : '카드 모름'; }
+  async function loadCards(){ return db.select('ops_cards', { order: { col: 'sort_order' } }); }
+  function cardByLast4(cards, l4){ return l4 ? cards.filter(function(c){ return c.active !== false && c.last4 === l4; })[0] : null; }
+  function cardById(cards, id){ return id ? cards.filter(function(c){ return c.id === id; })[0] : null; }
+  function ymOf(v){ return /^\d{4}-\d{2}$/.test(v || '') ? v : monthOf(todayStr()); }
+  function expScope(params){ return isOwner() ? (params.arg || 'all') : session.branchId; }
+  function inScope(x, scope){ return scope === 'all' || (scope === 'common' ? !x.branch_id : x.branch_id === scope); }
+  async function loadExpenses(ym){ var mr = monthRange(ym); return (await db.select('ops_expenses', { gte: { spent_on: mr.from }, order: { col: 'spent_on', asc: false } })).filter(function(x){ return x.spent_on <= mr.to; }); }
+  function expTabs(scope, ym){
+    if (!isOwner()) return '';
+    var t = function(id, label){ return '<span class="tab' + (scope === id ? ' on' : '') + '" data-act="go" data-href="#/expense-list/' + id + '/' + ym + '">' + esc(label) + '</span>'; };
+    var html = '<div class="tabs">' + t('all', '전체') + t('common', '공통');
+    base.branches.forEach(function(b){ html += t(b.id, b.name); });
+    return html + '</div>';
+  }
+  function monthNav(ym, hrefFn){ return '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="go" data-href="' + hrefFn(addMonths(ym, -1)) + '">‹ 지난달</button><b>' + ym.replace('-', '년 ') + '월</b><button class="btn sm" data-act="go" data-href="' + hrefFn(addMonths(ym, 1)) + '">다음달 ›</button></div>'; }
+  function catOptions(sel){ return EXP_CATS.map(function(c){ return '<option value="' + esc(c) + '"' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join(''); }
+  function branchOptions(sel){ var html = '<option value=""' + (!sel ? ' selected' : '') + '>공통(사장님)</option>'; base.branches.forEach(function(b){ html += '<option value="' + esc(b.id) + '"' + (sel === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }); return html; }
+  function cardOptions(cards, sel){ var html = '<option value=""' + (!sel ? ' selected' : '') + '>카드 모름 / 기타</option>'; cards.forEach(function(c){ if (c.active === false && c.id !== sel) return; html += '<option value="' + esc(c.id) + '" data-branch="' + esc(c.branch_id || '') + '" data-ask="' + (c.ask_branch ? 1 : 0) + '"' + (sel === c.id ? ' selected' : '') + '>' + esc(cardLabel(c)) + '</option>'; }); return html; }
+  // 폰 사진(3~5MB)을 긴 쪽 1600px JPEG로 줄임 (저장 용량·자동 읽기 비용 절약)
+  function resizeImage(file, max){
+    return new Promise(function(resolve, reject){
+      var url = URL.createObjectURL(file); var img = new Image();
+      img.onload = function(){
+        var w = img.naturalWidth, h = img.naturalHeight, s = Math.min(1, max / Math.max(w, h));
+        var c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(h * s);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        var dataUrl = c.toDataURL('image/jpeg', 0.85);
+        c.toBlob(function(blob){ if (!blob) return reject(new Error('사진을 변환하지 못했어요')); resolve({ blob: blob, dataUrl: dataUrl, mime: 'image/jpeg' }); }, 'image/jpeg', 0.85);
+      };
+      img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error('사진을 열 수 없어요')); };
+      img.src = url;
+    });
+  }
+  async function expPhotoPicked(file){
+    if (!file) return;
+    expState = { photo: null, ocr: null, ocrBusy: true, ocrError: null };
+    try { expState.photo = await resizeImage(file, 1600); }
+    catch(e){ expState = { photo: null, ocr: null, ocrBusy: false, ocrError: null }; toast(e.message || '사진을 열 수 없어요'); return; }
+    render();
+    try { var r = await db.ocr(expState.photo.dataUrl.split(',')[1], expState.photo.mime); if (r && r.error) throw new Error(r.error); expState.ocr = r; }
+    catch(e){ console.warn('자동 읽기 실패', e); expState.ocrError = e.message || String(e); }
+    expState.ocrBusy = false;
+    if (current.route === 'expense') render();
+  }
+
+  // --- 영수증 올리기 (모두) ---
+  routes.expense = async function(){
+    await loadBase();
+    var cards = await loadCards();
+    var st = expState, o = st.ocr || {};
+    var card = cardByLast4(cards, o.card_last4);
+    if (!card && !o.card_last4 && !isOwner()) card = cards.filter(function(c){ return c.active !== false && c.branch_id === session.branchId && !c.ask_branch; })[0];
+    var html = topbar('영수증 올리기', true, whoChip());
+    if (!cards.filter(function(c){ return c.active !== false; }).length) html += '<div class="note">' + (isOwner() ? '카드가 아직 없어요. <a href="#/expense-cards" style="text-decoration:underline">카드 설정</a>에서 카드 끝 4자리와 지점을 먼저 넣으면 지점이 자동으로 골라져요.' : '아직 카드 목록이 없어요. 지점을 직접 골라서 저장하면 돼요.') + '</div>';
+    html += '<div class="form">';
+    if (!st.photo){
+      html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="exp-file" class="hidden"></label>';
+      html += '<div class="muted">사진을 고르면 가게명·날짜·금액·카드 끝자리를 자동으로 읽어요. 틀리면 아래에서 고치고 저장하면 돼요. 영수증 한 장에 사진 한 장.</div>';
+      html += '<div style="text-align:center"><span class="muted" data-act="exp-nophoto" style="cursor:pointer;text-decoration:underline">사진 없이 직접 입력</span></div>';
+    } else {
+      if (st.photo.dataUrl) html += '<img src="' + st.photo.dataUrl + '" alt="영수증" style="width:100%;max-height:240px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">';
+      if (st.ocrBusy) html += '<div class="note">🔎 영수증을 읽는 중… 5초쯤 걸려요</div>';
+      else if (st.ocrError) html += '<div class="note danger">자동 읽기가 안 됐어요: ' + esc(st.ocrError) + '<br><span class="muted">아래에 직접 넣어 주세요.</span></div>';
+      else if (st.ocr) html += '<div class="note ok">읽었어요' + (o.confidence != null && o.confidence < 0.6 ? ' (사진이 흐려서 자신 없음)' : '') + '. 맞는지 확인하고 저장해 주세요.' + (o.summary ? '<br><span class="muted">' + esc(o.summary) + '</span>' : '') + '</div>';
+      html += '<div style="text-align:center"><span class="muted" data-act="exp-retake" style="cursor:pointer;text-decoration:underline">' + (st.photo.dataUrl ? '다른 사진으로' : '← 사진 찍기로') + '</span></div>';
+      var defBranch, askNote = '';
+      if (card){ if (card.ask_branch){ defBranch = isOwner() ? '' : session.branchId; askNote = '이 카드(' + esc(card.name) + ')는 여러 곳에서 써요. 어디 지출인지 골라 주세요.'; } else defBranch = card.branch_id || ''; }
+      else defBranch = isOwner() ? '' : session.branchId;
+      html += '<div class="grid2"><div><label>날짜</label><input class="in" type="date" id="exp-date" value="' + esc(o.spent_on || todayStr()) + '"></div><div><label>금액(원)</label><input class="in" type="number" inputmode="numeric" id="exp-amount" value="' + (o.amount != null ? o.amount : '') + '" placeholder="34500"></div></div>';
+      html += '<div><label>가게 이름</label><input class="in" id="exp-merchant" value="' + esc(o.merchant || '') + '" placeholder="예: 성수 식자재마트"></div>';
+      html += '<div class="grid2"><div><label>카드' + (o.card_last4 && !card ? ' <span style="color:var(--warn)">(읽은 끝자리 ' + esc(o.card_last4) + ' — 목록에 없음)</span>' : '') + '</label><select class="in" id="exp-card">' + cardOptions(cards, card ? card.id : '') + '</select></div><div><label>어느 지점 지출?</label><select class="in" id="exp-branch">' + branchOptions(defBranch) + '</select></div></div>';
+      if (askNote) html += '<div class="note">' + askNote + '</div>';
+      html += '<div class="grid2"><div><label>항목</label><select class="in" id="exp-cat">' + catOptions('식자재') + '</select></div><div><label>메모 (선택)</label><input class="in" id="exp-memo" placeholder="예: 추석 선물 포장"></div></div>';
+    }
+    html += '</div>';
+    var mine = await db.select('ops_expenses', { eq: { uploaded_by: session.staffId }, order: { col: 'created_at', asc: false }, limit: 5 });
+    if (mine.length){
+      html += '<div class="group-title">내가 최근 올린 영수증</div><div class="card">';
+      mine.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.merchant || '(가게명 없음)') + ' · ' + won(x.amount) + '원</div><div class="s">' + esc(fmtDateK(x.spent_on)) + ' · ' + esc(branchLabel(x.branch_id)) + ' · ' + esc(x.category) + '</div></div>' + (x.statement_key ? '<span class="badge ok">✓</span>' : '') + '</div>'; });
+      html += '</div>';
+      if (isManager()) html += '<div style="text-align:center;margin-top:10px"><a class="btn sm" href="#/expense-list">전체 목록 보기 ›</a></div>';
+    }
+    if (st.photo) html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="exp-save"' + (st.ocrBusy ? ' disabled' : '') + '>저장</button></div></div>';
+    app.innerHTML = html;
+  };
+  async function expSave(){
+    var v = function(id){ var el = document.getElementById(id); return el ? el.value : ''; };
+    var date = v('exp-date'), amount = num(v('exp-amount'));
+    if (!date){ toast('날짜를 넣어 주세요'); return; }
+    if (!amount || amount <= 0){ toast('금액을 넣어 주세요'); return; }
+    var cards = await loadCards(); var card = cardById(cards, v('exp-card'));
+    var branchId = v('exp-branch') || null;
+    var path = null;
+    if (expState.photo && expState.photo.blob){
+      path = (branchId || 'common') + '/' + date.slice(0, 7) + '/' + uid() + '.jpg';
+      try { await db.upload('receipts', path, expState.photo.blob, 'image/jpeg'); }
+      catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 내용만 저장할까요?')) return; path = null; }
+    }
+    await db.insert('ops_expenses', { spent_on: date, merchant: v('exp-merchant').trim() || null, amount: amount, card_id: card ? card.id : null, card_last4: card ? card.last4 : ((expState.ocr || {}).card_last4 || null), branch_id: branchId, category: v('exp-cat') || '기타', memo: v('exp-memo').trim() || null, photo_path: path, ocr: expState.ocr || null, source: 'receipt', statement_key: null, uploaded_by: session.staffId, created_at: nowIso(), updated_at: nowIso() });
+    expState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
+    toast('저장했어요 · ' + branchLabel(branchId) + ' ' + won(amount) + '원');
+    render();
+  }
+
+  // --- 지출 목록 (사장님·매니저) ---
+  routes['expense-list'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/expense'); return; }
+    var scope = expScope(params), ym = ymOf(params.arg2);
+    var r = await Promise.all([ loadExpenses(ym), loadCards() ]);
+    var cards = r[1], list = r[0].filter(function(x){ return inScope(x, scope); });
+    var title = scope === 'all' ? '전체' : branchLabel(scope === 'common' ? null : scope);
+    var html = topbar('카드 지출 · ' + title, true) + expTabs(scope, ym);
+    html += monthNav(ym, function(m){ return '#/expense-list/' + scope + '/' + m; });
+    var sum = 0; list.forEach(function(x){ sum += num(x.amount) || 0; });
+    html += '<div class="inline" style="justify-content:space-between;margin-bottom:8px"><b>' + list.length + '건 · ' + won(sum) + '원</b><span class="inline"><a class="btn sm" href="#/expense-sum/' + ym + '">합계표</a><a class="btn sm" href="#/expense-import/' + ym + '">명세서 대조</a><a class="btn sm primary" href="#/expense">+ 올리기</a></span></div>';
+    html += '<div class="card">';
+    if (!list.length) html += '<div class="empty">이 달 지출이 없어요. 영수증을 올려 주세요.</div>';
+    list.forEach(function(x){
+      var c = cardById(cards, x.card_id);
+      html += '<div class="item" data-act="exp-toggle" data-id="' + esc(x.id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(x.merchant || '(가게명 없음)') + '</div><div class="s">' + esc(fmtDateK(x.spent_on)) + (scope === 'all' ? ' · ' + esc(branchLabel(x.branch_id)) : '') + ' · ' + esc(c ? c.name : (x.card_last4 ? '끝 ' + x.card_last4 : '카드 모름')) + (staffName(x.uploaded_by) ? ' · ' + esc(staffName(x.uploaded_by)) : '') + '</div></div><span class="badge muted">' + esc(x.category) + '</span>' + (x.statement_key ? '<span class="badge ok" title="명세서와 일치">✓</span>' : '') + (x.photo_path ? '<span title="사진 있음">📷</span>' : '') + '<b style="white-space:nowrap">' + won(x.amount) + '</b></div>';
+      html += '<div class="expand hidden" id="ex-' + esc(x.id) + '" style="padding-left:14px">' +
+        '<div class="grid2"><div><label class="muted">날짜</label><input class="in" type="date" id="ed-' + esc(x.id) + '" value="' + esc(x.spent_on) + '"></div><div><label class="muted">금액</label><input class="in" type="number" id="ea-' + esc(x.id) + '" value="' + esc(x.amount) + '"></div></div>' +
+        '<div style="margin-top:8px"><label class="muted">가게</label><input class="in" id="em-' + esc(x.id) + '" value="' + esc(x.merchant || '') + '"></div>' +
+        '<div class="grid2" style="margin-top:8px"><div><label class="muted">카드</label><select class="in" id="ec-' + esc(x.id) + '">' + cardOptions(cards, x.card_id) + '</select></div><div><label class="muted">지점</label><select class="in" id="eb-' + esc(x.id) + '">' + branchOptions(x.branch_id) + '</select></div></div>' +
+        '<div class="grid2" style="margin-top:8px"><div><label class="muted">항목</label><select class="in" id="ek-' + esc(x.id) + '">' + catOptions(x.category) + '</select></div><div><label class="muted">메모</label><input class="in" id="eo-' + esc(x.id) + '" value="' + esc(x.memo || '') + '"></div></div>' +
+        '<div class="inline" style="margin-top:10px">' + (x.photo_path ? '<button class="btn sm" data-act="exp-photo" data-path="' + esc(x.photo_path) + '">📷 사진 보기</button>' : '') + '<button class="btn sm primary" data-act="exp-update" data-id="' + esc(x.id) + '">저장</button><span style="flex:1"></span><button class="btn sm danger" data-act="exp-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">삭제</button></div>' +
+        (x.source === 'statement' ? '<div class="muted" style="margin-top:6px">명세서에서 등록한 건 (영수증 사진 없음)</div>' : '') + '</div>';
+    });
+    html += '</div>';
+    app.innerHTML = html;
+  };
+  async function expUpdate(id){
+    var g = function(p){ return document.getElementById(p + '-' + id).value; };
+    var amount = num(g('ea')); if (!amount || amount <= 0){ toast('금액을 넣어 주세요'); return; }
+    if (!g('ed')){ toast('날짜를 넣어 주세요'); return; }
+    var cards = await loadCards(); var card = cardById(cards, g('ec'));
+    var patch = { spent_on: g('ed'), amount: amount, merchant: g('em').trim() || null, card_id: card ? card.id : null, branch_id: g('eb') || null, category: g('ek'), memo: g('eo').trim() || null, updated_at: nowIso() };
+    if (card) patch.card_last4 = card.last4;
+    await db.update('ops_expenses', { id: id }, patch); toast('고쳤어요'); render();
+  }
+
+  // --- 월 합계표 ---
+  routes['expense-sum'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/expense'); return; }
+    var ym = ymOf(params.arg);
+    var r = await Promise.all([ loadExpenses(ym), loadCards() ]); var cards = r[1];
+    var list = isOwner() ? r[0] : r[0].filter(function(x){ return x.branch_id === session.branchId; });
+    var html = topbar('카드 지출 합계', true) + monthNav(ym, function(m){ return '#/expense-sum/' + m; });
+    var cols = isOwner() ? [{ id: null, name: '공통' }].concat(base.branches) : base.branches.filter(function(b){ return b.id === session.branchId; });
+    var cell = {}, rowT = {}, colT = {}, total = 0;
+    list.forEach(function(x){ var a = num(x.amount) || 0, b = x.branch_id || 'common', k = b + '|' + x.category; cell[k] = (cell[k] || 0) + a; rowT[x.category] = (rowT[x.category] || 0) + a; colT[b] = (colT[b] || 0) + a; total += a; });
+    html += '<div class="card" style="overflow-x:auto"><table class="grid" style="font-size:12px"><tr><th>항목</th>' + cols.map(function(c){ return '<th style="text-align:right;position:static">' + esc(c.name) + '</th>'; }).join('') + '<th style="text-align:right;position:static">합계</th></tr>';
+    EXP_CATS.concat(Object.keys(rowT).filter(function(k){ return EXP_CATS.indexOf(k) < 0; })).forEach(function(cat){ if (!rowT[cat]) return; html += '<tr><th>' + esc(cat) + '</th>' + cols.map(function(c){ var v = cell[(c.id || 'common') + '|' + cat] || 0; return '<td style="text-align:right">' + (v ? won(v) : '') + '</td>'; }).join('') + '<td style="text-align:right"><b>' + won(rowT[cat]) + '</b></td></tr>'; });
+    html += '<tr><th>합계</th>' + cols.map(function(c){ return '<td style="text-align:right"><b>' + won(colT[c.id || 'common'] || 0) + '</b></td>'; }).join('') + '<td style="text-align:right"><b>' + won(total) + '</b></td></tr></table></div>';
+    var byCard = {};
+    list.forEach(function(x){ var k = x.card_id || (x.card_last4 ? 'l4:' + x.card_last4 : 'none'); var v = byCard[k] = byCard[k] || { n: 0, sum: 0, matched: 0 }; v.n++; v.sum += num(x.amount) || 0; if (x.statement_key) v.matched++; });
+    html += '<div class="card section"><div class="sec-h">카드별<span class="sp"></span><button class="btn sm" data-act="exp-csv">엑셀(CSV) 내려받기</button></div>';
+    Object.keys(byCard).forEach(function(k){ var c = cardById(cards, k); var label = c ? cardLabel(c) : (k.indexOf('l4:') === 0 ? '끝 ' + k.slice(3) + ' (카드 목록에 없음)' : '카드 모름'); var v = byCard[k]; html += '<div class="item"><div class="iname"><div class="t">' + esc(label) + '</div><div class="s">' + v.n + '건 · 명세서 일치 ' + v.matched + '건</div></div><b>' + won(v.sum) + '</b></div>'; });
+    if (!list.length) html += '<div class="empty">이 달 지출이 없어요</div>';
+    html += '</div>';
+    html += '<div class="muted" style="margin-top:10px">CSV에는 이 달 지출이 한 줄씩 다 들어가요 (세무사·회계 전달용). 명세서 대조는 <a href="#/expense-import/' + ym + '" style="text-decoration:underline">여기</a>.</div>';
+    app.innerHTML = html;
+    app._csv = [['날짜', '지점', '가게', '금액', '항목', '카드', '끝4자리', '메모', '올린 사람', '명세서 일치', '사진']].concat(list.slice().sort(function(a, b){ return a.spent_on < b.spent_on ? -1 : 1; }).map(function(x){ var c = cardById(cards, x.card_id); return [x.spent_on, branchLabel(x.branch_id), x.merchant || '', x.amount, x.category, c ? c.name : '', x.card_last4 || '', x.memo || '', staffName(x.uploaded_by), x.statement_key ? 'Y' : '', x.photo_path ? 'Y' : '']; }));
+    app._csvName = '카드지출_' + ym + '.csv';
+  };
+
+  // --- 카드사 명세서 대조 ---
+  // 엑셀에서 복사한 표(탭 구분)를 한 줄씩 읽어 날짜·금액·가게·끝4자리를 찾음. 열 순서는 카드사마다 달라서 형태로 판단.
+  function parseStatement(text, ym){
+    var out = [];
+    text.split(/\r?\n/).forEach(function(line){
+      line = line.trim(); if (!line) return;
+      var toks = (line.indexOf('\t') >= 0 ? line.split('\t') : line.split(/\s{2,}|,(?!\d{3}\b)/)).map(function(t){ return t.trim(); }).filter(Boolean);
+      var date = null, last4 = null, merchant = '', amts = [];
+      toks.forEach(function(t){
+        var m;
+        if (!date && (m = t.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/))){ date = m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]); return; }
+        if (!date && (m = t.match(/^(20\d{2})(\d{2})(\d{2})$/))){ date = m[1] + '-' + m[2] + '-' + m[3]; return; }
+        if (!date && (m = t.match(/^(\d{1,2})[.\/](\d{1,2})\.?$/))){ date = ym.slice(0, 4) + '-' + pad(+m[1]) + '-' + pad(+m[2]); return; }
+        if (!last4 && /[*xX]/.test(t) && (m = t.match(/(\d{4})\D*$/))){ last4 = m[1]; return; }
+        if (/^-?[\d,]+원?$/.test(t)){ var n = parseInt(t.replace(/[^\d-]/g, ''), 10); if (!isNaN(n) && Math.abs(n) >= 100 && String(Math.abs(n)).length <= 8) amts.push({ n: n, comma: t.indexOf(',') >= 0 }); return; }
+        if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) return;
+        if (/[가-힣A-Za-z]/.test(t) && !/^(일시불|할부|승인|취소|국내|해외|일반|체크|신용)$/.test(t) && t.length > merchant.length) merchant = t;
+      });
+      var amount = null, withComma = amts.filter(function(a){ return a.comma; });
+      if (withComma.length) amount = withComma[0].n; else if (amts.length) amount = amts.sort(function(a, b){ return Math.abs(b.n) - Math.abs(a.n); })[0].n;
+      if (date && amount != null) out.push({ date: date, amount: Math.abs(amount), last4: last4, merchant: merchant, raw: line, cancel: amount < 0 || /취소/.test(line) });
+    });
+    return out;
+  }
+  function daysDiff(a, b){ return Math.abs((dateObj(a) - dateObj(b)) / 86400000); }
+  // 명세서 줄 ↔ 영수증: 같은 금액 + 날짜 2일 이내 (+ 끝4자리 있으면 같아야) = 일치. 날짜·가게는 같은데 금액만 다르면 "금액 다름".
+  function matchStatement(rows, exps){
+    var used = {};
+    rows.forEach(function(r){
+      r.status = 'missing'; r.exp = null;
+      if (r.cancel){ r.status = 'cancel'; return; }
+      var cand = exps.filter(function(x){ return !used[x.id] && num(x.amount) === r.amount && daysDiff(x.spent_on, r.date) <= 2 && !(r.last4 && x.card_last4 && x.card_last4 !== r.last4); });
+      cand.sort(function(a, b){ return daysDiff(a.spent_on, r.date) - daysDiff(b.spent_on, r.date); });
+      if (cand.length){ r.status = 'ok'; r.exp = cand[0]; used[cand[0].id] = true; return; }
+      var key = r.merchant.replace(/\s/g, '').slice(0, 3);
+      var near = key ? exps.filter(function(x){ return !used[x.id] && daysDiff(x.spent_on, r.date) <= 1 && !(r.last4 && x.card_last4 && x.card_last4 !== r.last4) && (x.merchant || '').replace(/\s/g, '').slice(0, 3) === key; }) : [];
+      if (near.length){ r.status = 'diff'; r.exp = near[0]; used[near[0].id] = true; }
+    });
+    return used;
+  }
+  routes['expense-import'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/expense'); return; }
+    var ym = ymOf(params.arg);
+    if (stmtState.ym !== ym) stmtState = { ym: ym, text: '', rows: null };
+    var r = await Promise.all([ loadExpenses(ym), loadCards() ]); var cards = r[1];
+    var exps = isOwner() ? r[0] : r[0].filter(function(x){ return x.branch_id === session.branchId; });
+    var html = topbar('명세서 대조', true) + monthNav(ym, function(m){ return '#/expense-import/' + m; });
+    html += '<div class="form"><div class="muted">카드사 홈페이지·앱에서 이 달 이용내역을 엑셀로 받아 열고, 표를 전체 선택(Ctrl+A)·복사해서 아래에 붙여 넣으세요. 한 줄에 날짜·가게·금액이 있으면 돼요. 카드번호(끝 4자리)가 있으면 더 정확해요.</div><textarea class="in" id="stmt-text" rows="6" placeholder="2026.09.03&#9;성수식자재마트&#9;156,000&#9;1234-****-****-1234">' + esc(stmtState.text) + '</textarea><button class="btn primary" data-act="stmt-run">대조하기</button></div>';
+    if (stmtState.rows){
+      var rows = stmtState.rows, used = matchStatement(rows, exps);
+      var g = function(s){ return rows.filter(function(x){ return x.status === s; }); };
+      var sumOf = function(list){ var s = 0; list.forEach(function(x){ s += x.amount; }); return s; };
+      var ok = g('ok'), diff = g('diff'), miss = g('missing'), cancel = g('cancel');
+      html += '<div class="summary" style="margin-top:12px"><a><div class="n" style="color:var(--ok)">' + ok.length + '</div><div class="l">일치 ✓</div></a><a><div class="n" style="color:var(--warn)">' + diff.length + '</div><div class="l">금액 다름</div></a><a><div class="n' + (miss.length ? ' danger' : '') + '">' + miss.length + '</div><div class="l">영수증 없음</div></a></div>';
+      html += '<div class="muted" style="margin:6px 4px">명세서 ' + rows.length + '줄 · ' + won(sumOf(rows.filter(function(x){ return x.status !== 'cancel'; }))) + '원' + (cancel.length ? ' · 취소 ' + cancel.length + '줄 제외' : '') + '</div>';
+      if (miss.length){
+        html += '<div class="card section"><div class="sec-h" style="color:var(--danger)">영수증 없음 — 어디서 썼는지 골라 등록<span class="sp"></span>' + won(sumOf(miss)) + '원</div>';
+        miss.forEach(function(x){ var idx = rows.indexOf(x), c = cardByLast4(cards, x.last4); html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:150px"><div class="t">' + esc(x.merchant || '(가게명 없음)') + ' · ' + won(x.amount) + '원</div><div class="s">' + esc(fmtDateK(x.date)) + (x.last4 ? ' · 끝 ' + esc(x.last4) + (c ? ' ' + esc(c.name) : '') : '') + '</div></div><select class="in" id="sb-' + idx + '" style="width:auto;padding:6px">' + branchOptions(c ? (c.ask_branch ? '' : c.branch_id) : (isOwner() ? '' : session.branchId)) + '</select><select class="in" id="sk-' + idx + '" style="width:auto;padding:6px">' + catOptions('기타') + '</select><button class="btn sm primary" data-act="stmt-add" data-idx="' + idx + '">등록</button></div>'; });
+        html += '</div>';
+      }
+      if (diff.length){ html += '<div class="card section"><div class="sec-h" style="color:var(--warn)">금액이 다름 — 영수증을 확인해 주세요</div>'; diff.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.merchant) + ' · 명세서 ' + won(x.amount) + '원</div><div class="s">영수증엔 ' + won(x.exp.amount) + '원 (' + esc(fmtDateK(x.exp.spent_on)) + ' · ' + esc(branchLabel(x.exp.branch_id)) + ')</div></div></div>'; }); html += '</div>'; }
+      if (ok.length){ html += '<div class="card section"><div class="sec-h" style="color:var(--ok)">일치 ✓ ' + ok.length + '건 · ' + won(sumOf(ok)) + '원</div>'; ok.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.exp.merchant || x.merchant) + ' · ' + won(x.amount) + '원</div><div class="s">' + esc(fmtDateK(x.date)) + ' · ' + esc(branchLabel(x.exp.branch_id)) + ' · ' + esc(x.exp.category) + '</div></div><span class="badge ok">✓</span></div>'; }); html += '</div>'; }
+      var extra = exps.filter(function(x){ return !used[x.id]; });
+      if (extra.length){ html += '<div class="card section"><div class="sec-h">영수증은 있는데 이 명세서엔 없음 ' + extra.length + '건</div><div class="muted" style="padding:6px 14px">다른 카드로 결제했거나, 아직 명세서에 안 올라온 결제일 수 있어요.</div>'; extra.forEach(function(x){ html += '<div class="item"><div class="iname"><div class="t">' + esc(x.merchant || '(가게명 없음)') + ' · ' + won(x.amount) + '원</div><div class="s">' + esc(fmtDateK(x.spent_on)) + ' · ' + esc(branchLabel(x.branch_id)) + (x.card_last4 ? ' · 끝 ' + esc(x.card_last4) : '') + '</div></div></div>'; }); html += '</div>'; }
+    }
+    app.innerHTML = html;
+  };
+  async function stmtRun(){
+    var text = document.getElementById('stmt-text').value;
+    stmtState.text = text; stmtState.rows = parseStatement(text, stmtState.ym);
+    if (!stmtState.rows.length){ toast('날짜와 금액이 있는 줄을 못 찾았어요'); render(); return; }
+    var exps = await loadExpenses(stmtState.ym); if (!isOwner()) exps = exps.filter(function(x){ return x.branch_id === session.branchId; });
+    matchStatement(stmtState.rows, exps);
+    var n = 0;
+    for (var i = 0; i < stmtState.rows.length; i++){ var r = stmtState.rows[i]; if (r.status === 'ok' && !r.exp.statement_key){ await db.update('ops_expenses', { id: r.exp.id }, { statement_key: stmtState.ym + ':' + r.date + ':' + r.amount, updated_at: nowIso() }); n++; } }
+    toast('대조했어요' + (n ? ' · 영수증 ' + n + '건에 ✓ 표시' : ''));
+    render();
+  }
+  async function stmtAdd(idx){
+    var r = stmtState.rows[idx]; var cards = await loadCards(); var c = cardByLast4(cards, r.last4);
+    var b = document.getElementById('sb-' + idx).value || null, k = document.getElementById('sk-' + idx).value;
+    await db.insert('ops_expenses', { spent_on: r.date, merchant: r.merchant || null, amount: r.amount, card_id: c ? c.id : null, card_last4: r.last4 || null, branch_id: b, category: k, memo: '명세서에서 등록', photo_path: null, ocr: null, source: 'statement', statement_key: stmtState.ym + ':' + r.date + ':' + r.amount, uploaded_by: session.staffId, created_at: nowIso(), updated_at: nowIso() });
+    toast('등록했어요'); render();
+  }
+
+  // --- 카드 설정 (사장님) ---
+  routes['expense-cards'] = async function(){
+    await loadBase();
+    if (!isOwner()){ toast('카드 설정은 사장님만 볼 수 있어요'); nav('#/home'); return; }
+    if (!cardsKeep || !cardsState) cardsState = await loadCards();
+    cardsKeep = false;
+    var html = topbar('카드 설정', true);
+    html += '<div class="muted" style="margin:4px 4px 10px">법인카드마다 <b>끝 4자리</b>와 <b>어느 지점 카드</b>인지 넣어 두면, 영수증을 올릴 때 지점이 자동으로 골라져요. 사장님 기명카드처럼 여러 곳에서 쓰는 카드는 "여러 곳에서 씀"을 켜 두면 올릴 때 지점을 물어봐요.</div>';
+    html += '<div class="card">';
+    cardsState.forEach(function(c, i){ html += '<div class="item" style="flex-wrap:wrap;gap:8px' + (c.active === false ? ';opacity:.5' : '') + '"><input class="in cd-last4" data-i="' + i + '" inputmode="numeric" maxlength="4" placeholder="끝 4자리" value="' + esc(c.last4 || '') + '" style="width:92px"><input class="in cd-name" data-i="' + i + '" placeholder="카드 이름 (예: 왕십리 카드)" value="' + esc(c.name || '') + '" style="flex:1;min-width:150px"><select class="in cd-branch" data-i="' + i + '" style="width:auto;padding:6px">' + branchOptions(c.branch_id) + '</select><label class="muted" style="display:flex;align-items:center;gap:4px;margin:0"><input type="checkbox" class="cd-ask" data-i="' + i + '"' + (c.ask_branch ? ' checked' : '') + '>여러 곳에서 씀</label><button class="btn sm" data-act="cards-toggle" data-i="' + i + '">' + (c.active === false ? '다시 씀' : '안 씀') + '</button></div>'; });
+    if (!cardsState.length) html += '<div class="empty">아직 카드가 없어요. 아래 [카드 추가]를 눌러 주세요.</div>';
+    html += '</div>';
+    html += '<div class="inline" style="margin-top:10px"><button class="btn" data-act="cards-add">+ 카드 추가</button></div>';
+    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="cards-save">카드 저장</button></div></div>';
+    app.innerHTML = html;
+  };
+  function cardsRead(){ cardsState.forEach(function(c, i){ var q = function(cls){ return app.querySelector('.' + cls + '[data-i="' + i + '"]'); }; if (!q('cd-last4')) return; c.last4 = q('cd-last4').value.trim(); c.name = q('cd-name').value.trim(); c.branch_id = q('cd-branch').value || null; c.ask_branch = q('cd-ask').checked; }); }
+  async function cardsSave(){
+    cardsRead();
+    for (var i = 0; i < cardsState.length; i++){ var c = cardsState[i]; if (!/^\d{4}$/.test(c.last4)){ toast((i + 1) + '번째 카드: 끝 4자리는 숫자 4개로'); return; } if (!c.name){ toast((i + 1) + '번째 카드: 이름을 넣어 주세요'); return; } }
+    var rows = cardsState.map(function(c, i){ var r = { last4: c.last4, name: c.name, branch_id: c.branch_id, ask_branch: !!c.ask_branch, active: c.active !== false, sort_order: i + 1 }; if (c.id) r.id = c.id; return r; });
+    var olds = rows.filter(function(r){ return r.id; }), news = rows.filter(function(r){ return !r.id; });
+    if (olds.length) await db.upsert('ops_cards', olds, 'id');
+    if (news.length) await db.insert('ops_cards', news);
+    cardsState = null; toast('저장했어요'); render();
+  }
 
   // ===== 이벤트 =====
   app.addEventListener('click', async function(e){
@@ -1434,10 +1779,27 @@
         case 'pay-month': nav('#/pay/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-ym')); break;
         case 'pay-save': await paySave(el.getAttribute('data-branch'), el.getAttribute('data-ym')); break;
         case 'pay-confirm': { var on = el.getAttribute('data-on') === '1'; if (on && !window.confirm('이 사람 급여를 확정할까요? 확정하면 출퇴근 기록이 바뀌어도 금액이 안 바뀌어요.')) break; await db.update('ops_pay_runs', { id: id }, { status: on ? 'confirmed' : 'draft', confirmed_by: on ? session.staffId : null, confirmed_at: on ? nowIso() : null }); toast(on ? '확정했어요' : '확정을 풀었어요'); render(); break; }
+        // 카드 지출
+        case 'go': nav(el.getAttribute('data-href')); break;
+        case 'exp-nophoto': expState = { photo: { blob: null, dataUrl: null, mime: null }, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
+        case 'exp-retake': expState = { photo: null, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
+        case 'exp-save': el.disabled = true; try { await expSave(); } finally { el.disabled = false; } break;
+        case 'exp-toggle': document.getElementById('ex-' + id).classList.toggle('hidden'); break;
+        case 'exp-photo': { var pu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(pu, '_blank'); break; }
+        case 'exp-update': await expUpdate(id); break;
+        case 'exp-del': if (window.confirm('이 지출을 지울까요? (사진도 같이 지워져요)')){ var pp = el.getAttribute('data-path'); await db.remove('ops_expenses', { id: id }); if (pp) db.removeFile('receipts', pp).catch(function(){}); toast('지웠어요'); render(); } break;
+        case 'exp-csv': downloadCsv(); break;
+        case 'stmt-run': el.disabled = true; try { await stmtRun(); } finally { el.disabled = false; } break;
+        case 'stmt-add': el.disabled = true; try { await stmtAdd(+el.getAttribute('data-idx')); } finally { el.disabled = false; } break;
+        case 'cards-add': cardsRead(); cardsState.push({ last4: '', name: '', branch_id: null, ask_branch: false, active: true }); cardsKeep = true; render(); break;
+        case 'cards-toggle': { cardsRead(); var cc = cardsState[+el.getAttribute('data-i')]; cc.active = cc.active === false; cardsKeep = true; render(); break; }
+        case 'cards-save': await cardsSave(); break;
       }
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
   app.addEventListener('change', async function(e){
+    if (e.target.id === 'exp-file'){ await expPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'exp-card'){ var opt = e.target.selectedOptions && e.target.selectedOptions[0], bsel = document.getElementById('exp-branch'); if (opt && bsel && opt.value && opt.getAttribute('data-ask') !== '1') bsel.value = opt.getAttribute('data-branch') || ''; return; }
     var el = e.target.closest('[data-act="role"]'); if (!el) return;
     try { await db.update('manual_staff', { id: el.getAttribute('data-id') }, { role: el.value }); toast('역할을 바꿨어요'); render(); } catch(err){ toast('실패: ' + (err.message || err)); }
   });
