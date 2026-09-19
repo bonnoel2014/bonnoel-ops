@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
       try {
         await client.send({ from: `본노엘 <${user}>`, to, cc: cc || undefined, subject, content: text, html, attachments });
       } finally {
-        await client.close().catch(() => {});
+        try { await client.close(); } catch (_) { /* 이미 닫혔으면 무시 */ }
       }
     }
   } catch (e) {
