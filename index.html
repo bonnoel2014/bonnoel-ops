@@ -489,7 +489,8 @@
       var people = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === st.branchId || s.role === 'owner' || !s.branch_id); });
       html += '<div class="group-title">' + esc(branchName(st.branchId)) + ' · 내 이름을 골라 주세요 <span class="muted" data-act="pick-branch-reset" style="cursor:pointer">(매장 바꾸기)</span></div>';
       html += '<div class="name-grid">';
-      people.forEach(function(s){ html += '<button class="btn" data-act="pick-staff" data-id="' + esc(s.id) + '">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + '</button>'; });
+      var hcMarks = await hcRedMarks();   // 보건증 만료·임박·없음이면 이름표에 빨간 글씨
+      people.forEach(function(s){ html += '<button class="btn" data-act="pick-staff" data-id="' + esc(s.id) + '">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + hcNameMark(hcMarks, s.id) + '</button>'; });
       html += '</div>';
       if (!people.length) html += '<div class="empty">이 매장에 등록된 직원이 없어요. 매니저에게 등록을 요청하세요.</div>';
     } else {
@@ -550,6 +551,14 @@
       html += '<div class="summary" style="margin-top:8px"><a href="#/leave-admin"><div class="n' + (pend ? ' danger' : '') + '">' + pend + '</div><div class="l">휴무 신청 대기</div></a>' +
               '<a href="#/leave-admin"><div class="n">' + cov + '</div><div class="l">대타 구하는 중</div></a>' +
               '<a href="#/docs-admin"><div class="n' + (pendDocs ? ' danger' : '') + '">' + pendDocs + '</div><div class="l">서류 서명 대기</div></a></div>';
+      try { // 보건증 테이블(supabase-migration-health.sql)이 아직 없어도 홈은 열리게
+        var hmap = healthMap(await loadHealth()), hRed = 0, hYel = 0, hPend = 0;
+        base.staff.forEach(function(s){ if (s.active === false || !(ids.indexOf(s.branch_id) >= 0 || !s.branch_id)) return; var hs = healthStatus(hmap[s.id]); if (hs.level === 'danger') hRed++; else if (hs.level === 'warn') hYel++; if (hmap[s.id] && hmap[s.id].pending) hPend++; });
+        var hHref = '#/health-admin' + (isOwner() ? '/all' : '');
+        html += '<div class="summary" style="margin-top:8px"><a href="' + hHref + '"><div class="n' + (hRed ? ' danger' : '') + '">' + hRed + '</div><div class="l">🩺 보건증 급함</div></a>' +
+                '<a href="' + hHref + '"><div class="n">' + hYel + '</div><div class="l">두 달 이내</div></a>' +
+                '<a href="' + hHref + '"><div class="n' + (hPend ? ' danger' : '') + '">' + hPend + '</div><div class="l">보건증 제출 확인</div></a></div>';
+      } catch(e){ console.warn('보건증 테이블 없음', e); }
       try { // 카드 지출 테이블(supabase-migration-expense.sql)이 아직 없어도 홈은 열리게
         var ymNow = monthOf(todayStr()), mr = monthRange(ymNow);
         var exps = (await db.select('ops_expenses', { gte: { spent_on: mr.from } })).filter(function(x){ return x.spent_on <= mr.to && (isOwner() || x.branch_id === session.branchId); });
@@ -575,6 +584,7 @@
     html += row('#/subs', 'tile-red', '🙋', '대타 지원', '우리 매장 대타 구하는 근무');
     html += row('#/expense', 'tile-orange', '🧾', '영수증 올리기', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
     html += row('#/buy', 'tile-yellow', '🥐', '직원 구매', '직원 할인으로 산 빵 영수증 올리기 (현금 30% · 카드 20%)');
+    html += row('#/health', 'tile-red', '🩺', '보건증', '내 보건증 만료일 · 새 보건증 사진 올리기');
     html += '</div>';
     html += '<div class="group-title">매장 운영</div><div class="card">';
     html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
@@ -586,6 +596,7 @@
     if (isManager()) html += row('#/expense-list', 'tile-purple', '💳', '카드 지출', '월별·지점별 지출 목록 · 합계 · 명세서 대조');
     if (isManager()) html += row('#/buy-list', 'tile-orange', '🧮', '직원 구매 내역', '날짜별 할인·낸 금액 합계 (마감용) · 사람별');
     if (isManager()) html += row('#/docs-admin', 'tile-purple', '📝', '입사 서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부');
+    if (isManager()) html += row('#/health-admin', 'tile-red', '🩺', '보건증 관리', '만료 임박 빨간 표시 · 제출 확인(완료) · 시트 붙여넣기');
     if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
     html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
     html += '</div>';
@@ -1208,7 +1219,8 @@
     if (!st.staffId){
       html += '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + esc(branchName(b)) + '</b><span class="muted" data-act="clock-branch-reset" style="cursor:pointer">매장 바꾸기</span></div>';
       html += '<div class="muted" style="margin:0 4px 10px">내 이름을 누르고 비밀번호 4자리를 넣으면 출근·퇴근이 기록돼요.</div><div class="name-grid">';
-      people.forEach(function(s){ var open = openRecordOf(recs, s.id); html += '<button class="btn" data-act="clock-pick" data-id="' + esc(s.id) + '" style="' + (open ? 'background:var(--ok-soft);border-color:var(--ok)' : '') + '">' + esc(s.name) + (open ? '<br><span style="font-size:12px;font-weight:400">근무 중 ' + hm(open.clock_in) + '~</span>' : (pendDocIds[s.id] ? '<br><span style="font-size:12px;font-weight:400;color:var(--warn)">서류 서명 필요</span>' : '')) + '</button>'; });
+      var hcMarksK = await hcRedMarks();
+      people.forEach(function(s){ var open = openRecordOf(recs, s.id); html += '<button class="btn" data-act="clock-pick" data-id="' + esc(s.id) + '" style="' + (open ? 'background:var(--ok-soft);border-color:var(--ok)' : '') + '">' + esc(s.name) + (open ? '<br><span style="font-size:12px;font-weight:400">근무 중 ' + hm(open.clock_in) + '~</span>' : (pendDocIds[s.id] ? '<br><span style="font-size:12px;font-weight:400;color:var(--warn)">서류 서명 필요</span>' : hcNameMark(hcMarksK, s.id))) + '</button>'; });
       html += '</div>';
       var todayRecs = recs.filter(function(r){ return r.work_date === today; });
       if (todayRecs.length){
@@ -1898,7 +1910,7 @@
     if (!stage){ stage = document.createElement('div'); stage.id = 'pdf-stage'; stage.style.cssText = 'position:absolute;left:-10000px;top:0;width:190mm;background:#fff;'; document.body.appendChild(stage); }
     stage.innerHTML = '<div id="pdf-inner" style="width:190mm;background:#fff">' + BND().render(key, ctx) + '</div>';
     var inner = document.getElementById('pdf-inner');
-    var opt = { margin: [10, 10, 10, 10], image: { type: 'jpeg', quality: 0.9 }, html2canvas: { scale: 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0, windowWidth: 900 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.kp'] } };
+    var opt = { margin: [10, 10, 10, 10], image: { type: 'jpeg', quality: 0.9 }, html2canvas: { scale: 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.kp'] } };
     try {
       var blob = await html2pdf().set(opt).from(inner).outputPdf('blob');
       if (!blob || blob.size < 8000) throw new Error('PDF가 비어 있어요 (' + (blob ? blob.size : 0) + ' bytes). 새로고침 후 다시 시도해 주세요');
@@ -2457,6 +2469,233 @@
   }
 
   // ===== 이벤트 =====
+  // ===== 8차: 보건증 만료 관리 (supabase-migration-health.sql) =====
+  // 규칙: 만료·30일 이내·보건증 없음 = 빨강, 60일 이내 = 노랑. 직원이 새 사진 올리면 '제출', 매니저가 날짜 확인하면 '완료'.
+  var HC_BUCKET = 'documents', HC_RED = 30, HC_YELLOW = 60;
+  var hcState = { photo: null, importRows: null, importText: '', open: {} };
+  async function loadHealth(){ return await db.select('ops_health_certs', { order: { col: 'created_at', asc: false } }); }
+  function healthMap(rows){
+    var m = {};
+    rows.forEach(function(r){
+      var x = m[r.staff_id] || (m[r.staff_id] = { confirmed: null, pending: null, rows: [] });
+      x.rows.push(r);
+      if (r.status === 'submitted'){ if (!x.pending) x.pending = r; }
+      else if (r.status === 'confirmed' && r.expires_on){ if (!x.confirmed || r.expires_on > x.confirmed.expires_on) x.confirmed = r; }
+    });
+    return m;
+  }
+  function healthStatus(info){
+    var c = info && info.confirmed;
+    if (!c) return { level: 'danger', days: null, label: '보건증 없음', short: '없음' };
+    var days = Math.round((dateObj(c.expires_on) - dateObj(todayStr())) / 86400000);
+    if (days < 0) return { level: 'danger', days: days, label: '만료됨 · ' + (-days) + '일 지남', short: '만료' };
+    if (days <= HC_RED) return { level: 'danger', days: days, label: days + '일 남음', short: 'D-' + days };
+    if (days <= HC_YELLOW) return { level: 'warn', days: days, label: days + '일 남음', short: 'D-' + days };
+    return { level: 'ok', days: days, label: days + '일 남음', short: '' };
+  }
+  function healthBadge(info){
+    var st = healthStatus(info);
+    var html = '<span class="badge ' + st.level + '">' + esc(st.level === 'ok' ? '정상' : st.label) + '</span>';
+    if (info && info.pending) html += ' <span class="badge">제출 · 확인 대기</span>';
+    return html;
+  }
+  function hcSortKey(info){ var st = healthStatus(info); return (st.level === 'danger' ? 0 : st.level === 'warn' ? 1 : 2) * 100000 + (st.days == null ? 0 : st.days + 1); }
+  function fmtYmdK(s){ return s ? s.replace(/-/g, '.') : '—'; }
+  // 이름표에 붙일 빨간 글씨 (로그인·매장폰). 테이블이 아직 없으면 조용히 빈 값.
+  async function hcRedMarks(){
+    var out = {};
+    try { var map = healthMap(await loadHealth()); base.staff.forEach(function(s){ if (s.active === false) return; var st = healthStatus(map[s.id]); if (st.level === 'danger' && !(map[s.id] && map[s.id].pending)) out[s.id] = st.short; }); } catch(e){}
+    return out;
+  }
+  function hcNameMark(marks, id){ return marks[id] ? '<br><span style="font-size:12px;font-weight:400;color:var(--danger)">보건증 ' + esc(marks[id]) + '</span>' : ''; }
+  function hcSourceName(src){ return src === 'sheet' ? '시트' : src === 'manual' ? '직접 입력' : '사진 제출'; }
+  function hcHistory(rows, canDelete){
+    if (!rows.length) return '<div class="empty">기록이 없어요</div>';
+    return rows.map(function(r){
+      return '<div class="item"><div class="iname"><div class="t">' + (r.status === 'submitted' ? '제출 · 확인 대기' : '만료 ' + esc(fmtYmdK(r.expires_on))) + '</div><div class="s">' + esc(fmtDT(r.created_at)) + ' · ' + hcSourceName(r.source) + (r.memo ? ' · ' + esc(r.memo) : '') + '</div></div><span class="inline">' +
+        (r.photo_path ? '<button class="btn sm" data-act="hc-photo" data-path="' + esc(r.photo_path) + '">사진</button>' : '') +
+        (canDelete ? '<button class="btn sm danger" data-act="hc-del" data-id="' + esc(r.id) + '" data-path="' + esc(r.photo_path || '') + '">지움</button>' : '') + '</span></div>';
+    }).join('');
+  }
+
+  // --- 보건증 (모두): 내 상태 + 새 보건증 사진 올리기 ---
+  routes.health = async function(){
+    await loadBase();
+    var map = healthMap(await loadHealth()), info = map[session.staffId] || { confirmed: null, pending: null, rows: [] };
+    var st = healthStatus(info), s = hcState;
+    var html = topbar('보건증', true, whoChip());
+    html += '<div class="card" style="padding:14px"><div style="font-size:18px;font-weight:600">' + esc(session.name) + ' ' + healthBadge(info) + '</div>';
+    html += '<div class="muted" style="margin-top:6px">만료일: <b>' + esc(fmtYmdK(info.confirmed && info.confirmed.expires_on)) + '</b>' + (st.level === 'ok' ? ' · ' + esc(st.label) : '') + '</div>';
+    if (info.pending) html += '<div class="note ok">새 보건증을 제출했어요 (' + esc(fmtDT(info.pending.created_at)) + '). 사장님·매니저가 확인하면 완료로 바뀌어요.</div>';
+    else if (st.level === 'danger') html += '<div class="note danger">' + (info.confirmed ? (st.days < 0 ? '보건증 기한이 지났어요' : '보건증 기한이 한 달도 안 남았어요') : '보건증이 등록돼 있지 않아요') + '. 보건소에서 검사받고 아래에 새 보건증 사진을 올려 주세요.</div>';
+    else if (st.level === 'warn') html += '<div class="note">두 달 안에 만료돼요. 미리 검사받아 두면 좋아요.</div>';
+    html += '</div>';
+    html += '<div class="group-title">새 보건증 올리기</div><div class="form">';
+    if (!s.photo){
+      html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 보건증 사진 찍기 / 고르기<input type="file" accept="image/*" id="hc-file" class="hidden"></label>';
+      html += '<div class="muted">발급일과 유효기간(만료일)이 잘 보이게 찍어 주세요. 올리면 "제출"로 표시되고, 매니저가 확인하면 "완료"가 돼요.</div>';
+    } else {
+      html += '<img src="' + s.photo.dataUrl + '" alt="보건증" style="width:100%;max-height:260px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">';
+      html += '<div style="text-align:center"><span class="muted" data-act="hc-retake" style="cursor:pointer;text-decoration:underline">다른 사진으로</span></div>';
+      html += '<div><label>새 만료일 (보건증에 적힌 유효기간 · 모르면 비워 두기)</label><input class="in" type="date" id="hc-exp"></div>';
+      html += '<button class="btn primary block" data-act="hc-submit">제출</button>';
+    }
+    html += '</div>';
+    if (info.rows.length) html += '<div class="group-title">내 기록</div><div class="card">' + hcHistory(info.rows, false) + '</div>';
+    if (isManager()) html += '<div style="text-align:center;margin-top:12px"><a class="btn sm" href="#/health-admin">전 직원 보건증 관리 ›</a></div>';
+    app.innerHTML = html;
+  };
+  async function hcPhotoPicked(file){
+    if (!file) return;
+    try { hcState.photo = await resizeImage(file, 1600); } catch(e){ toast(e.message || '사진을 열 수 없어요'); return; }
+    render();
+  }
+  async function hcSubmit(){
+    if (!hcState.photo || !hcState.photo.blob){ toast('보건증 사진이 꼭 있어야 해요'); return; }
+    var exp = (document.getElementById('hc-exp') || {}).value || null;
+    var path = 'health/' + session.staffId + '/' + Date.now() + '.jpg';
+    await db.upload(HC_BUCKET, path, hcState.photo.blob, 'image/jpeg');
+    await db.insert('ops_health_certs', { staff_id: session.staffId, expires_on: exp, status: 'submitted', photo_path: path, source: 'app', submitted_by: session.staffId, created_at: nowIso(), updated_at: nowIso() });
+    hcState.photo = null;
+    toast('제출했어요. 매니저가 확인하면 완료로 바뀌어요');
+    render();
+  }
+
+  // --- 보건증 관리 (사장님·매니저): 급한 순서 목록 · 제출 확인(완료) · 날짜 직접 입력 · 시트 붙여넣기 ---
+  routes['health-admin'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/health'); return; }
+    var scope = isOwner() ? (params.arg || 'all') : session.branchId;
+    var ids = scope === 'all' ? base.branches.map(function(b){ return b.id; }) : [scope];
+    var map = healthMap(await loadHealth());
+    var people = base.staff.filter(function(s){ return s.active !== false && (ids.indexOf(s.branch_id) >= 0 || !s.branch_id); });
+    people.sort(function(a, b){ return hcSortKey(map[a.id]) - hcSortKey(map[b.id]) || a.name.localeCompare(b.name, 'ko'); });
+    var nRed = 0, nYel = 0, nPend = 0;
+    people.forEach(function(s){ var st = healthStatus(map[s.id]); if (st.level === 'danger') nRed++; else if (st.level === 'warn') nYel++; if (map[s.id] && map[s.id].pending) nPend++; });
+    var html = topbar('보건증 관리', true);
+    if (isOwner()){
+      html += '<div class="tabs"><span class="tab' + (scope === 'all' ? ' on' : '') + '" data-act="go" data-href="#/health-admin/all">전체</span>';
+      base.branches.forEach(function(b){ html += '<span class="tab' + (scope === b.id ? ' on' : '') + '" data-act="go" data-href="#/health-admin/' + esc(b.id) + '">' + esc(b.name) + '</span>'; });
+      html += '</div>';
+    }
+    html += '<div class="summary"><div><div class="n' + (nRed ? ' danger' : '') + '">' + nRed + '</div><div class="l">만료·한 달 이내·없음</div></div><div><div class="n">' + nYel + '</div><div class="l">두 달 이내</div></div><div><div class="n' + (nPend ? ' danger' : '') + '">' + nPend + '</div><div class="l">제출 확인 대기</div></div></div>';
+    html += '<div class="muted" style="margin:8px 4px 4px">퇴사자(비활성)는 안 보여요. 빨강 = 만료됐거나 30일 이내거나 보건증 없음, 노랑 = 60일 이내. 이름을 누르면 확인·입력·기록이 열려요.</div>';
+    html += '<div class="card">';
+    if (!people.length) html += '<div class="empty">직원이 없어요</div>';
+    people.forEach(function(s){
+      var info = map[s.id] || { confirmed: null, pending: null, rows: [] }, st = healthStatus(info), open = !!hcState.open[s.id];
+      var nameStyle = st.level === 'danger' ? 'color:var(--danger)' : st.level === 'warn' ? 'color:var(--warn)' : '';
+      html += '<div class="item" data-act="hc-toggle" data-id="' + esc(s.id) + '" style="cursor:pointer"><div class="iname"><div class="t" style="' + nameStyle + '">' + (st.level === 'danger' ? '🔴 ' : st.level === 'warn' ? '🟡 ' : '') + esc(s.name) + (scope === 'all' ? ' <span class="badge muted">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</span>' : '') + '</div><div class="s">만료 ' + esc(fmtYmdK(info.confirmed && info.confirmed.expires_on)) + (st.level === 'ok' ? ' · ' + esc(st.label) : '') + '</div></div>' + healthBadge(info) + '</div>';
+      if (!open) return;
+      html += '<div style="padding:4px 14px 14px;background:var(--surface-sunken)">';
+      if (info.pending){
+        var p = info.pending;
+        html += '<div class="note ok" style="margin-top:6px">' + esc(fmtDT(p.created_at)) + ' 새 보건증 사진을 제출했어요. 사진을 열어 만료일을 확인하고 완료를 눌러 주세요.</div>';
+        html += '<div class="inline" style="margin-top:8px;flex-wrap:wrap;gap:8px">' + (p.photo_path ? '<button class="btn sm" data-act="hc-photo" data-path="' + esc(p.photo_path) + '">📷 사진 열기</button>' : '') + '<input class="in" type="date" id="hc-date-' + esc(p.id) + '" value="' + esc(p.expires_on || '') + '" style="width:auto"><button class="btn sm primary" data-act="hc-confirm" data-id="' + esc(p.id) + '">완료</button><button class="btn sm danger" data-act="hc-del" data-id="' + esc(p.id) + '" data-path="' + esc(p.photo_path || '') + '">반려(지움)</button></div>';
+      }
+      html += '<div class="inline" style="margin-top:10px;flex-wrap:wrap;gap:8px"><span class="muted">만료일 직접 넣기</span><input class="in" type="date" id="hc-new-' + esc(s.id) + '" style="width:auto"><button class="btn sm" data-act="hc-manual" data-id="' + esc(s.id) + '">저장</button></div>';
+      html += '<div class="group-title" style="margin-top:10px">기록</div>' + hcHistory(info.rows, true);
+      html += '</div>';
+    });
+    html += '</div>';
+    // 시트 붙여넣기
+    html += '<div class="group-title">구글 시트에서 가져오기</div><div class="form">';
+    html += '<div class="muted">근무자 현황 시트에서 줄을 드래그해 복사(Ctrl+C)한 뒤 아래에 붙여넣기(Ctrl+V). 지점·이름·보건증 만료일만 읽고, 주민번호·주소·전화는 저장하지 않아요.</div>';
+    html += '<textarea class="in" id="hc-import" rows="4" placeholder="여기에 붙여넣기">' + esc(hcState.importText) + '</textarea>';
+    if (hcState.importRows){
+      var rows = hcState.importRows;
+      if (!rows.length) html += '<div class="note danger">읽을 수 있는 줄이 없어요. 지점 이름(예: 성수점)이 들어간 줄을 복사했는지 확인해 주세요.</div>';
+      else {
+        html += '<div class="card">';
+        rows.forEach(function(r, i){
+          var cur = r.staff && map[r.staff.id] && map[r.staff.id].confirmed, what;
+          if (!r.staff) what = '<label class="inline" style="gap:6px"><input type="checkbox" id="hc-add-' + i + '" checked> 앱에 없음 → 직원으로 추가</label>';
+          else if (!r.expires_on) what = '<span class="muted">' + (r.raw ? '날짜를 못 읽음: ' + esc(r.raw) : '만료일 비어 있음') + ' → 건너뜀</span>';
+          else if (cur && cur.expires_on === r.expires_on) what = '<span class="muted">이미 같음 → 건너뜀</span>';
+          else if (cur && cur.expires_on > r.expires_on) what = '<span class="muted">앱 날짜(' + esc(fmtYmdK(cur.expires_on)) + ')가 더 최신 → 건너뜀</span>';
+          else what = '<span style="color:var(--ok)">' + (cur ? esc(fmtYmdK(cur.expires_on)) + ' → ' : '새로 ') + esc(fmtYmdK(r.expires_on)) + '</span>';
+          html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t">' + esc(r.name) + ' <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span>' + (r.staff && r.staff.branch_id && r.staff.branch_id !== r.branch_id ? ' <span class="badge warn">앱에는 ' + esc(branchName(r.staff.branch_id)) + '</span>' : '') + '</div><div class="s">만료 ' + esc(r.expires_on ? fmtYmdK(r.expires_on) : (r.raw || '없음')) + '</div></div>' + what + '</div>';
+        });
+        html += '</div><button class="btn primary block" data-act="hc-import-save">이대로 저장</button>';
+      }
+    } else html += '<button class="btn block" data-act="hc-import-preview">읽어 보기</button>';
+    html += '</div>';
+    app.innerHTML = html;
+  };
+  function hcParseDate(s){
+    var m = /^\s*(\d{4}|\d{2})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/.exec(s || ''); if (!m) return null;
+    var y = m[1].length === 2 ? 2000 + +m[1] : +m[1], mo = +m[2], d = +m[3];
+    var dt = new Date(y, mo - 1, d); if (isNaN(dt) || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+    return y + '-' + pad(mo) + '-' + pad(d);
+  }
+  function hcBranchByName(txt){ var t = (txt || '').replace(/\s/g, '').replace(/점$/, ''); if (!t) return null; return base.branches.filter(function(b){ return b.name.replace(/\s/g, '').replace(/점$/, '') === t; })[0] || null; }
+  function hcMatchStaff(name, branchId){
+    var same = base.staff.filter(function(s){ return s.active !== false && s.name.replace(/\s/g, '') === name; });
+    return same.filter(function(s){ return s.branch_id === branchId; })[0] || same.filter(function(s){ return !s.branch_id; })[0] || same[0] || null;
+  }
+  function hcParseSheet(text){
+    var colName = -1, colExp = -1, colBranch = -1, out = [];
+    text.split(/\r?\n/).forEach(function(line){
+      var cells = line.split('\t').map(function(c){ return c.trim(); });
+      if (cells.length < 2) return;
+      var hi = -1; cells.forEach(function(c, i){ if (hi < 0 && /보건증/.test(c)) hi = i; });
+      if (hi >= 0 && cells.indexOf('이름') >= 0){ colExp = hi; colName = cells.indexOf('이름'); colBranch = cells.indexOf('지점'); return; }   // 머리글 줄
+      var bi = -1, br = null;
+      if (colBranch >= 0){ br = hcBranchByName(cells[colBranch]); if (br) bi = colBranch; }
+      if (!br) for (var i = 0; i < cells.length; i++){ var b = hcBranchByName(cells[i]); if (b){ br = b; bi = i; break; } }
+      if (!br) return;   // "예시)" 줄, 빈 줄, 다른 표
+      var name = ((colName >= 0 ? cells[colName] : cells[bi + 1]) || '').replace(/\s/g, '');
+      if (!/^[가-힣]{2,5}$/.test(name)) return;
+      var expCell;
+      if (colExp >= 0) expCell = cells[colExp];
+      else if (cells.length >= bi + 8) expCell = cells[bi + 7];   // 시트 원래 순서: 지점·이름·주민번호·입사일·전화·이메일·주소·보건증
+      else { var cand = cells.slice(bi + 2).filter(function(c){ return hcParseDate(c); }); expCell = cand.length === 1 ? cand[0] : ''; }   // 열 몇 개만 복사한 경우: 날짜가 딱 하나면 그것
+      var exp = hcParseDate(expCell);
+      out.push({ branch_id: br.id, name: name, expires_on: exp, raw: expCell || '', staff: hcMatchStaff(name, br.id) });
+    });
+    return out;
+  }
+  function hcImportPreview(){
+    var ta = document.getElementById('hc-import'); hcState.importText = ta ? ta.value : '';
+    if (!hcState.importText.trim()){ toast('먼저 시트 내용을 붙여넣어 주세요'); return; }
+    hcState.importRows = hcParseSheet(hcState.importText);
+    render();
+  }
+  async function hcImportSave(){
+    var rows = hcState.importRows || []; var map = healthMap(await loadHealth());
+    var added = 0, updated = 0;
+    for (var i = 0; i < rows.length; i++){
+      var r = rows[i], s = r.staff;
+      if (!s){
+        var cb = document.getElementById('hc-add-' + i); if (!cb || !cb.checked) continue;
+        var ins = await db.insert('manual_staff', { name: r.name, branch_id: r.branch_id, role: 'staff', active: true });
+        s = ins[0]; base.staff.push(s); added++;
+      }
+      if (!r.expires_on) continue;
+      var cur = map[s.id] && map[s.id].confirmed;
+      if (cur && cur.expires_on >= r.expires_on) continue;
+      await db.insert('ops_health_certs', { staff_id: s.id, expires_on: r.expires_on, status: 'confirmed', source: 'sheet', confirmed_by: session.staffId, confirmed_at: nowIso(), memo: '시트 붙여넣기', created_at: nowIso(), updated_at: nowIso() });
+      updated++;
+    }
+    hcState.importRows = null; hcState.importText = '';
+    toast('저장했어요 · 만료일 ' + updated + '명' + (added ? ' · 직원 추가 ' + added + '명' : ''));
+    render();
+  }
+  async function hcConfirm(id){
+    var date = (document.getElementById('hc-date-' + id) || {}).value;
+    if (!date){ toast('새 만료일을 넣어 주세요 (사진에 적힌 유효기간)'); return; }
+    await db.update('ops_health_certs', { id: id }, { status: 'confirmed', expires_on: date, confirmed_by: session.staffId, confirmed_at: nowIso(), updated_at: nowIso() });
+    toast('완료 · 만료 ' + fmtYmdK(date));
+    render();
+  }
+  async function hcManual(staffId){
+    var date = (document.getElementById('hc-new-' + staffId) || {}).value;
+    if (!date){ toast('만료일을 넣어 주세요'); return; }
+    await db.insert('ops_health_certs', { staff_id: staffId, expires_on: date, status: 'confirmed', source: 'manual', confirmed_by: session.staffId, confirmed_at: nowIso(), created_at: nowIso(), updated_at: nowIso() });
+    toast('저장했어요 · ' + staffName(staffId) + ' 만료 ' + fmtYmdK(date));
+    render();
+  }
+
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
     var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
@@ -2577,6 +2816,16 @@
         case 'sig-redo': signReadChecks(); signState.sig = null; render(); break;
         case 'gsig-redo': signReadChecks(); signState.gsig = null; render(); break;
         case 'sign-restart': signReset(); render(); break;
+        // 보건증
+        case 'hc-retake': hcState.photo = null; render(); break;
+        case 'hc-submit': el.disabled = true; try { await hcSubmit(); } finally { el.disabled = false; } break;
+        case 'hc-photo': { var hu = await db.signedUrl(HC_BUCKET, el.getAttribute('data-path')); window.open(hu, '_blank'); break; }
+        case 'hc-toggle': hcState.open[id] = !hcState.open[id]; render(); break;
+        case 'hc-confirm': el.disabled = true; try { await hcConfirm(id); } finally { el.disabled = false; } break;
+        case 'hc-manual': await hcManual(id); break;
+        case 'hc-del': if (window.confirm('이 보건증 기록을 지울까요? (사진도 같이 지워져요)')){ var hp = el.getAttribute('data-path'); await db.remove('ops_health_certs', { id: id }); if (hp) db.removeFile(HC_BUCKET, hp).catch(function(){}); toast('지웠어요'); render(); } break;
+        case 'hc-import-preview': hcImportPreview(); break;
+        case 'hc-import-save': el.disabled = true; try { await hcImportSave(); } finally { el.disabled = false; } break;
       }
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
@@ -2584,6 +2833,8 @@
     if (e.target.id === 'exp-file'){ await expPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'hc-import'){ hcState.importText = e.target.value; if (e.target.value.trim()) hcImportPreview(); return; }   // 붙여넣기만 해도 바로 읽어 보기
     if (e.target.id === 'buy-method'){ buyRecalc(buyIdsForm(), e.target.id); return; }
     { var bmm = /^bm-(.+)$/.exec(e.target.id || ''); if (bmm){ buyRecalc(buyIdsRow(bmm[1]), e.target.id); return; } }
     if (e.target.id === 'exp-card'){ var opt = e.target.selectedOptions && e.target.selectedOptions[0], bsel = document.getElementById('exp-branch'); if (opt && bsel && opt.value && opt.getAttribute('data-ask') !== '1') bsel.value = opt.getAttribute('data-branch') || ''; return; }
