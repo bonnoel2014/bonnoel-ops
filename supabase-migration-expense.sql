@@ -54,3 +54,17 @@ drop policy if exists "receipts insert" on storage.objects;
 create policy "receipts insert" on storage.objects for insert with check (bucket_id = 'receipts');
 drop policy if exists "receipts delete" on storage.objects;
 create policy "receipts delete" on storage.objects for delete using (bucket_id = 'receipts');
+
+-- 4. 카드 목록 씨앗 (2026-09-19 8월 명세서로 확인한 것. 이미 있으면 건너뜀. 나머지·왕십리 2장은 앱의 "카드 설정"에서 추가)
+insert into ops_cards (last4, name, branch_id, ask_branch, sort_order)
+select v.last4, v.name, (select id from manual_branches where name = v.branch limit 1), v.ask, v.ord
+from (values
+  ('3216', '사장님 기명카드', '성수점', true, 1),
+  ('2851', '성수 카드 1', '성수점', false, 2),
+  ('0667', '성수 카드 2', '성수점', false, 3),
+  ('6365', '중계 카드 1', '중계점', false, 4),
+  ('9468', '중계 카드 2', '중계점', false, 5),
+  ('2098', '답십리 카드', '답십리점', false, 6),
+  ('2189', '미정 카드', null, true, 7)
+) as v(last4, name, branch, ask, ord)
+where not exists (select 1 from ops_cards c where c.last4 = v.last4);
