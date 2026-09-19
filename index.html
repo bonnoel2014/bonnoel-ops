@@ -607,7 +607,8 @@
     if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
     html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
     html += row('#/health', 'tile-red', '🩺', '보건증', '내 보건증 만료일 · 새 보건증 사진 올리기');
-    if (isManager()) html += row('#/health-admin', 'tile-red', '🩺', '보건증 관리', '만료 임박 빨간 표시 · 제출 확인(완료) · 시트 붙여넣기');
+    if (isManager()) html += row('#/health-admin', 'tile-red', '🩺', '보건증 관리', '만료 임박 빨간 표시 · 제출 확인(완료)');
+    if (isManager()) html += row('#/roster-sync', 'tile-purple', '📋', '명부 동기화', '근무자 현황 시트 붙여넣기 한 번으로 신입·퇴사·보건증 정리');
     if (isOwner()) html += row(LINKS.hiringAdmin, 'tile-blue', '🗂️', '지원자 관리', '지원서 확인 · 면접 제안 문자 · 엑셀 (사장님 이메일 로그인)');
     if (isManager()) html += row(LINKS.hiring, 'tile-yellow', '📮', '지원서 링크', '지원자에게 보내는 주소 · 열어서 공유');
     html += row(LINKS.hiringWelcome, 'tile-green', '🎉', '입사 안내', '합격자 준비물·복장 안내');
@@ -2600,7 +2601,7 @@
   // ===== 8차: 보건증 만료 관리 (supabase-migration-health.sql) =====
   // 규칙: 만료·30일 이내·보건증 없음 = 빨강, 60일 이내 = 노랑. 직원이 새 사진 올리면 '제출', 매니저가 날짜 확인하면 '완료'.
   var HC_BUCKET = 'documents', HC_RED = 30, HC_YELLOW = 60;
-  var hcState = { photo: null, importRows: null, importText: '', open: {} };
+  var hcState = { photo: null, open: {} };
   async function loadHealth(){ return await db.select('ops_health_certs', { order: { col: 'created_at', asc: false } }); }
   function healthMap(rows){
     var m = {};
@@ -2820,8 +2821,8 @@
       var rows = rsState.importRows, map = healthMap(await loadHealth());
       if (!rows.length) html += '<div class="note danger">읽을 수 있는 줄이 없어요. 지점 이름(예: 성수점)이 들어간 줄을 복사했는지 확인해 주세요.</div>';
       else {
-        var newRows = [], healthRows = [], leaveRows = [], unclearRows = [], okRows = [];
-        rows.forEach(function(r, i){ r._i = i; if (!r.staff) newRows.push(r); else { if (r.leave_unclear) unclearRows.push(r); if (r.leave_on && r.staff.active !== false) leaveRows.push(r); var cur = map[r.staff.id] && map[r.staff.id].confirmed; if (r.expires_on && (!cur || cur.expires_on < r.expires_on)) healthRows.push(r); if (!leaveRows.includes(r) && !healthRows.includes(r)) okRows.push(r); } });
+        var newRows = [], healthRows = [], leaveRows = [], unclearRows = [];
+        rows.forEach(function(r, i){ r._i = i; if (!r.staff) newRows.push(r); else { if (r.leave_unclear) unclearRows.push(r); if (r.leave_on && r.staff.active !== false) leaveRows.push(r); var cur = map[r.staff.id] && map[r.staff.id].confirmed; if (r.expires_on && (!cur || cur.expires_on < r.expires_on)) healthRows.push(r); } });
         if (newRows.length){
           html += '<div class="group-title">신입으로 추가 (' + newRows.length + '명)</div><div class="card">';
           newRows.forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t"><label class="inline" style="gap:6px"><input type="checkbox" id="rs-add-' + r._i + '" checked>' + esc(r.name) + '</label> <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span></div><div class="s">' + (r.hire_on ? '입사 ' + esc(fmtYmdK(r.hire_on)) + ' · ' : '') + (r.expires_on ? '보건증 ' + esc(fmtYmdK(r.expires_on)) : '보건증 정보 없음') + '</div></div></div>'; });
@@ -2995,8 +2996,8 @@
         case 'hc-confirm': el.disabled = true; try { await hcConfirm(id); } finally { el.disabled = false; } break;
         case 'hc-manual': await hcManual(id); break;
         case 'hc-del': if (window.confirm('이 보건증 기록을 지울까요? (사진도 같이 지워져요)')){ var hp = el.getAttribute('data-path'); await db.remove('ops_health_certs', { id: id }); if (hp) db.removeFile(HC_BUCKET, hp).catch(function(){}); toast('지웠어요'); render(); } break;
-        case 'hc-import-preview': hcImportPreview(); break;
-        case 'hc-import-save': el.disabled = true; try { await hcImportSave(); } finally { el.disabled = false; } break;
+        case 'rs-import-preview': rsImportPreview(); break;
+        case 'rs-import-save': el.disabled = true; try { await rsImportSave(); } finally { el.disabled = false; } break;
       }
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
@@ -3007,7 +3008,7 @@
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('sub-file')){ subReadSkips(); await subPicked(e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('sub-file-later')){ await subLaterPicked(e.target.getAttribute('data-batch'), e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
-    if (e.target.id === 'hc-import'){ hcState.importText = e.target.value; if (e.target.value.trim()) hcImportPreview(); return; }   // 붙여넣기만 해도 바로 읽어 보기
+    if (e.target.id === 'rs-import'){ rsState.importText = e.target.value; if (e.target.value.trim()) rsImportPreview(); return; }   // 붙여넣기만 해도 바로 읽어 보기
     if (e.target.id === 'buy-method'){ buyRecalc(buyIdsForm(), e.target.id); return; }
     { var bmm = /^bm-(.+)$/.exec(e.target.id || ''); if (bmm){ buyRecalc(buyIdsRow(bmm[1]), e.target.id); return; } }
     if (e.target.id === 'exp-card'){ var opt = e.target.selectedOptions && e.target.selectedOptions[0], bsel = document.getElementById('exp-branch'); if (opt && bsel && opt.value && opt.getAttribute('data-ask') !== '1') bsel.value = opt.getAttribute('data-branch') || ''; return; }
