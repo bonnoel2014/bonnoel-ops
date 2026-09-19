@@ -230,8 +230,8 @@
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
       removeFile: async function(bucket, path){ var r = await sb.storage.from(bucket).remove([path]); if (r.error) throw r.error; },
-      ocr: async function(b64, mime){
-        var res = await fetch(SUPABASE_URL + '/functions/v1/read-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify({ image_base64: b64, media_type: mime }) });
+      ocr: async function(b64, mime, kind){
+        var res = await fetch(SUPABASE_URL + '/functions/v1/read-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify({ image_base64: b64, media_type: mime, kind: kind || 'expense' }) });
         var j = null; try { j = await res.json(); } catch(e){}
         if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '자동 읽기 함수(read-receipt)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
         return j;
@@ -271,7 +271,7 @@
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
-      ocr: async function(){ await new Promise(function(r){ setTimeout(r, 900); }); return { ok: true, merchant: '(시연) 성수 식자재마트', spent_on: todayStr(), amount: 34500, card_last4: '1234', summary: '시연 모드라 가짜로 읽었어요', confidence: 0.9 }; },
+      ocr: async function(b64, mime, kind){ await new Promise(function(r){ setTimeout(r, 900); }); if (kind === 'staff_purchase') return { ok: true, bought_on: todayStr(), list_total: 5500, discount: 1100, paid: 4400, pay_method: '카드', cash_receipt: false, branch: '중계점', items: '(시연) 버터프레첼 1개', confidence: 0.9 }; return { ok: true, merchant: '(시연) 성수 식자재마트', spent_on: todayStr(), amount: 34500, card_last4: '1234', summary: '시연 모드라 가짜로 읽었어요', confidence: 0.9 }; },
       sendDocs: async function(batchId){ await new Promise(function(r){ setTimeout(r, 800); }); var to = ''; (tables.ops_documents || []).forEach(function(r){ if (r.batch_id === batchId && r.pdf_path){ to = r.email_to || to; r.status = 'sent'; r.email_sent_at = new Date().toISOString(); r.email_cc = '(시연) 사장님 메일'; r.signed_ip = '127.0.0.1'; } }); return { ok: true, sent_to: to, cc: '(시연) 사장님 메일' }; }
     };
   }
@@ -341,6 +341,12 @@
       ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
       ops_pay_profiles: [ { staff_id: 'm1', hourly_wage: 12000, pay_type: 'insured', dependents: 1 }, { staff_id: 's2', hourly_wage: 10320, pay_type: 'insured', dependents: 1 }, { staff_id: 's1', hourly_wage: 10320, pay_type: 'freelance', dependents: 1 } ],
       ops_settings: [], ops_pay_runs: [], ops_merchant_rules: [], ops_documents: [],
+      ops_staff_purchases: [
+        { id: 'sp1', bought_on: todayStr(), staff_id: 's2', branch_id: 'b2', pay_method: 'card', discount_rate: 20, list_total: 5500, discount: 1100, paid: 4400, items: '버터프레첼 1개', memo: null, photo_path: null, created_at: daysAgo(0), updated_at: daysAgo(0) },
+        { id: 'sp2', bought_on: todayStr(), staff_id: 'm1', branch_id: 'b2', pay_method: 'cash', discount_rate: 30, list_total: 12000, discount: 3600, paid: 8400, items: '소금빵 2, 깜빠뉴 1', memo: null, photo_path: null, created_at: daysAgo(0), updated_at: daysAgo(0) },
+        { id: 'sp3', bought_on: addDays(todayStr(), -1), staff_id: 's3', branch_id: 'b1', pay_method: 'kakaopay', discount_rate: 30, list_total: 8000, discount: 2400, paid: 5600, items: '치아바타 2개', memo: null, photo_path: null, created_at: daysAgo(1), updated_at: daysAgo(1) },
+        { id: 'sp4', bought_on: addDays(todayStr(), -3), staff_id: 'm2', branch_id: 'b3', pay_method: 'cash_receipt', discount_rate: 20, list_total: 6500, discount: 1300, paid: 5200, items: '초코머핀 1, 아메리카노 1', memo: null, photo_path: null, created_at: daysAgo(3), updated_at: daysAgo(3) }
+      ],
       ops_cards: [
         { id: 'cd1', last4: '1234', name: '사장님 기명카드', branch_id: 'b1', ask_branch: true, active: true, sort_order: 1 },
         { id: 'cd2', last4: '2222', name: '왕십리 카드', branch_id: 'b2', ask_branch: false, active: true, sort_order: 2 },
@@ -550,6 +556,12 @@
         html += '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:8px"><a href="#/expense-sum/' + ymNow + '"><div class="n" style="font-size:20px">' + won(expSum) + '<span style="font-size:13px">원</span></div><div class="l">이번 달 카드 지출' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
                 '<a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n">' + exps.length + '</div><div class="l">영수증 ' + exps.filter(function(x){ return !x.statement_key; }).length + '장 명세서 미대조</div></a></div>';
       } catch(e){ console.warn('카드 지출 테이블 없음', e); }
+      try { // 직원 구매 테이블(supabase-migration-staffbuy.sql)이 아직 없어도 홈은 열리게
+        var buysToday = (await db.select('ops_staff_purchases', { eq: { bought_on: todayStr() } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
+        var bs = buySums(buysToday);
+        html += '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:8px"><a href="#/buy-list"><div class="n">' + bs.n + '</div><div class="l">오늘 직원 구매' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
+                '<a href="#/buy-list"><div class="n" style="font-size:20px">' + won(bs.disc) + '<span style="font-size:13px">원</span></div><div class="l">오늘 직원 할인 합계 · 낸 금액 ' + won(bs.paid) + '원</div></a></div>';
+      } catch(e){ console.warn('직원 구매 테이블 없음', e); }
     }
     function row(href, tileBg, icon, title, sub, disabled){
       return '<a class="row' + (disabled ? ' disabled' : '') + '" href="' + href + '"' + (disabled ? ' data-act="soon"' : '') + (href.indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + tileBg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">' + (disabled ? '<span class="badge muted">준비 중</span>' : '›') + '</div></a>';
@@ -561,6 +573,7 @@
     html += row('#/leave', 'tile-yellow', '🌴', '휴무 신청', '쉬고 싶은 날 신청·내 신청 상태');
     html += row('#/subs', 'tile-red', '🙋', '대타 지원', '우리 매장 대타 구하는 근무');
     html += row('#/expense', 'tile-orange', '🧾', '영수증 올리기', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
+    html += row('#/buy', 'tile-yellow', '🥐', '직원 구매', '직원 할인으로 산 빵 영수증 올리기 (현금 30% · 카드 20%)');
     html += '</div>';
     html += '<div class="group-title">매장 운영</div><div class="card">';
     html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
@@ -570,6 +583,7 @@
     if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 실제 근무시간 (급여 근거)');
     if (isOwner()) html += row('#/pay', 'tile-yellow', '💰', '급여 초안', '월별 급여 계산·명세서 (사장님만)');
     if (isManager()) html += row('#/expense-list', 'tile-purple', '💳', '카드 지출', '월별·지점별 지출 목록 · 합계 · 명세서 대조');
+    if (isManager()) html += row('#/buy-list', 'tile-orange', '🧮', '직원 구매 내역', '날짜별 할인·낸 금액 합계 (마감용) · 사람별');
     if (isManager()) html += row('#/docs-admin', 'tile-purple', '📝', '입사 서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부');
     if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
     html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
@@ -2190,6 +2204,200 @@
     render();
   }
 
+  // ===== 화면: 직원 구매 (직원 할인) =====
+  // 할인 규칙(전 매장 공통): 현금·계좌이체·카카오페이 30% / 카드·서울페이·온누리·현금영수증 20% (현금영수증을 끊으면 세금이 잡혀서 카드와 같음)
+  var BUY_METHODS = [
+    { id: 'cash', name: '현금', rate: 30 },
+    { id: 'transfer', name: '계좌이체', rate: 30 },
+    { id: 'kakaopay', name: '카카오페이', rate: 30 },
+    { id: 'cash_receipt', name: '현금 + 현금영수증', rate: 20 },
+    { id: 'card', name: '카드', rate: 20 },
+    { id: 'seoulpay', name: '서울페이', rate: 20 },
+    { id: 'onnuri', name: '온누리상품권', rate: 20 }
+  ];
+  function buyMethod(id){ return BUY_METHODS.filter(function(m){ return m.id === id; })[0] || null; }
+  function buyMethodName(id){ var m = buyMethod(id); return m ? m.name : (id || '?'); }
+  function buyMethodOptions(sel){ return BUY_METHODS.map(function(m){ return '<option value="' + m.id + '"' + (m.id === sel ? ' selected' : '') + '>' + esc(m.name + ' (' + m.rate + '%)') + '</option>'; }).join(''); }
+  function buyBranchOptions(sel){ return base.branches.map(function(b){ return '<option value="' + esc(b.id) + '"' + (sel === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join(''); }
+  var buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
+  async function buyPhotoPicked(file){
+    if (!file) return;
+    buyState = { photo: null, ocr: null, ocrBusy: true, ocrError: null };
+    try { buyState.photo = await resizeImage(file, 1600); }
+    catch(e){ buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null }; toast(e.message || '사진을 열 수 없어요'); return; }
+    render();
+    try { var r = await db.ocr(buyState.photo.dataUrl.split(',')[1], buyState.photo.mime, 'staff_purchase'); if (r && r.error) throw new Error(r.error); buyState.ocr = r; }
+    catch(e){ console.warn('자동 읽기 실패', e); buyState.ocrError = e.message || String(e); }
+    buyState.ocrBusy = false;
+    if (current.route === 'buy') render();
+  }
+  // 자동으로 읽은 값 → 결제 방식·매장 추정
+  function buyGuessMethod(o){
+    if (!o) return null; var pm = String(o.pay_method || '');
+    if (/카드|card/i.test(pm)) return 'card';
+    if (/서울/.test(pm)) return 'seoulpay';
+    if (/온누리/.test(pm)) return 'onnuri';
+    if (/카카오/.test(pm)) return 'kakaopay';
+    if (/이체|계좌/.test(pm)) return 'transfer';
+    if (/현금|cash/i.test(pm)) return o.cash_receipt ? 'cash_receipt' : 'cash';
+    return null;
+  }
+  function buyGuessBranch(o){
+    if (!o || !o.branch) return null; var n = String(o.branch).replace(/\s/g, '');
+    var b = base.branches.filter(function(x){ var k = x.name.replace(/\s/g, '').replace(/점$/, ''); return k && n.indexOf(k) >= 0; })[0];
+    return b ? b.id : null;
+  }
+  // 정가·할인·낸 금액 자동 계산. changed = 방금 고친 칸의 id (null이면 경고만 갱신)
+  function buyRecalc(ids, changed){
+    var g = function(k){ return document.getElementById(ids[k]); };
+    if (!g('method') || !g('list')) return;
+    var m = buyMethod(g('method').value), rate = m ? m.rate : 0;
+    var list = num(g('list').value), disc = num(g('disc').value), paid = num(g('paid').value);
+    if (changed === ids.method || changed === ids.list){ if (list != null){ disc = Math.round(list * rate / 100); paid = list - disc; g('disc').value = disc; g('paid').value = paid; } }
+    else if (changed === ids.disc){ if (list != null && disc != null){ paid = list - disc; g('paid').value = paid; } }
+    else if (changed === ids.paid){ if (list != null && paid != null){ disc = list - paid; g('disc').value = disc; } }
+    var w = g('warn'); if (!w) return;
+    var msg = '';
+    if (list && disc != null){ var r = disc / list * 100; if (Math.abs(r - rate) > 1.5) msg = '영수증 할인은 ' + Math.round(r) + '%인데 고른 결제 방식은 ' + rate + '%예요. 결제 방식이나 금액을 확인해 주세요.'; }
+    w.textContent = msg; w.classList.toggle('hidden', !msg);
+  }
+  function buyIdsForm(){ return { method: 'buy-method', list: 'buy-list', disc: 'buy-disc', paid: 'buy-paid', warn: 'buy-warn' }; }
+  function buyIdsRow(id){ return { method: 'bm-' + id, list: 'bl-' + id, disc: 'bc-' + id, paid: 'bp-' + id, warn: 'bw-' + id }; }
+  async function loadPurchases(ym){ var mr = monthRange(ym); return (await db.select('ops_staff_purchases', { gte: { bought_on: mr.from }, order: { col: 'bought_on', asc: false } })).filter(function(x){ return x.bought_on <= mr.to; }); }
+  function buySums(list){ var s = { n: 0, list: 0, disc: 0, paid: 0 }; list.forEach(function(x){ s.n++; s.list += num(x.list_total) || 0; s.disc += num(x.discount) || 0; s.paid += num(x.paid) || 0; }); return s; }
+
+  // --- 직원 구매 올리기 (모두) ---
+  routes.buy = async function(){
+    await loadBase();
+    var st = buyState, o = st.ocr || {};
+    var html = topbar('직원 구매', true, whoChip());
+    html += '<div class="form">';
+    if (!st.photo){
+      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 · 카카오페이 <b>30%</b><br>카드 · 서울페이 · 온누리 · 현금영수증 끊은 현금 <b>20%</b></div>';
+      html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="buy-file" class="hidden"></label>';
+      html += '<div class="muted">계산한 영수증 사진을 올리면 날짜·정가·할인·낸 금액을 자동으로 읽어요. 틀리면 고치고 저장하면 돼요. 사진은 꼭 있어야 해요 (증빙). 영수증 한 장에 한 번.</div>';
+    } else {
+      if (st.photo.dataUrl) html += '<img src="' + st.photo.dataUrl + '" alt="영수증" style="width:100%;max-height:240px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">';
+      if (st.ocrBusy) html += '<div class="note">🔎 영수증을 읽는 중… 5초쯤 걸려요</div>';
+      else if (st.ocrError) html += '<div class="note danger">자동 읽기가 안 됐어요: ' + esc(st.ocrError) + '<br><span class="muted">아래에 직접 넣어 주세요.</span></div>';
+      else if (st.ocr) html += '<div class="note ok">읽었어요' + (o.confidence != null && o.confidence < 0.6 ? ' (사진이 흐려서 자신 없음)' : '') + '. 맞는지 확인하고 저장해 주세요.</div>';
+      html += '<div style="text-align:center"><span class="muted" data-act="buy-retake" style="cursor:pointer;text-decoration:underline">다른 사진으로</span></div>';
+      var method = buyGuessMethod(o) || 'card', rate = buyMethod(method).rate;
+      var list = num(o.list_total), disc = num(o.discount), paid = num(o.paid);
+      if (list == null && paid == null && o.amount != null) paid = num(o.amount);   // 예전 함수(법인카드용)가 배포돼 있으면 결제 금액만 옴
+      if (list == null && paid != null) list = Math.round(paid / (1 - rate / 100));
+      if (disc == null && list != null) disc = paid != null ? list - paid : Math.round(list * rate / 100);
+      if (paid == null && list != null) paid = list - disc;
+      var defBranch = buyGuessBranch(o) || session.branchId || (base.branches[0] || {}).id;
+      html += '<div class="grid2"><div><label>날짜</label><input class="in" type="date" id="buy-date" value="' + esc(o.bought_on || todayStr()) + '"></div><div><label>어느 매장에서?</label><select class="in" id="buy-branch">' + buyBranchOptions(defBranch) + '</select></div></div>';
+      html += '<div><label>결제 방식</label><select class="in" id="buy-method">' + buyMethodOptions(method) + '</select></div>';
+      html += '<div class="grid2"><div><label>정가 합계(원)</label><input class="in" type="number" inputmode="numeric" id="buy-list" value="' + (list != null ? list : '') + '" placeholder="5500"></div><div><label>할인(원)</label><input class="in" type="number" inputmode="numeric" id="buy-disc" value="' + (disc != null ? disc : '') + '" placeholder="자동"></div></div>';
+      html += '<div class="grid2"><div><label>낸 금액(원)</label><input class="in" type="number" inputmode="numeric" id="buy-paid" value="' + (paid != null ? paid : '') + '" placeholder="자동"></div><div><label>산 것</label><input class="in" id="buy-items" value="' + esc(o.items || '') + '" placeholder="예: 버터프레첼 1개"></div></div>';
+      html += '<div class="note danger hidden" id="buy-warn"></div>';
+      html += '<div><label>메모 (선택)</label><input class="in" id="buy-memo" placeholder="예: 가족 선물"></div>';
+      html += '<div class="muted">결제 방식이나 정가를 바꾸면 할인·낸 금액이 자동으로 다시 계산돼요.</div>';
+    }
+    html += '</div>';
+    var ym = monthOf(todayStr());
+    var mine = (await loadPurchases(ym).catch(function(){ return []; })).filter(function(x){ return x.staff_id === session.staffId; });
+    if (mine.length){
+      var s = buySums(mine);
+      html += '<div class="group-title">내 이번 달 구매 · ' + s.n + '건 · 할인 ' + won(s.disc) + '원 · 낸 금액 ' + won(s.paid) + '원</div><div class="card">';
+      mine.forEach(function(x){
+        var today = x.bought_on === todayStr() && (x.created_at || '').slice(0, 10) === new Date().toISOString().slice(0, 10);
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(fmtDateK(x.bought_on)) + ' · ' + esc(x.items || '(품목 없음)') + '</div><div class="s">' + esc(branchName(x.branch_id)) + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '원 − 할인 ' + won(x.discount) + '원</div></div><b style="white-space:nowrap">' + won(x.paid) + '원</b>' + (today ? '<button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">지움</button>' : '') + '</div>';
+      });
+      html += '</div><div class="muted" style="margin:6px 4px">오늘 올린 건 바로 지울 수 있어요. 지난 건은 매니저·사장님께 말해 주세요.</div>';
+    }
+    if (isManager()) html += '<div style="text-align:center;margin-top:10px"><a class="btn sm" href="#/buy-list">전체 내역 보기 ›</a></div>';
+    if (st.photo) html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="buy-save"' + (st.ocrBusy ? ' disabled' : '') + '>저장</button></div></div>';
+    app.innerHTML = html;
+    if (st.photo) buyRecalc(buyIdsForm(), null);
+  };
+  async function buySave(){
+    var v = function(id){ var el = document.getElementById(id); return el ? el.value : ''; };
+    var date = v('buy-date'), branchId = v('buy-branch'), method = buyMethod(v('buy-method'));
+    var list = num(v('buy-list')), disc = num(v('buy-disc')), paid = num(v('buy-paid'));
+    if (!date){ toast('날짜를 넣어 주세요'); return; }
+    if (!branchId){ toast('매장을 골라 주세요'); return; }
+    if (!method){ toast('결제 방식을 골라 주세요'); return; }
+    if (!list || list <= 0){ toast('정가 합계를 넣어 주세요'); return; }
+    if (disc == null) disc = Math.round(list * method.rate / 100);
+    if (paid == null) paid = list - disc;
+    if (paid < 0 || disc < 0){ toast('금액이 이상해요. 정가·할인·낸 금액을 확인해 주세요'); return; }
+    if (!buyState.photo || !buyState.photo.blob){ toast('영수증 사진이 꼭 있어야 해요'); return; }
+    var path = 'staff/' + branchId + '/' + date.slice(0, 7) + '/' + uid() + '.jpg';
+    try { await db.upload('receipts', path, buyState.photo.blob, 'image/jpeg'); }
+    catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 내용만 저장할까요?')) return; path = null; }
+    await db.insert('ops_staff_purchases', { bought_on: date, staff_id: session.staffId, branch_id: branchId, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: v('buy-items').trim() || null, memo: v('buy-memo').trim() || null, photo_path: path, ocr: buyState.ocr || null, created_at: nowIso(), updated_at: nowIso() });
+    buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
+    toast('저장했어요 · ' + branchName(branchId) + ' · 할인 ' + won(disc) + '원, 낸 금액 ' + won(paid) + '원');
+    render();
+  }
+
+  // --- 직원 구매 내역 (사장님·매니저): 날짜별 합계(마감용) + 사람별 합계 ---
+  function buyTabs(scope, ym){
+    if (!isOwner()) return '';
+    var t = function(id, label){ return '<span class="tab' + (scope === id ? ' on' : '') + '" data-act="go" data-href="#/buy-list/' + id + '/' + ym + '">' + esc(label) + '</span>'; };
+    var html = '<div class="tabs">' + t('all', '전체');
+    base.branches.forEach(function(b){ html += t(b.id, b.name); });
+    return html + '</div>';
+  }
+  routes['buy-list'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/buy'); return; }
+    var scope = isOwner() ? (params.arg || 'all') : session.branchId, ym = ymOf(params.arg2);
+    var list = (await loadPurchases(ym)).filter(function(x){ return scope === 'all' || x.branch_id === scope; });
+    var title = scope === 'all' ? '전체' : branchName(scope);
+    var html = topbar('직원 구매 · ' + title, true) + buyTabs(scope, ym);
+    html += monthNav(ym, function(m){ return '#/buy-list/' + scope + '/' + m; });
+    var s = buySums(list);
+    html += '<div class="summary" style="grid-template-columns:repeat(4,1fr);margin-top:0"><a href="#/buy"><div class="n" style="font-size:20px">' + s.n + '</div><div class="l">건</div></a><a href="#/buy"><div class="n" style="font-size:18px">' + won(s.list) + '</div><div class="l">정가 합계</div></a><a href="#/buy"><div class="n danger" style="font-size:18px">' + won(s.disc) + '</div><div class="l">할인 합계</div></a><a href="#/buy"><div class="n" style="font-size:18px">' + won(s.paid) + '</div><div class="l">낸 금액 합계</div></a></div>';
+    html += '<div class="inline" style="justify-content:flex-end;margin:8px 0"><button class="btn sm" data-act="buy-csv">엑셀(CSV) 내려받기</button><a class="btn sm primary" href="#/buy">+ 올리기</a></div>';
+    // 날짜별
+    html += '<div class="card section" style="margin-top:4px"><div class="sec-h">날짜별 (마감용)<span class="sp"></span><span class="muted" style="font-weight:400">할인 · 낸 금액</span></div>';
+    if (!list.length) html += '<div class="empty">이 달 직원 구매가 없어요.</div>';
+    var dates = []; list.forEach(function(x){ if (dates.indexOf(x.bought_on) < 0) dates.push(x.bought_on); });
+    dates.forEach(function(d){
+      var rows = list.filter(function(x){ return x.bought_on === d; }), ds = buySums(rows);
+      html += '<div class="item" style="background:var(--surface-sunken)"><div class="iname"><div class="t">' + esc(fmtDateK(d)) + (d === todayStr() ? ' <span class="badge ok">오늘</span>' : '') + '</div><div class="s">' + ds.n + '건 · 정가 ' + won(ds.list) + '원</div></div><span class="badge danger">−' + won(ds.disc) + '</span><b style="white-space:nowrap">' + won(ds.paid) + '</b></div>';
+      rows.forEach(function(x){
+        html += '<div class="item" data-act="buy-toggle" data-id="' + esc(x.id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(staffName(x.staff_id) || '(이름 없음)') + (scope === 'all' ? ' · ' + esc(branchName(x.branch_id)) : '') + '</div><div class="s">' + esc(x.items || '(품목 없음)') + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '</div></div><span class="badge muted">−' + won(x.discount) + '</span>' + (x.photo_path ? '<span title="사진 있음">📷</span>' : '') + '<b style="white-space:nowrap">' + won(x.paid) + '</b></div>';
+        html += '<div class="expand hidden" id="bx-' + esc(x.id) + '" style="padding-left:14px">' +
+          '<div class="grid2"><div><label class="muted">날짜</label><input class="in" type="date" id="bd-' + esc(x.id) + '" value="' + esc(x.bought_on) + '"></div><div><label class="muted">매장</label><select class="in" id="bb-' + esc(x.id) + '">' + buyBranchOptions(x.branch_id) + '</select></div></div>' +
+          '<div style="margin-top:8px"><label class="muted">결제 방식</label><select class="in" id="bm-' + esc(x.id) + '">' + buyMethodOptions(x.pay_method) + '</select></div>' +
+          '<div class="grid2" style="margin-top:8px"><div><label class="muted">정가</label><input class="in" type="number" id="bl-' + esc(x.id) + '" value="' + esc(x.list_total) + '"></div><div><label class="muted">할인</label><input class="in" type="number" id="bc-' + esc(x.id) + '" value="' + esc(x.discount) + '"></div></div>' +
+          '<div class="grid2" style="margin-top:8px"><div><label class="muted">낸 금액</label><input class="in" type="number" id="bp-' + esc(x.id) + '" value="' + esc(x.paid) + '"></div><div><label class="muted">산 것</label><input class="in" id="bi-' + esc(x.id) + '" value="' + esc(x.items || '') + '"></div></div>' +
+          '<div class="note danger hidden" id="bw-' + esc(x.id) + '"></div>' +
+          '<div style="margin-top:8px"><label class="muted">메모</label><input class="in" id="bo-' + esc(x.id) + '" value="' + esc(x.memo || '') + '"></div>' +
+          '<div class="inline" style="margin-top:10px">' + (x.photo_path ? '<button class="btn sm" data-act="buy-photo" data-path="' + esc(x.photo_path) + '">📷 사진 보기</button>' : '') + '<button class="btn sm primary" data-act="buy-update" data-id="' + esc(x.id) + '">저장</button><span style="flex:1"></span><button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">삭제</button></div></div>';
+      });
+    });
+    html += '</div>';
+    // 사람별
+    var byStaff = {};
+    list.forEach(function(x){ var k = x.staff_id || 'none'; var v = byStaff[k] = byStaff[k] || { staff_id: x.staff_id, rows: [] }; v.rows.push(x); });
+    var people = Object.keys(byStaff).map(function(k){ var v = byStaff[k]; v.sum = buySums(v.rows); return v; }).sort(function(a, b){ return b.sum.paid - a.sum.paid; });
+    html += '<div class="card section"><div class="sec-h">사람별 (이 달)<span class="sp"></span><span class="muted" style="font-weight:400">할인 · 낸 금액</span></div>';
+    if (!people.length) html += '<div class="empty">아직 없어요</div>';
+    people.forEach(function(p){ var st = base.staff.filter(function(x){ return x.id === p.staff_id; })[0]; html += '<div class="item"><div class="iname"><div class="t">' + esc(st ? st.name : '(이름 없음)') + '</div><div class="s">' + esc(st && st.branch_id ? branchName(st.branch_id) : '전체') + ' · ' + p.sum.n + '건 · 정가 ' + won(p.sum.list) + '원</div></div><span class="badge danger">−' + won(p.sum.disc) + '</span><b style="white-space:nowrap">' + won(p.sum.paid) + '</b></div>'; });
+    html += '</div>';
+    html += '<div class="muted" style="margin-top:10px">직원 할인: 현금·계좌이체·카카오페이 30%, 카드·서울페이·온누리·현금영수증 20%. 줄을 누르면 고칠 수 있어요. CSV는 이 달 구매가 한 줄씩 다 들어가요.</div>';
+    app.innerHTML = html;
+    app._csv = [['날짜', '매장', '이름', '결제 방식', '할인율', '정가', '할인', '낸 금액', '산 것', '메모', '사진']].concat(list.slice().sort(function(a, b){ return a.bought_on < b.bought_on ? -1 : 1; }).map(function(x){ return [x.bought_on, branchName(x.branch_id), staffName(x.staff_id), buyMethodName(x.pay_method), x.discount_rate + '%', x.list_total, x.discount, x.paid, x.items || '', x.memo || '', x.photo_path ? 'Y' : '']; }));
+    app._csvName = '직원구매_' + (scope === 'all' ? '전체' : branchName(scope)) + '_' + ym + '.csv';
+  };
+  async function buyUpdate(id){
+    var g = function(p){ return document.getElementById(p + '-' + id).value; };
+    var method = buyMethod(g('bm')); var list = num(g('bl')), disc = num(g('bc')), paid = num(g('bp'));
+    if (!g('bd')){ toast('날짜를 넣어 주세요'); return; }
+    if (!list || list <= 0){ toast('정가를 넣어 주세요'); return; }
+    if (disc == null) disc = Math.round(list * method.rate / 100);
+    if (paid == null) paid = list - disc;
+    await db.update('ops_staff_purchases', { id: id }, { bought_on: g('bd'), branch_id: g('bb') || null, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: g('bi').trim() || null, memo: g('bo').trim() || null, updated_at: nowIso() });
+    toast('고쳤어요'); render();
+  }
+
   // ===== 이벤트 =====
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
@@ -2272,6 +2480,14 @@
         case 'exp-update': await expUpdate(id); break;
         case 'exp-del': if (window.confirm('이 지출을 지울까요? (사진도 같이 지워져요)')){ var pp = el.getAttribute('data-path'); await db.remove('ops_expenses', { id: id }); if (pp) db.removeFile('receipts', pp).catch(function(){}); toast('지웠어요'); render(); } break;
         case 'exp-csv': downloadCsv(); break;
+        // 직원 구매
+        case 'buy-retake': buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
+        case 'buy-save': el.disabled = true; try { await buySave(); } finally { el.disabled = false; } break;
+        case 'buy-toggle': document.getElementById('bx-' + id).classList.toggle('hidden'); break;
+        case 'buy-photo': { var bu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(bu, '_blank'); break; }
+        case 'buy-update': await buyUpdate(id); break;
+        case 'buy-del': if (window.confirm('이 구매 기록을 지울까요? (사진도 같이 지워져요)')){ var bp = el.getAttribute('data-path'); await db.remove('ops_staff_purchases', { id: id }); if (bp) db.removeFile('receipts', bp).catch(function(){}); toast('지웠어요'); render(); } break;
+        case 'buy-csv': downloadCsv(); break;
         case 'stmt-run': el.disabled = true; try { await stmtRun(); } finally { el.disabled = false; } break;
         case 'stmt-add': el.disabled = true; try { await stmtAdd(+el.getAttribute('data-g')); } finally { el.disabled = false; } break;
         case 'stmt-add-all': el.disabled = true; try { await stmtAddAll(); } finally { el.disabled = false; } break;
@@ -2306,12 +2522,17 @@
   });
   app.addEventListener('change', async function(e){
     if (e.target.id === 'exp-file'){ await expPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'buy-method'){ buyRecalc(buyIdsForm(), e.target.id); return; }
+    { var bmm = /^bm-(.+)$/.exec(e.target.id || ''); if (bmm){ buyRecalc(buyIdsRow(bmm[1]), e.target.id); return; } }
     if (e.target.id === 'exp-card'){ var opt = e.target.selectedOptions && e.target.selectedOptions[0], bsel = document.getElementById('exp-branch'); if (opt && bsel && opt.value && opt.getAttribute('data-ask') !== '1') bsel.value = opt.getAttribute('data-branch') || ''; return; }
     var el = e.target.closest('[data-act="role"]'); if (!el) return;
     try { await db.update('manual_staff', { id: el.getAttribute('data-id') }, { role: el.value }); toast('역할을 바꿨어요'); render(); } catch(err){ toast('실패: ' + (err.message || err)); }
   });
   app.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
   app.addEventListener('input', function(e){
+    if (/^buy-(list|disc|paid)$/.test(e.target.id || '')){ buyRecalc(buyIdsForm(), e.target.id); return; }
+    var bim = /^b[lcp]-(.+)$/.exec(e.target.id || ''); if (bim){ buyRecalc(buyIdsRow(bim[1]), e.target.id); return; }
     if (current.route !== 'check' || !e.target.classList.contains('qty')) return;
     e.target.classList.toggle('filled', e.target.value !== '');
     var c = document.getElementById('cnt'); if (c) c.textContent = '(' + app.querySelectorAll('.qty.filled').length + '/' + (app._checkTotal || 0) + ')';

@@ -5,6 +5,7 @@
 **앱 주소: https://sungpil-1225.github.io/bonnoel-ops/** (GitHub Pages. main에 push하면 1분 안에 자동 반영) 홈 화면 하나에 아이콘별로 도구가 붙습니다.
 
 - 6차(완성): **입사 서류**(사장님·매니저가 계약 조건 준비 → 신입이 매장폰 `#/sign`에서 이름·비밀번호로 들어와 근로계약서·임금계약서, 개인정보 동의서, 서약서, CCTV 동의서, 유니폼 지급대장(+미성년자 친권자 동의서)을 읽고 손가락 서명 → PDF를 직원 메일 + 사장님 메일로 자동 발송, 교부 기록 보관) · **내 서류**(직원이 다시 보기) — 테이블·저장소는 [`supabase-migration-docs.sql`](supabase-migration-docs.sql), 양식은 [`docs-templates.js`](docs-templates.js), 메일 함수는 [`supabase/functions/send-document/index.ts`](supabase/functions/send-document/index.ts). 설정 순서는 아래 "입사 서류 설정". 설계: [기획/입사서류_설계.md](기획/입사서류_설계.md)
+- 7차(완성): **직원 구매**(직원 할인으로 산 빵 영수증 사진 → 날짜·정가·할인·낸 금액 자동 읽기 → 저장, 결제 방식별 할인 자동 계산) · **직원 구매 내역**(사장님·매니저: 날짜별 할인·낸 금액 합계(마감용), 사람별, 수정·삭제, CSV) — 테이블은 [`supabase-migration-staffbuy.sql`](supabase-migration-staffbuy.sql), 자동 읽기는 같은 `read-receipt` 함수(다시 배포 필요). 아래 "직원 구매 설정".
 - 5차(완성): **영수증 올리기**(법인카드 영수증 사진 → 가게명·날짜·금액·카드 끝자리 자동 읽기 → 지점·항목 확인 → 저장) · **카드 지출**(월별·지점별 목록, 수정·삭제, 사진 보기) · **합계표**(지점×항목, 카드별, CSV) · **명세서 대조**(카드사 이용내역 붙여넣기 → 일치 ✓ / 금액 다름 / 영수증 없음 → 바로 등록) · **카드 설정**(사장님) — 테이블·저장소는 [`supabase-migration-expense.sql`](supabase-migration-expense.sql), 자동 읽기 함수는 [`supabase/functions/read-receipt/index.ts`](supabase/functions/read-receipt/index.ts). 설정 순서는 아래 "카드 지출 설정".
 - 1차(지금): **홈** · **비품 체크** · **부족·주문** · **도착 확인** · **점간 이동** · **비품 설정** · **직원·비밀번호** + 매뉴얼북·로그북 링크
 - 4차(완성): **급여 설정**(시급·4대보험/3.3%·부양가족·이메일·요율) · **급여 초안**(출퇴근 기록 → 기본급·주휴·야간·연장·4대보험 공제, 소득세는 간이세액표 값 입력, 확정은 사장님) · **명세서**(휴람 양식, 인쇄·PDF) — 테이블은 [`supabase-migration-pay.sql`](supabase-migration-pay.sql)
@@ -71,6 +72,16 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 
 양식 문구는 노무사 양식 그대로이고, 다음만 다릅니다: 주민등록번호 칸은 "별도 서면 제출"(앱에 주민번호를 저장하지 않음), 서약서의 주민번호 칸 → 생년월일, 근무장소에 "(주된 근무지: 지점·주소)" 덧붙임, 유니폼 지급대장은 양식이 없어 앱에서 만든 표. 문구를 고치면 `docs-templates.js`의 `VERSION`을 올리세요(예전 서명은 예전 버전으로 남음).
 
+## 직원 구매 설정 (7차) — 처음 한 번
+
+직원이 빵을 살 때 받는 할인(전 매장 공통): **현금·계좌이체·카카오페이 30%**, **카드·서울페이·온누리 20%**, 현금이라도 **현금영수증을 끊으면 20%**. 톡방에 영수증 올리고 마감 때 손으로 더하던 걸 앱이 대신합니다.
+
+1. **테이블 만들기**: Supabase 대시보드 → SQL Editor → New query → [`supabase-migration-staffbuy.sql`](supabase-migration-staffbuy.sql) 전체 붙여넣기 → Run. (여러 번 실행해도 안전. 사진은 카드 지출과 같은 `receipts` 저장소를 씀)
+2. **자동 읽기 함수 갱신**: Edge Functions → `read-receipt` 열기 → Code → 내용을 지우고 [`supabase/functions/read-receipt/index.ts`](supabase/functions/read-receipt/index.ts)를 전부 붙여넣기 → Deploy. (아직 함수를 만든 적이 없으면 "카드 지출 설정" 2~4번을 먼저) 갱신 전이라도 결제 금액만 읽어서 정가를 거꾸로 계산하니 쓸 수는 있어요.
+3. **써 보기**: 직원이 자기 폰에서 홈 → **직원 구매** → 영수증 사진 → 5초 뒤 값이 채워짐 → 결제 방식 확인(현금 30%인지 카드 20%인지) → 저장. 영수증 할인율과 고른 결제 방식이 안 맞으면 빨간 글씨로 알려 줘요.
+
+쓰는 법: 산 사람이 그 자리에서 사진 한 장 올리면 끝. 사장님·매니저는 홈에 **오늘 직원 구매 N건 · 할인 합계**가 바로 뜨고, **직원 구매 내역**에서 날짜별(오늘이 맨 위)·사람별 합계를 봐요. 매니저는 자기 매장만, 사장님은 전체와 매장 탭. 줄을 누르면 고치거나 지울 수 있고, 직원 본인은 오늘 올린 것만 지울 수 있어요. 할인율 규칙이 바뀌면 `index.html`의 `BUY_METHODS` 표만 고치면 되고, 지난 기록은 그때 할인율이 그대로 남아요.
+
 ## 시연 모드
 
 주소 뒤에 `?demo=1`을 붙이면 데이터 창고 없이 가짜 데이터로 눌러볼 수 있습니다. (비밀번호: 사장님 0000 · 매니저 1111 · 알바 F 2222 · 알바 E는 처음)
@@ -79,6 +90,6 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 
 - `index.html` — 앱 전체 (HTML + CSS + JS 한 파일)
 - `supabase-setup.sql` — 테이블 + 품목 씨앗
-- `supabase-migration-*.sql` — 2~5차 테이블 (각각 한 번 실행)
-- `supabase/functions/read-receipt/index.ts` — 영수증 자동 읽기 함수 (대시보드 Editor에 붙여넣어 배포)
+- `supabase-migration-*.sql` — 2~7차 테이블 (각각 한 번 실행)
+- `supabase/functions/read-receipt/index.ts` — 영수증 자동 읽기 함수 (법인카드 + 직원 구매, 대시보드 Editor에 붙여넣어 배포)
 - `manifest.json`, `sw.js`, `icon-*.png` — 폰 홈 화면에 추가(PWA)
