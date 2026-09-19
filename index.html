@@ -1734,17 +1734,26 @@
     await loadBase();
     if (!isManager()){ nav('#/expense'); return; }
     var ym = ymOf(params.arg);
+    // 붙여넣은 명세서는 전부 데이터 창고에 쌓아 둠(1년치도 됨). 화면에는 그 달 날짜의 줄만 보여 줌.
+    if (stmtState.allText == null){
+      var savedAll = (await db.select('ops_settings').catch(function(){ return []; })).filter(function(s){ return s.key && s.key.indexOf('stmt:') === 0 && s.value && s.value.text; });
+      var seen = {}, lines = [], savedAt = null;
+      savedAll.forEach(function(s){ s.value.text.split(/\r?\n/).forEach(function(l){ if (l.trim() && !seen[l]){ seen[l] = 1; lines.push(l); } }); if (!savedAt || s.value.saved_at > savedAt) savedAt = s.value.saved_at; });
+      stmtState.allText = lines.join('\n'); stmtState.savedAt = savedAt;
+    }
     if (stmtState.ym !== ym){
-      stmtState = { ym: ym, text: '', rows: null, filter: 'all' };
-      // 다른 기기(노트북)에서 붙여넣은 명세서도 보이게: 저장해 둔 것 불러오기
-      var saved = await db.select('ops_settings', { eq: { key: 'stmt:' + ym } }).catch(function(){ return []; });
-      if (saved[0] && saved[0].value && saved[0].value.text){ stmtState.text = saved[0].value.text; stmtState.rows = parseStatement(stmtState.text, ym); stmtState.savedAt = saved[0].value.saved_at; }
+      stmtState.ym = ym; stmtState.filter = 'all'; stmtState.text = '';
+      var allRows = stmtState.allText ? parseStatement(stmtState.allText, ym) : [];
+      stmtState.allCount = allRows.length;
+      var mr0 = monthRange(ym);
+      stmtState.rows = allRows.filter(function(r){ return r.date >= mr0.from && r.date <= mr0.to; });
+      if (!stmtState.rows.length) stmtState.rows = null;
     }
     var mr = stmtRange(stmtState.rows, ym);
     var r = await Promise.all([ loadExpensesBetween(mr), loadCards(), loadRules() ]); var cards = r[1], rules = r[2];
     var exps = isOwner() ? r[0] : r[0].filter(function(x){ return x.branch_id === session.branchId; });
     var html = topbar('명세서 대조', true) + monthNav(ym, function(m){ return '#/expense-import/' + m; });
-    html += '<div class="form"><div class="muted">카드사 홈페이지·앱에서 이용대금명세서(엑셀)를 받아 열고, 머리글 줄부터 전체 선택(Ctrl+A)·복사해서 아래에 붙여 넣으세요. 머리글에 "이용일·가맹점명·이용금액·카드번호"가 있으면 그 열을 그대로 읽어요. 결제 주기가 두 달에 걸쳐도 괜찮아요.</div>' + (stmtState.savedAt ? '<div class="note ok">저장된 명세서예요 (' + esc(md(stmtState.savedAt)) + ' 붙여넣음). 폰·노트북 어디서든 같은 화면이 보여요. 새로 붙여넣으면 바뀌어요.</div>' : '') + '<textarea class="in" id="stmt-text" rows="' + (stmtState.rows ? 3 : 6) + '" placeholder="카드번호&#9;이용자명&#9;이용일&#9;승인번호&#9;가맹점명&#9;…&#9;이용금액&#10;4902-98**-****-2851&#9;(*)본노엘&#9;26.08.10&#9;31488214&#9;웰빙마트&#9;…&#9;13300">' + esc(stmtState.text) + '</textarea><button class="btn primary" data-act="stmt-run">대조하기</button></div>';
+    html += '<div class="form"><div class="muted">카드사 홈페이지·앱에서 이용대금명세서(엑셀)를 받아 열고, 머리글 줄부터 전체 선택(Ctrl+A)·복사해서 아래에 붙여 넣으세요. 머리글에 "이용일·가맹점명·이용금액·카드번호"가 있으면 그 열을 그대로 읽어요. 결제 주기가 두 달에 걸쳐도 괜찮아요.</div>' + (stmtState.allCount ? '<div class="note ok">저장된 명세서 ' + stmtState.allCount + '줄 (마지막 붙여넣기 ' + esc(md(stmtState.savedAt)) + '). 지워지지 않고 폰·노트북 어디서든 보여요. 이 달 줄: ' + (stmtState.rows ? stmtState.rows.length : 0) + '개' + (!stmtState.rows ? ' — 다른 달 명세서면 위의 지난달·다음달로 옮겨 보세요' : '') + '. 새로 붙여넣으면 추가돼요(겹치는 줄은 자동으로 뺌).</div>' : '') + '<textarea class="in" id="stmt-text" rows="' + (stmtState.rows ? 3 : 6) + '" placeholder="카드번호&#9;이용자명&#9;이용일&#9;승인번호&#9;가맹점명&#9;…&#9;이용금액&#10;4902-98**-****-2851&#9;(*)본노엘&#9;26.08.10&#9;31488214&#9;웰빙마트&#9;…&#9;13300">' + esc(stmtState.text) + '</textarea><button class="btn primary" data-act="stmt-run">대조하기</button></div>';
     if (stmtState.rows){
       var rows = stmtState.rows, used = matchStatement(rows, exps);
       html += '<div class="muted" style="margin:8px 4px 0">명세서 기간 ' + esc(fmtDateK(addDays(mr.from, 3))) + ' ~ ' + esc(fmtDateK(addDays(mr.to, -3))) + ' 안의 영수증과 맞춰 봤어요.</div>';
@@ -1790,10 +1799,19 @@
   };
   async function stmtRun(){
     var text = document.getElementById('stmt-text').value;
-    stmtState.text = text; stmtState.rows = parseStatement(text, stmtState.ym);
-    if (!stmtState.rows.length){ toast('날짜와 금액이 있는 줄을 못 찾았어요'); render(); return; }
-    // 붙여넣은 명세서를 저장해서 폰·노트북 어디서든 같은 화면이 보이게
-    try { await db.upsert('ops_settings', [{ key: 'stmt:' + stmtState.ym, value: { text: text, saved_by: session.staffId, saved_at: nowIso() }, updated_at: nowIso() }], 'key'); stmtState.savedAt = nowIso(); } catch(e){ console.warn('명세서 저장 실패', e); }
+    if (text.trim()){
+      // 새로 붙여넣은 줄을 기존 저장분에 합치고(겹치는 줄 제외) 바로 저장 — 1년치를 넣어도 지워지지 않게
+      var seen = {}, lines = [];
+      ((stmtState.allText || '') + '\n' + text).split(/\r?\n/).forEach(function(l){ if (l.trim() && !seen[l]){ seen[l] = 1; lines.push(l); } });
+      stmtState.allText = lines.join('\n');
+      try { await db.upsert('ops_settings', [{ key: 'stmt:all', value: { text: stmtState.allText, saved_by: session.staffId, saved_at: nowIso() }, updated_at: nowIso() }], 'key'); stmtState.savedAt = nowIso(); } catch(e){ console.warn('명세서 저장 실패', e); toast('저장이 안 됐어요: ' + (e.message || e)); }
+    }
+    var allRows = stmtState.allText ? parseStatement(stmtState.allText, stmtState.ym) : [];
+    stmtState.allCount = allRows.length; stmtState.text = '';
+    var mr0 = monthRange(stmtState.ym);
+    stmtState.rows = allRows.filter(function(r){ return r.date >= mr0.from && r.date <= mr0.to; });
+    if (!allRows.length){ stmtState.rows = null; toast('날짜와 금액이 있는 줄을 못 찾았어요'); render(); return; }
+    if (!stmtState.rows.length){ stmtState.rows = null; var months = {}; allRows.forEach(function(r){ months[r.date.slice(0, 7)] = 1; }); toast('저장했어요. 이 달 줄은 없고 ' + Object.keys(months).sort().join(', ') + '에 있어요. 지난달·다음달로 옮겨 보세요'); render(); return; }
     var exps = await loadExpensesBetween(stmtRange(stmtState.rows, stmtState.ym)); if (!isOwner()) exps = exps.filter(function(x){ return x.branch_id === session.branchId; });
     matchStatement(stmtState.rows, exps);
     var n = 0;
@@ -2551,6 +2569,7 @@
   });
   app.addEventListener('change', async function(e){
     if (e.target.id === 'exp-file'){ await expPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'buy-method'){ buyRecalc(buyIdsForm(), e.target.id); return; }
     { var bmm = /^bm-(.+)$/.exec(e.target.id || ''); if (bmm){ buyRecalc(buyIdsRow(bmm[1]), e.target.id); return; } }
