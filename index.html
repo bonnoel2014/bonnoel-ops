@@ -2766,11 +2766,12 @@
       else if (cells.length >= bi + 8) expCell = cells[bi + 7];   // 시트 원래 순서(머리글 없이 복사): 지점·이름·주민번호·입사일·전화·이메일·주소·보건증
       else { var cand = cells.slice(bi + 2).filter(function(c){ return hcParseDate(c); }); expCell = cand.length === 1 ? cand[0] : ''; }
       var leaveOn = leaveCell ? hcParseDate(leaveCell) : null;
+      var leaveResign = !leaveOn && /퇴사|퇴직/.test(leaveCell || '');   // 날짜는 없지만 "퇴사"라고만 적힌 경우도 퇴사로 봄
       out.push({
         branch_id: br.id, name: name,
         hire_on: hireCell ? hcParseDate(hireCell) : null,
         expires_on: hcParseDate(expCell), exp_raw: expCell || '',
-        leave_raw: leaveCell, leave_on: leaveOn, leave_unclear: !!leaveCell && !leaveOn,
+        leave_raw: leaveCell, leave_on: leaveOn, leave_resign: leaveResign, leave_unclear: !!leaveCell && !leaveOn && !leaveResign,
         staff: hcMatchStaff(name, br.id)
       });
     });
@@ -2801,9 +2802,9 @@
           healthUpdated++;
         }
       }
-      if (r.leave_on && s.active !== false){
+      if ((r.leave_on || r.leave_resign) && s.active !== false){
         var cbl = document.getElementById('rs-leave-' + i); if (!cbl || !cbl.checked) continue;
-        var memo2 = (s.memo ? s.memo + '\n' : '') + '퇴사 ' + r.leave_on + ' (명부 동기화)';
+        var memo2 = (s.memo ? s.memo + '\n' : '') + '퇴사 ' + (r.leave_on || '날짜 미상') + ' (명부 동기화)';
         await db.update('manual_staff', { id: s.id }, { active: false, memo: memo2 }); s.active = false; s.memo = memo2; left++;
       }
     }
@@ -2822,7 +2823,7 @@
       if (!rows.length) html += '<div class="note danger">읽을 수 있는 줄이 없어요. 지점 이름(예: 성수점)이 들어간 줄을 복사했는지 확인해 주세요.</div>';
       else {
         var newRows = [], healthRows = [], leaveRows = [], unclearRows = [];
-        rows.forEach(function(r, i){ r._i = i; if (!r.staff) newRows.push(r); else { if (r.leave_unclear) unclearRows.push(r); if (r.leave_on && r.staff.active !== false) leaveRows.push(r); var cur = map[r.staff.id] && map[r.staff.id].confirmed; if (r.expires_on && (!cur || cur.expires_on < r.expires_on)) healthRows.push(r); } });
+        rows.forEach(function(r, i){ r._i = i; if (!r.staff) newRows.push(r); else { if (r.leave_unclear) unclearRows.push(r); if ((r.leave_on || r.leave_resign) && r.staff.active !== false) leaveRows.push(r); var cur = map[r.staff.id] && map[r.staff.id].confirmed; if (r.expires_on && (!cur || cur.expires_on < r.expires_on)) healthRows.push(r); } });
         if (newRows.length){
           html += '<div class="group-title">신입으로 추가 (' + newRows.length + '명)</div><div class="card">';
           newRows.forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t"><label class="inline" style="gap:6px"><input type="checkbox" id="rs-add-' + r._i + '" checked>' + esc(r.name) + '</label> <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span></div><div class="s">' + (r.hire_on ? '입사 ' + esc(fmtYmdK(r.hire_on)) + ' · ' : '') + (r.expires_on ? '보건증 ' + esc(fmtYmdK(r.expires_on)) : '보건증 정보 없음') + '</div></div></div>'; });
@@ -2830,7 +2831,7 @@
         }
         if (leaveRows.length){
           html += '<div class="group-title">퇴사 처리 제안 (' + leaveRows.length + '명)</div><div class="card">';
-          leaveRows.forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t"><label class="inline" style="gap:6px"><input type="checkbox" id="rs-leave-' + r._i + '" checked>' + esc(r.name) + '</label> <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span></div><div class="s">퇴사일 ' + esc(fmtYmdK(r.leave_on)) + '</div></div></div>'; });
+          leaveRows.forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t"><label class="inline" style="gap:6px"><input type="checkbox" id="rs-leave-' + r._i + '" checked>' + esc(r.name) + '</label> <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span></div><div class="s">퇴사일 ' + (r.leave_on ? esc(fmtYmdK(r.leave_on)) : '날짜 미상 (시트에 "' + esc(r.leave_raw) + '")') + '</div></div></div>'; });
           html += '</div>';
         }
         if (unclearRows.length){
