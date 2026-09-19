@@ -142,6 +142,14 @@
   .chip.brk{ background:transparent; color:var(--ink-faint); border:1px dashed var(--line-strong); }
   .chip.requested{ background:var(--tile-gray); color:var(--ink-faint); }
   textarea.in{ font-family:inherit; }
+  .slip{ background:#fff; color:#111; border:1px solid var(--line); border-radius:var(--radius-m); padding:16px; }
+  .slip h2{ text-align:center; margin:0 0 12px; font-size:20px; }
+  .slip-meta{ display:flex; justify-content:space-between; font-size:13px; margin-bottom:10px; }
+  .slip-t{ width:100%; border-collapse:collapse; margin-bottom:12px; font-size:13px; }
+  .slip-t th, .slip-t td{ border:1px solid #bbb; padding:6px 8px; text-align:left; }
+  .slip-t th{ background:#f2f2f2; font-weight:600; }
+  .slip-t td.r{ text-align:right; }
+  @media print{ body{ background:#fff; } .noprint, .topbar, .stickybar, .toast{ display:none !important; } .wrap{ max-width:none; padding:0; } .slip{ border:0; } }
   code{ background:var(--surface-sunken); padding:1px 4px; border-radius:4px; font-size:12px; }
 </style>
 </head>
@@ -291,6 +299,8 @@
       ],
       ops_sub_offers: [],
       ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
+      ops_pay_profiles: [ { staff_id: 'm1', hourly_wage: 12000, pay_type: 'insured', dependents: 1 }, { staff_id: 's2', hourly_wage: 10320, pay_type: 'insured', dependents: 1 }, { staff_id: 's1', hourly_wage: 10320, pay_type: 'freelance', dependents: 1 } ],
+      ops_settings: [], ops_pay_runs: [],
       ops_attendance: [
         { id: 'a1', staff_id: 'm1', branch_id: 'b2', work_date: addDays(todayStr(), -1), clock_in: new Date(addDays(todayStr(), -1) + 'T07:28:00').toISOString(), clock_out: new Date(addDays(todayStr(), -1) + 'T16:33:00').toISOString(), in_by: 'm1', out_by: 'm1', edits: [] },
         { id: 'a2', staff_id: 's2', branch_id: 'b2', work_date: addDays(todayStr(), -1), clock_in: new Date(addDays(todayStr(), -1) + 'T12:58:00').toISOString(), clock_out: new Date(addDays(todayStr(), -1) + 'T22:05:00').toISOString(), in_by: 's2', out_by: 's2', edits: [] },
@@ -492,6 +502,7 @@
     html += row('#/transfer', 'tile-purple', '🔁', '점간 이동', '매장끼리 물건 주고받기');
     if (isManager()) html += row('#/leave-admin', 'tile-yellow', '✅', '대타 관리', '휴무 수락·대타 컨펌');
     if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 실제 근무시간 (급여 근거)');
+    if (isManager()) html += row('#/pay', 'tile-yellow', '💰', '급여 초안', '월별 급여 계산·명세서 (확정은 사람이)');
     html += '</div>';
     html += '<div class="group-title">자료</div><div class="card">';
     html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
@@ -500,6 +511,7 @@
     if (isManager()){
       html += '<div class="group-title">설정</div><div class="card">';
       html += row('#/patterns', 'tile-gray', '🕒', '근무 패턴', '사람별 고정 요일·시간');
+      html += row('#/pay-setup', 'tile-gray', '💵', '급여 설정', '시급·고용형태·요율');
       html += row('#/items', 'tile-gray', '⚙️', '비품 설정', '품목·단위·적정재고');
       html += row('#/staff', 'tile-gray', '👥', '직원·비밀번호', '역할 정하기·비밀번호 초기화');
       html += '</div>';
@@ -1230,6 +1242,125 @@
     toast('추가했어요'); render();
   }
 
+  // ===== 급여 초안 · 명세서 =====
+  var PAY_DEFAULT = { np_rate: 4.75, hi_rate: 3.595, ltc_rate: 13.14, ei_rate: 0.9, np_min: 400000, np_max: 6370000, night_premium: 0.5, ot_premium: 0.5, pay_day: 10, company: '주식회사 본노엘', min_wage: 10320 };
+  var paySettings = null;
+  async function loadPaySettings(){ if (paySettings) return paySettings; var r = await db.select('ops_settings', { eq: { key: 'pay' } }).catch(function(){ return []; }); paySettings = Object.assign({}, PAY_DEFAULT, r[0] ? r[0].value : {}); return paySettings; }
+  function won(n){ return (Math.round(n) || 0).toLocaleString('ko-KR'); }
+  function floor10(n){ return Math.floor(n / 10) * 10; }
+  function computePay(recs, sch, profile, S, ym){
+    var wage = num(profile.hourly_wage) || 0;
+    var daily = {}, night = 0, days = [];
+    recs.forEach(function(r){ var n = recNet(r, sch); if (!n) return; daily[r.work_date] = (daily[r.work_date] || 0) + n.net; night += n.night; });
+    var total = 0, dailyOT = 0, weekly = {}, weeklyDailyOT = {};
+    Object.keys(daily).sort().forEach(function(d){ var m = daily[d]; total += m; var ot = Math.max(0, m - 480); dailyOT += ot; var ws = weekStart(d); weekly[ws] = (weekly[ws] || 0) + m; weeklyDailyOT[ws] = (weeklyDailyOT[ws] || 0) + ot; days.push({ date: d, min: m }); });
+    var weeklyOT = 0, juhyuMin = 0, weeks = [];
+    Object.keys(weekly).sort().forEach(function(ws){ var w = weekly[ws]; weeklyOT += Math.max(0, Math.max(0, w - 2400) - weeklyDailyOT[ws]); var jh = w >= 900 ? Math.min(w, 2400) / 2400 * 480 : 0; juhyuMin += jh; weeks.push({ ws: ws, min: w, juhyu: Math.round(jh) }); });
+    var otMin = dailyOT + weeklyOT;
+    var base = total / 60 * wage, juhyu = juhyuMin / 60 * wage, nightPay = night / 60 * wage * S.night_premium, otPay = otMin / 60 * wage * S.ot_premium;
+    var gross = Math.round(base + juhyu + nightPay + otPay);
+    var d = { np: 0, hi: 0, ltc: 0, ei: 0, tax: 0, local: 0 };
+    if (profile.pay_type === 'freelance'){ d.tax = floor10(gross * 0.03); d.local = floor10(gross * 0.003); }
+    else { var npBase = Math.min(Math.max(gross, S.np_min), S.np_max); d.np = floor10(npBase * S.np_rate / 100); d.hi = floor10(gross * S.hi_rate / 100); d.ltc = floor10(d.hi * S.ltc_rate / 100); d.ei = floor10(gross * S.ei_rate / 100); }
+    return { wage: wage, pay_type: profile.pay_type || 'insured', days: days.length, total_min: total, night_min: night, ot_min: otMin, juhyu_min: Math.round(juhyuMin), weeks: weeks, base: Math.round(base), juhyu: Math.round(juhyu), night_pay: Math.round(nightPay), ot_pay: Math.round(otPay), gross: gross, ded: d, dayList: days };
+  }
+  function payTotals(run){ var x = run.data, tax = run.income_tax != null ? num(run.income_tax) : x.ded.tax; var local = x.pay_type === 'freelance' ? x.ded.local : floor10((tax || 0) * 0.1); var dedSum = x.ded.np + x.ded.hi + x.ded.ltc + x.ded.ei + (tax || 0) + local; var adj = num(run.adjust) || 0; return { tax: tax || 0, local: local, dedSum: dedSum, adj: adj, net: x.gross + adj - dedSum }; }
+
+  routes['pay-setup'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var b = pickBranch(params, false);
+    var r = await Promise.all([ db.select('ops_pay_profiles'), loadPaySettings() ]);
+    var profs = {}; r[0].forEach(function(p){ profs[p.staff_id] = p; }); var S = r[1];
+    var people = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || !s.branch_id); }).sort(function(x, y){ return x.name.localeCompare(y.name); });
+    var html = topbar('급여 설정 · ' + branchName(b), true) + branchTabs(b, false);
+    html += '<div class="muted" style="margin:4px 4px 10px">사람마다 시급·고용형태를 넣어야 급여 초안이 계산돼요. 최저시급 ' + won(S.min_wage) + '원보다 적으면 빨갛게 표시돼요.</div>';
+    html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + ' ' + people.length + '명</div>';
+    people.forEach(function(s){ var p = profs[s.id] || {}; var low = p.hourly_wage != null && num(p.hourly_wage) > 0 && num(p.hourly_wage) < S.min_wage; html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:80px"><div class="t">' + esc(s.name) + '</div>' + (s.branch_id !== b ? '<div class="s">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</div>' : '') + '</div><input class="qty pp-wage" data-staff="' + esc(s.id) + '" type="number" step="10" min="0" placeholder="시급" value="' + (p.hourly_wage || '') + '" style="width:92px' + (low ? ';border-color:var(--danger);background:var(--danger-soft)' : '') + '"><select class="in pp-type" data-staff="' + esc(s.id) + '" style="width:auto;padding:6px"><option value="insured"' + (p.pay_type !== 'freelance' ? ' selected' : '') + '>4대보험</option><option value="freelance"' + (p.pay_type === 'freelance' ? ' selected' : '') + '>3.3%</option></select><input class="qty pp-dep" data-staff="' + esc(s.id) + '" type="number" min="1" max="11" value="' + (p.dependents || 1) + '" title="부양가족 수(본인 포함)" style="width:52px"><input class="in pp-email" data-staff="' + esc(s.id) + '" type="email" placeholder="이메일 (명세서 발송용, 선택)" value="' + esc(p.email || '') + '" style="flex:1;min-width:160px;padding:6px 8px;font-size:14px"></div>'; });
+    html += '</div><div class="muted" style="margin:6px 4px">칸 순서: 시급 · 고용형태 · 부양가족 수(본인 포함, 소득세용) · 이메일</div>';
+    if (isOwner()){
+      html += '<div class="group-title">요율·기준 (사장님만, 매년 확인)</div><div class="form"><div class="grid2">' +
+        [['np_rate','국민연금 근로자 %'],['hi_rate','건강보험 근로자 %'],['ltc_rate','장기요양 (건강보험료의 %)'],['ei_rate','고용보험 근로자 %'],['np_min','국민연금 기준 하한(원)'],['np_max','국민연금 기준 상한(원)'],['night_premium','야간 가산 (0.5 = 50%)'],['ot_premium','연장 가산 (0.5 = 50%)'],['min_wage','최저시급(원)'],['pay_day','지급일 (매월 며칠)']].map(function(f){ return '<div><label>' + f[1] + '</label><input class="in ps-f" data-key="' + f[0] + '" type="number" step="any" value="' + S[f[0]] + '"></div>'; }).join('') +
+        '</div><div><label>회사명 (명세서에 표시)</label><input class="in ps-f" data-key="company" value="' + esc(S.company) + '"></div><div class="muted">소득세(근로소득세)는 국세청 간이세액표 값이라 급여 화면에서 사람마다 직접 넣어요. 3.3%는 자동이에요.</div><button class="btn" data-act="pay-settings-save">요율 저장</button></div>';
+    }
+    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="pay-profiles-save">' + esc(branchName(b)) + ' 급여 설정 저장</button></div></div>';
+    app.innerHTML = html;
+  };
+  async function payProfilesSave(){
+    var rows = [];
+    app.querySelectorAll('.pp-wage').forEach(function(inp){ var id = inp.getAttribute('data-staff'); var q = function(c){ return app.querySelector(c + '[data-staff="' + id + '"]'); }; rows.push({ staff_id: id, hourly_wage: num(inp.value) || 0, pay_type: q('.pp-type').value, dependents: parseInt(q('.pp-dep').value) || 1, email: (q('.pp-email').value || '').trim() || null, updated_at: nowIso() }); });
+    await db.upsert('ops_pay_profiles', rows, 'staff_id'); toast('저장했어요'); render();
+  }
+  async function paySettingsSave(){
+    var v = {}; app.querySelectorAll('.ps-f').forEach(function(inp){ var k = inp.getAttribute('data-key'); v[k] = k === 'company' ? inp.value.trim() : num(inp.value); });
+    await db.upsert('ops_settings', [{ key: 'pay', value: v, updated_at: nowIso() }], 'key'); paySettings = null; toast('요율 저장'); render();
+  }
+
+  routes.pay = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var b = pickBranch(params, false);
+    var ym = /^\d{4}-\d{2}$/.test(params.arg2 || '') ? params.arg2 : addMonths(monthOf(todayStr()), -1);
+    var days = monthDays(ym);
+    var r = await Promise.all([ db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: days[0] } }), loadSchedule([b], days[0], days[days.length - 1]), db.select('ops_pay_profiles'), loadPaySettings(), db.select('ops_pay_runs', { eq: { branch_id: b, ym: ym } }) ]);
+    var recs = r[0].filter(function(x){ return x.work_date <= days[days.length - 1] && x.clock_out; }), sch = r[1], S = r[3];
+    var profs = {}; r[2].forEach(function(p){ profs[p.staff_id] = p; });
+    var runs = {}; r[4].forEach(function(x){ runs[x.staff_id] = x; });
+    var byStaff = {}; recs.forEach(function(x){ (byStaff[x.staff_id] = byStaff[x.staff_id] || []).push(x); });
+    var ids = Object.keys(byStaff).sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); });
+    var html = topbar('급여 초안 · ' + branchName(b), true) + branchTabs(b, false);
+    html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="pay-month" data-ym="' + addMonths(ym, -1) + '">‹ 지난달</button><b>' + ym.replace('-', '년 ') + '월</b><button class="btn sm" data-act="pay-month" data-ym="' + addMonths(ym, 1) + '">다음달 ›</button></div>';
+    html += '<div class="note">출퇴근 기록(퇴근까지 찍힌 것)으로 계산한 <b>초안</b>이에요. 근로소득세는 간이세액표 값을 넣어 주세요(비우면 0). 확정과 신고는 사람이 해요.</div>';
+    var noProf = [], sumNet = 0;
+    html += '<div class="card section"><div class="sec-h">사람별<span class="sp"></span>' + ids.length + '명</div>';
+    if (!ids.length) html += '<div class="empty">이 달에 퇴근까지 찍힌 기록이 없어요</div>';
+    ids.forEach(function(id){
+      var p = profs[id]; if (!p || !num(p.hourly_wage)){ noProf.push(staffName(id)); }
+      var calc = computePay(byStaff[id], sch, p || { hourly_wage: 0, pay_type: 'insured' }, S, ym);
+      var run = runs[id] || { data: calc, income_tax: null, adjust: 0, status: 'draft' };
+      if (run.status !== 'confirmed') run.data = calc; // 확정 전엔 항상 최신 기록으로
+      var t = payTotals(run); sumNet += t.net;
+      html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:120px"><div class="t">' + esc(staffName(id)) + (run.status === 'confirmed' ? ' <span class="badge ok">확정</span>' : ' <span class="badge muted">초안</span>') + '</div><div class="s">' + calc.days + '일 ' + fmtH(calc.total_min) + ' · 시급 ' + won(calc.wage) + ' · ' + (calc.pay_type === 'freelance' ? '3.3%' : '4대보험') + '</div><div class="s">기본 ' + won(calc.base) + ' + 주휴 ' + won(calc.juhyu) + ' + 야간 ' + won(calc.night_pay) + ' + 연장 ' + won(calc.ot_pay) + ' = <b>' + won(calc.gross) + '</b></div><div class="s">공제 ' + won(t.dedSum) + ' → 실지급 <b>' + won(t.net) + '원</b></div></div>' +
+        '<div class="inline" style="width:100%;margin-top:6px"><label class="muted">소득세</label><input class="qty pr-tax" data-staff="' + esc(id) + '" type="number" step="10" value="' + (run.income_tax != null ? run.income_tax : '') + '" placeholder="' + (calc.pay_type === 'freelance' ? '자동' : '0') + '" style="width:90px"' + (calc.pay_type === 'freelance' ? ' disabled' : '') + '><label class="muted">조정</label><input class="qty pr-adj" data-staff="' + esc(id) + '" type="number" step="10" value="' + (run.adjust || '') + '" placeholder="0" style="width:90px"><input class="in pr-memo" data-staff="' + esc(id) + '" placeholder="조정 사유" value="' + esc(run.adjust_memo || '') + '" style="flex:1;min-width:120px;padding:6px 8px;font-size:14px">' + (run.id ? '<a class="btn sm" href="#/slip/' + esc(run.id) + '">명세서</a>' : '<span class="muted">저장 후 명세서</span>') + (isOwner() && run.id ? '<button class="btn sm ' + (run.status === 'confirmed' ? '' : 'ok') + '" data-act="pay-confirm" data-id="' + esc(run.id) + '" data-on="' + (run.status === 'confirmed' ? '0' : '1') + '">' + (run.status === 'confirmed' ? '확정 풀기' : '확정') + '</button>' : '') + '</div></div>';
+    });
+    html += '<div class="sec-h" style="border-top:1px solid var(--line);border-bottom:0">실지급 합계<span class="sp"></span>' + won(sumNet) + '원</div></div>';
+    if (noProf.length) html += '<div class="note danger">시급이 없는 사람: ' + esc(noProf.join(', ')) + ' → <a href="#/pay-setup/' + esc(b) + '" style="text-decoration:underline">급여 설정</a>에서 넣어 주세요</div>';
+    html += '<div class="muted" style="margin-top:8px">주휴 = 주 15시간 이상인 주에 (주 시간÷40)×8시간 · 야간 22~06시 ×' + S.night_premium + ' · 연장 = 하루 8시간 또는 주 40시간 초과 ×' + S.ot_premium + ' · 국민연금 ' + S.np_rate + '% · 건강 ' + S.hi_rate + '% · 장기요양 ' + S.ltc_rate + '% · 고용 ' + S.ei_rate + '% · 10원 미만 버림</div>';
+    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="pay-save" data-branch="' + esc(b) + '" data-ym="' + ym + '">초안 저장 (' + ym.slice(5) + '월)</button></div></div>';
+    app.innerHTML = html;
+    app._pay = { ids: ids, byStaff: byStaff, sch: sch, profs: profs, S: S, runs: runs };
+  };
+  async function paySave(b, ym){
+    var P = app._pay; if (!P) return; var rows = [];
+    P.ids.forEach(function(id){
+      var run = P.runs[id]; var calc = run && run.status === 'confirmed' ? run.data : computePay(P.byStaff[id], P.sch, P.profs[id] || { hourly_wage: 0, pay_type: 'insured' }, P.S, ym);
+      var q = function(c){ return app.querySelector(c + '[data-staff="' + id + '"]'); };
+      rows.push({ ym: ym, branch_id: b, staff_id: id, data: calc, income_tax: q('.pr-tax').disabled ? null : num(q('.pr-tax').value), adjust: num(q('.pr-adj').value) || 0, adjust_memo: q('.pr-memo').value.trim() || null, pay_date: addMonths(ym, 1) + '-' + pad(P.S.pay_day || 10), status: run ? run.status : 'draft', updated_at: nowIso() });
+    });
+    if (!rows.length){ toast('저장할 사람이 없어요'); return; }
+    await db.upsert('ops_pay_runs', rows, 'ym,branch_id,staff_id'); toast(rows.length + '명 초안 저장'); render();
+  }
+  routes.slip = async function(params){
+    await loadBase();
+    var run = (await db.select('ops_pay_runs', { eq: { id: params.arg } }))[0];
+    if (!run){ app.innerHTML = topbar('명세서', true) + '<div class="empty">없어요</div>'; return; }
+    if (!isManager() && run.staff_id !== session.staffId){ nav('#/home'); return; }
+    var S = await loadPaySettings(), x = run.data, t = payTotals(run), s = base.staff.filter(function(z){ return z.id === run.staff_id; })[0] || {};
+    var days = monthDays(run.ym), title = run.ym.slice(0, 4) + '년 ' + run.ym.slice(5) + '월 임금명세서';
+    var payRows = [['기본급', x.base], ['주휴수당', x.juhyu], ['야간근로수당', x.night_pay], ['연장근로수당', x.ot_pay]]; if (t.adj) payRows.push(['조정' + (run.adjust_memo ? ' (' + run.adjust_memo + ')' : ''), t.adj]);
+    var dedRows = x.pay_type === 'freelance' ? [['사업소득세 (3%)', t.tax], ['지방소득세 (0.3%)', t.local]] : [['근로소득세', t.tax], ['지방소득세', t.local], ['국민연금', x.ded.np], ['건강보험', x.ded.hi], ['장기요양보험', x.ded.ltc], ['고용보험', x.ded.ei]];
+    var n = Math.max(payRows.length, dedRows.length), body = '';
+    for (var i = 0; i < n; i++){ var p = payRows[i] || ['', ''], d = dedRows[i] || ['', '']; body += '<tr><td>' + esc(p[0]) + '</td><td class="r">' + (p[1] === '' ? '' : won(p[1])) + '</td><td>' + esc(d[0]) + '</td><td class="r">' + (d[1] === '' ? '' : won(d[1])) + '</td></tr>'; }
+    var html = '<div class="topbar noprint">' + '<button class="back" data-act="back">‹</button><h1>명세서</h1><button class="btn sm" onclick="window.print()">인쇄 · PDF</button></div>';
+    html += '<div class="slip"><h2>' + esc(title) + '</h2><div class="slip-meta"><div>회사명: ' + esc(S.company) + '(' + esc(branchName(run.branch_id)) + ')<br>산정기간: ' + days[0] + ' ~ ' + days[days.length - 1] + '</div><div>지급일자: ' + esc(run.pay_date || '') + '<br>' + (run.status === 'confirmed' ? '확정' : '<b>초안</b>') + '</div></div>';
+    html += '<table class="slip-t"><tr><th>성명</th><td>' + esc(s.name) + '</td><th>구분</th><td>' + (x.pay_type === 'freelance' ? '사업소득(3.3%)' : '근로소득(4대보험)') + '</td></tr><tr><th>시급</th><td>' + won(x.wage) + '원</td><th>근무일수</th><td>' + x.days + '일</td></tr></table>';
+    html += '<table class="slip-t"><tr><th colspan="4">세부 내역</th></tr><tr><th colspan="2">지급</th><th colspan="2">공제</th></tr><tr><th>지급항목</th><th>지급금액</th><th>공제항목</th><th>공제금액</th></tr>' + body + '<tr><th>지급총액</th><td class="r"><b>' + won(x.gross + t.adj) + '</b></td><th>공제총액</th><td class="r"><b>' + won(t.dedSum) + '</b></td></tr><tr><td colspan="2"></td><th>실지급액</th><td class="r"><b>' + won(t.net) + '</b></td></tr></table>';
+    html += '<table class="slip-t"><tr><th colspan="2">근로시간</th></tr><tr><td>총 근로시간</td><td class="r">' + fmtH(x.total_min) + ' (' + x.total_min + '분)</td></tr><tr><td>연장근로시간</td><td class="r">' + x.ot_min + '분</td></tr><tr><td>야간근로시간</td><td class="r">' + x.night_min + '분</td></tr><tr><td>주휴시간</td><td class="r">' + x.juhyu_min + '분</td></tr></table>';
+    html += '<table class="slip-t"><tr><th colspan="2">계산방법</th></tr><tr><td>기본급</td><td>총 근로시간 × 시급</td></tr><tr><td>주휴수당</td><td>주 15시간 이상인 주: (주 근로시간 ÷ 40) × 8시간 × 시급</td></tr><tr><td>야간근로수당</td><td>22시~06시 시간 × 시급 × ' + S.night_premium + '</td></tr><tr><td>연장근로수당</td><td>1일 8시간 또는 1주 40시간 초과 시간 × 시급 × ' + S.ot_premium + '</td></tr>' + (x.pay_type === 'freelance' ? '<tr><td>사업소득세</td><td>지급총액 × 3% · 지방소득세 0.3%</td></tr>' : '<tr><td>근로소득세</td><td>간이세액표 적용</td></tr><tr><td>지방소득세</td><td>근로소득세 × 10%</td></tr><tr><td>국민연금</td><td>기준소득월액 × ' + S.np_rate + '%</td></tr><tr><td>건강보험</td><td>보수월액 × ' + S.hi_rate + '%</td></tr><tr><td>장기요양보험</td><td>건강보험료 × ' + S.ltc_rate + '%</td></tr><tr><td>고용보험</td><td>보수월액 × ' + S.ei_rate + '%</td></tr>') + '</table>';
+    html += '<table class="slip-t"><tr><th>날짜</th><th>인정 시간</th></tr>' + (x.dayList || []).map(function(d){ return '<tr><td>' + esc(fmtDateK(d.date)) + '</td><td class="r">' + fmtH(d.min) + '</td></tr>'; }).join('') + '</table></div>';
+    app.innerHTML = html;
+  };
+
   // ===== 이벤트 =====
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
@@ -1296,6 +1427,12 @@
         case 'hours-csv': downloadCsv(); break;
         case 'att-edit': await attEdit(id); break;
         case 'att-add': await attAdd(el.getAttribute('data-branch')); break;
+        // 급여
+        case 'pay-profiles-save': await payProfilesSave(); break;
+        case 'pay-settings-save': await paySettingsSave(); break;
+        case 'pay-month': nav('#/pay/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-ym')); break;
+        case 'pay-save': await paySave(el.getAttribute('data-branch'), el.getAttribute('data-ym')); break;
+        case 'pay-confirm': { var on = el.getAttribute('data-on') === '1'; if (on && !window.confirm('이 사람 급여를 확정할까요? 확정하면 출퇴근 기록이 바뀌어도 금액이 안 바뀌어요.')) break; await db.update('ops_pay_runs', { id: id }, { status: on ? 'confirmed' : 'draft', confirmed_by: on ? session.staffId : null, confirmed_at: on ? nowIso() : null }); toast(on ? '확정했어요' : '확정을 풀었어요'); render(); break; }
       }
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
