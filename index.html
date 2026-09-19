@@ -2783,6 +2783,13 @@
     rsState.importRows = rsParseSheet(rsState.importText);
     render();
   }
+  async function rsRefresh(){
+    var ta = document.getElementById('rs-import'); if (ta) rsState.importText = ta.value;
+    await loadBase();   // 직원 명단(방금 다른 화면에서 추가·퇴사 처리한 것 포함)을 다시 불러옴
+    if (rsState.importText && rsState.importText.trim()) rsState.importRows = rsParseSheet(rsState.importText);
+    toast('직원 명단을 새로 불러왔어요');
+    render();
+  }
   async function rsImportSave(){
     var rows = rsState.importRows || []; var map = healthMap(await loadHealth());
     var added = 0, healthUpdated = 0, hireUpdated = 0, left = 0;
@@ -2815,8 +2822,8 @@
   routes['roster-sync'] = async function(){
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
-    var html = topbar('명부 동기화', true);
-    html += '<div class="muted" style="margin:4px 4px 10px">근무자 현황 시트에서 <b>머리글 줄(지점·이름·입사일·보건증 만료일·퇴사일)까지 같이</b> 드래그해 복사(Ctrl+C)하면 더 정확해요. 아래에 붙여넣기(Ctrl+V). 지점·이름·입사일·보건증 만료일·퇴사일만 읽고, 주민번호·주소·전화·이메일은 저장하지 않아요.</div>';
+    var html = topbar('명부 동기화', true, '<button class="btn sm" data-act="rs-refresh">🔄 새로고침</button>');
+    html += '<div class="muted" style="margin:4px 4px 10px">근무자 현황 시트에서 <b>머리글 줄(지점·이름·입사일·보건증 만료일·퇴사일)까지 같이</b> 드래그해 복사(Ctrl+C)하면 더 정확해요. 아래에 붙여넣기(Ctrl+V). 지점·이름·입사일·보건증 만료일·퇴사일만 읽고, 주민번호·주소·전화·이메일은 저장하지 않아요. 붙여넣거나 저장할 때마다 직원 명단을 새로 불러오지만, 다른 화면에서 방금 직원을 추가·변경했다면 오른쪽 위 <b>새로고침</b>을 한 번 눌러 주세요.</div>';
     html += '<div class="form"><textarea class="in" id="rs-import" rows="4" placeholder="여기에 붙여넣기">' + esc(rsState.importText) + '</textarea>';
     if (rsState.importRows){
       var rows = rsState.importRows, map = healthMap(await loadHealth());
@@ -2999,6 +3006,7 @@
         case 'hc-del': if (window.confirm('이 보건증 기록을 지울까요? (사진도 같이 지워져요)')){ var hp = el.getAttribute('data-path'); await db.remove('ops_health_certs', { id: id }); if (hp) db.removeFile(HC_BUCKET, hp).catch(function(){}); toast('지웠어요'); render(); } break;
         case 'rs-import-preview': rsImportPreview(); break;
         case 'rs-import-save': el.disabled = true; try { await rsImportSave(); } finally { el.disabled = false; } break;
+        case 'rs-refresh': el.disabled = true; try { await rsRefresh(); } finally { el.disabled = false; } break;
       }
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
