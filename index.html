@@ -849,23 +849,31 @@
   async function catRename(id){ if (!id) return; var c = base.categories.filter(function(x){ return x.id === id; })[0]; var name = window.prompt('분류 이름', c.name); if (!name || !name.trim()) return; await db.update('ops_categories', { id: id }, { name: name.trim() }); render(); }
 
   // ===== 화면: 직원 =====
+  var staffUI = { showInactive: {} };
+  function staffRow(s){
+    var canRole = isOwner() && s.id !== session.staffId;
+    return '<div class="item' + (s.active === false ? ' disabled' : '') + '"><div class="iname"><div class="t">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + (s.active === false ? ' <span class="badge muted">퇴사</span>' : '') + '</div><div class="s">' + (s.branch_id ? esc(branchName(s.branch_id)) : '전체') + ' · ' + (s.pin ? '비밀번호 있음' : '비밀번호 아직') + '</div></div>' +
+      (canRole ? '<select class="in" style="width:auto;padding:6px" data-act="role" data-id="' + esc(s.id) + '"><option value="staff"' + (s.role === 'staff' || !s.role ? ' selected' : '') + '>근무자</option><option value="manager"' + (s.role === 'manager' ? ' selected' : '') + '>매니저</option><option value="owner"' + (s.role === 'owner' ? ' selected' : '') + '>사장</option></select>' : '') +
+      (s.pin && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">비번 초기화</button>' : '') +
+      (s.id !== session.staffId && (isOwner() || s.role === 'staff') ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : '') + '</div>';
+  }
   routes.staff = async function(params){
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
     var b = pickBranch(params, false);
     var html = topbar('직원·비밀번호 · ' + branchName(b), true) + branchTabs(b, false);
     html += '<div class="muted" style="margin:4px 4px 10px">매뉴얼북과 같은 명단이에요. 여기서 추가하면 매뉴얼북에도 보여요. 👑 사장님 · ⭐ 매니저</div>';
-    var people = base.staff.filter(function(s){ return s.branch_id === b || (!s.branch_id); });
+    var all = base.staff.filter(function(s){ return s.branch_id === b || (!s.branch_id); });
+    var people = all.filter(function(s){ return s.active !== false; }), inactive = all.filter(function(s){ return s.active === false; });
     html += '<div class="card section">';
-    if (!people.length) html += '<div class="empty">아직 없어요</div>';
-    people.forEach(function(s){
-      var canRole = isOwner() && s.id !== session.staffId;
-      html += '<div class="item' + (s.active === false ? ' disabled' : '') + '"><div class="iname"><div class="t">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + (s.active === false ? ' <span class="badge muted">퇴사</span>' : '') + '</div><div class="s">' + (s.branch_id ? esc(branchName(s.branch_id)) : '전체') + ' · ' + (s.pin ? '비밀번호 있음' : '비밀번호 아직') + '</div></div>' +
-        (canRole ? '<select class="in" style="width:auto;padding:6px" data-act="role" data-id="' + esc(s.id) + '"><option value="staff"' + (s.role === 'staff' || !s.role ? ' selected' : '') + '>근무자</option><option value="manager"' + (s.role === 'manager' ? ' selected' : '') + '>매니저</option><option value="owner"' + (s.role === 'owner' ? ' selected' : '') + '>사장</option></select>' : '') +
-        (s.pin && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">비번 초기화</button>' : '') +
-        (s.id !== session.staffId && (isOwner() || s.role === 'staff') ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : '') + '</div>';
-    });
+    if (!people.length) html += '<div class="empty">근무 중인 직원이 없어요</div>';
+    people.forEach(function(s){ html += staffRow(s); });
     html += '</div>';
+    if (inactive.length){
+      var open = !!staffUI.showInactive[b];
+      html += '<div class="group-title" data-act="staff-inactive-toggle" data-branch="' + esc(b) + '" style="cursor:pointer">퇴사자 ' + inactive.length + '명 ' + (open ? '숨기기 ▲' : '보기 ▼') + '</div>';
+      if (open){ html += '<div class="card section">'; inactive.forEach(function(s){ html += staffRow(s); }); html += '</div>'; }
+    }
     html += '<div class="group-title">직원 추가</div><div class="form"><div><label>이름</label><input class="in" id="ns-name" placeholder="이름"></div><button class="btn" data-act="staff-add" data-branch="' + esc(b) + '">' + esc(branchName(b)) + '에 추가</button></div>';
     app.innerHTML = html;
   };
@@ -2827,6 +2835,7 @@
         case 'pin-reset': if (window.confirm('비밀번호를 지울까요? 다음에 들어올 때 새로 정하게 돼요.')){ await db.update('manual_staff', { id: id }, { pin: null }); toast('초기화했어요'); render(); } break;
         case 'staff-toggle': { var on = el.getAttribute('data-on') === '1'; await db.update('manual_staff', { id: id }, { active: on }); render(); break; }
         case 'staff-add': { var nm = document.getElementById('ns-name').value.trim(); if (!nm){ toast('이름을 넣어 주세요'); break; } await db.insert('manual_staff', { name: nm, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast('추가했어요'); render(); break; }
+        case 'staff-inactive-toggle': { var sb = el.getAttribute('data-branch'); staffUI.showInactive[sb] = !staffUI.showInactive[sb]; render(); break; }
         // 근무표·휴무·대타
         case 'sched-day': nav('#/schedule/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-date')); break;
         case 'leave-submit': await leaveSubmit(); break;
