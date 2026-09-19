@@ -4,6 +4,7 @@
 
 **앱 주소: https://sungpil-1225.github.io/bonnoel-ops/** (GitHub Pages. main에 push하면 1분 안에 자동 반영) 홈 화면 하나에 아이콘별로 도구가 붙습니다.
 
+- 5차(완성): **영수증 올리기**(법인카드 영수증 사진 → 가게명·날짜·금액·카드 끝자리 자동 읽기 → 지점·항목 확인 → 저장) · **카드 지출**(월별·지점별 목록, 수정·삭제, 사진 보기) · **합계표**(지점×항목, 카드별, CSV) · **명세서 대조**(카드사 이용내역 붙여넣기 → 일치 ✓ / 금액 다름 / 영수증 없음 → 바로 등록) · **카드 설정**(사장님) — 테이블·저장소는 [`supabase-migration-expense.sql`](supabase-migration-expense.sql), 자동 읽기 함수는 [`supabase/functions/read-receipt/index.ts`](supabase/functions/read-receipt/index.ts). 설정 순서는 아래 "카드 지출 설정".
 - 1차(지금): **홈** · **비품 체크** · **부족·주문** · **도착 확인** · **점간 이동** · **비품 설정** · **직원·비밀번호** + 매뉴얼북·로그북 링크
 - 4차(완성): **급여 설정**(시급·4대보험/3.3%·부양가족·이메일·요율) · **급여 초안**(출퇴근 기록 → 기본급·주휴·야간·연장·4대보험 공제, 소득세는 간이세액표 값 입력, 확정은 사장님) · **명세서**(휴람 양식, 인쇄·PDF) — 테이블은 [`supabase-migration-pay.sql`](supabase-migration-pay.sql)
 - 3차(완성): **출퇴근**(매장폰 키오스크, 이름·비밀번호로 출근/퇴근) · **근무 조회**(사람별·월별 실제 시간·야간·근무표 대비, CSV) · 특정 주 전용 근무표 · 사람 메모·매장 메모 — 테이블은 [`supabase-migration-weekly.sql`](supabase-migration-weekly.sql)
@@ -38,6 +39,21 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 
 `index.html` 안의 Supabase URL과 `anon`/`publishable` 키는 공개되어도 되는 값입니다. **서비스 롤(service role) 비밀 키는 절대 넣지 마세요.**
 
+## 카드 지출 설정 (5차) — 처음 한 번
+
+사진 자동 읽기는 Claude가 합니다. 앱에는 비밀 키가 안 들어가고, Supabase 안의 작은 서버 함수(Edge Function)가 대신 Claude를 부릅니다. 영수증 1장에 몇 원 정도 비용이 들어요.
+
+1. **테이블·저장소 만들기**: Supabase 대시보드 → SQL Editor → New query → [`supabase-migration-expense.sql`](supabase-migration-expense.sql) 전체 붙여넣기 → Run. (카드·지출 표와 `receipts` 사진 저장소가 생김. 여러 번 실행해도 안전)
+2. **Anthropic API 키 만들기**: https://console.anthropic.com → 로그인 → Billing에서 결제 카드 등록(예: 5달러 충전) → API Keys → Create Key → 키 복사 (`sk-ant-`로 시작, 한 번만 보여 줌).
+3. **함수 올리기**: Supabase 대시보드 → Edge Functions → Deploy a new function → **Via Editor** → 이름 `read-receipt` → 편집창 내용을 지우고 [`supabase/functions/read-receipt/index.ts`](supabase/functions/read-receipt/index.ts) 내용을 전부 붙여넣기 → Deploy.
+4. **함수 설정**: 만든 함수 클릭 → Details(또는 Settings) → **Verify JWT** 끄기(앱이 publishable 키를 쓰기 때문). 그다음 Edge Functions → **Secrets** → `ANTHROPIC_API_KEY` = 2번에서 복사한 키 → Save. (선택) `APP_KEY` = index.html 안의 `sb_publishable_…` 값 → 이 앱만 함수를 부를 수 있게 됨.
+5. **카드 등록**: 앱 홈 → 설정 → **카드 설정** → 카드 8장의 끝 4자리·이름·지점 입력. 사장님 기명카드(모바일+성수 실물)는 지점을 "성수점"으로 두고 **"여러 곳에서 씀"**을 켜면 올릴 때 "공통(사장님)/성수점"을 물어봐요.
+6. **써 보기**: 홈 → **영수증 올리기** → 사진 고르기 → 5초쯤 뒤 값이 채워짐 → 틀린 곳 고치고 저장. 함수가 아직 없으면 "자동 읽기가 안 됐어요"가 뜨고 직접 입력으로 저장돼요.
+
+쓰는 법: 근무자·매니저는 결제 직후 **영수증 올리기**에 사진 1장(영수증 1장당). 사장님·매니저는 **카드 지출**에서 월별로 보고, 월말에 카드사 이용내역(엑셀)을 복사해 **명세서 대조**에 붙여 넣으면 영수증 없는 결제가 빨갛게 떠요. 거기서 지점·항목만 골라 [등록]하면 합계에 들어가요. **합계표**의 CSV는 세무사 전달용.
+
+명세서 대조 규칙: 같은 금액 + 날짜 2일 이내(+카드 끝 4자리가 있으면 같아야) = 일치. 날짜·가게는 같은데 금액만 다르면 "금액 다름". 취소(−금액) 줄은 뺌. 지점이 `공통(사장님)`인 지출은 특정 매장에 넣지 않은 것.
+
 ## 시연 모드
 
 주소 뒤에 `?demo=1`을 붙이면 데이터 창고 없이 가짜 데이터로 눌러볼 수 있습니다. (비밀번호: 사장님 0000 · 매니저 1111 · 알바 F 2222 · 알바 E는 처음)
@@ -46,4 +62,6 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 
 - `index.html` — 앱 전체 (HTML + CSS + JS 한 파일)
 - `supabase-setup.sql` — 테이블 + 품목 씨앗
+- `supabase-migration-*.sql` — 2~5차 테이블 (각각 한 번 실행)
+- `supabase/functions/read-receipt/index.ts` — 영수증 자동 읽기 함수 (대시보드 Editor에 붙여넣어 배포)
 - `manifest.json`, `sw.js`, `icon-*.png` — 폰 홈 화면에 추가(PWA)
