@@ -1969,11 +1969,14 @@
   async function sha256(blob){ if (!(window.crypto && crypto.subtle)) return null; try { var h = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); return Array.prototype.map.call(new Uint8Array(h), function(b){ return (b < 16 ? '0' : '') + b.toString(16); }).join(''); } catch(e){ return null; } }
   async function docPdf(key, ctx){
     if (!window.html2pdf) throw new Error('PDF 도구(html2pdf)를 못 불러왔어요. 인터넷을 확인하고 새로고침해 주세요');
-    // 바깥 상자만 화면 밖으로 밀고, 안쪽 요소(위치 스타일 없음)를 html2pdf에 넘긴다. 바깥 요소를 넘기면 복제본도 화면 밖에 놓여 빈 PDF가 나온다.
+    // 화면 밖 멀리(-10000px) 또는 position:fixed + 가짜 창 크기는 폰 기종·브라우저에 따라 오른쪽이 잘리거나 내용이 줄어드는 문제가 있었음.
+    // 안전한 방법: 문서 맨 위 "보통 위치"에 그대로 넣고, 감싸는 상자만 높이 0 + overflow:hidden으로 화면에서 숨긴다.
+    // (position:fixed/absolute를 안 쓰므로 화면 너비·스크롤 위치가 달라도 캡처 좌표가 항상 같다.)
     var stage = document.getElementById('pdf-stage');
-    if (!stage){ stage = document.createElement('div'); stage.id = 'pdf-stage'; stage.style.cssText = 'position:absolute;left:-10000px;top:0;width:190mm;background:#fff;'; document.body.appendChild(stage); }
+    if (!stage){ stage = document.createElement('div'); stage.id = 'pdf-stage'; stage.style.cssText = 'height:0;overflow:hidden;'; document.body.insertBefore(stage, document.body.firstChild); }
     stage.innerHTML = '<div id="pdf-inner" style="width:190mm;background:#fff">' + BND().render(key, ctx) + '</div>';
     var inner = document.getElementById('pdf-inner');
+    window.scrollTo(0, 0);
     var opt = { margin: [10, 10, 10, 10], image: { type: 'jpeg', quality: 0.9 }, html2canvas: { scale: 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.kp'] } };
     try {
       var blob = await html2pdf().set(opt).from(inner).outputPdf('blob');
