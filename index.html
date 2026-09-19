@@ -366,6 +366,26 @@
         { id: 'a1', staff_id: 'm1', branch_id: 'b2', work_date: addDays(todayStr(), -1), clock_in: new Date(addDays(todayStr(), -1) + 'T07:28:00').toISOString(), clock_out: new Date(addDays(todayStr(), -1) + 'T16:33:00').toISOString(), in_by: 'm1', out_by: 'm1', edits: [] },
         { id: 'a2', staff_id: 's2', branch_id: 'b2', work_date: addDays(todayStr(), -1), clock_in: new Date(addDays(todayStr(), -1) + 'T12:58:00').toISOString(), clock_out: new Date(addDays(todayStr(), -1) + 'T22:05:00').toISOString(), in_by: 's2', out_by: 's2', edits: [] },
         { id: 'a3', staff_id: 's2', branch_id: 'b2', work_date: todayStr(), clock_in: new Date(todayStr() + 'T13:02:00').toISOString(), clock_out: null, in_by: 's2', edits: [] }
+      ],
+      ops_subsidy_employees: [
+        { id: 'sy1', name: '알바 F', agency: 'makein26', branch_id: 'b2', hire_on: addDays(todayStr(), -200), active: true, stop_reason: null, created_at: daysAgo(200), updated_at: daysAgo(1) },
+        { id: 'sy2', name: '알바 A', agency: 'jobmoa25', branch_id: 'b1', hire_on: addDays(todayStr(), -400), active: true, stop_reason: null, created_at: daysAgo(400), updated_at: daysAgo(3) }
+      ],
+      ops_subsidy_cases: [
+        { id: 'sc1', employee_id: 'sy1', stage: 'register', due_on: addDays(todayStr(), -200), status: 'accepted', checklist: [{ name: '서식1 사업주확인서', done: true, file_path: null }, { name: '서식2 최종학력 자기확인서', done: true, file_path: null }, { name: '서식3 참여자확인서', done: true, file_path: null }, { name: '서식4 개인정보 동의서', done: true, file_path: null }], amount: null, paid_on: null, stopped_reason: null, created_at: daysAgo(200), updated_at: daysAgo(190) },
+        { id: 'sc2', employee_id: 'sy1', stage: 'm6', due_on: addDays(todayStr(), -20), status: 'revision', checklist: [], amount: 1800000, paid_on: null, stopped_reason: null, created_at: daysAgo(200), updated_at: daysAgo(2) },
+        { id: 'sc3', employee_id: 'sy1', stage: 'm9', due_on: addDays(todayStr(), 10), status: 'waiting', checklist: [], amount: 900000, paid_on: null, stopped_reason: null, created_at: daysAgo(200), updated_at: daysAgo(200) },
+        { id: 'sc4', employee_id: 'sy1', stage: 'm12', due_on: addDays(todayStr(), 100), status: 'waiting', checklist: [], amount: 900000, paid_on: null, stopped_reason: null, created_at: daysAgo(200), updated_at: daysAgo(200) },
+        { id: 'sc5', employee_id: 'sy1', stage: 'y2', due_on: addDays(todayStr(), 165), status: 'waiting', checklist: [], amount: null, paid_on: null, stopped_reason: null, created_at: daysAgo(200), updated_at: daysAgo(200) },
+        { id: 'sc6', employee_id: 'sy2', stage: 'register', due_on: addDays(todayStr(), -400), status: 'accepted', checklist: [{ name: '서식1 사업주확인서', done: true, file_path: null }, { name: '서식2 최종학력 자기확인서', done: true, file_path: null }, { name: '서식3 참여자확인서', done: true, file_path: null }, { name: '서식4 개인정보 동의서', done: true, file_path: null }], amount: null, paid_on: null, stopped_reason: null, created_at: daysAgo(400), updated_at: daysAgo(390) },
+        { id: 'sc7', employee_id: 'sy2', stage: 'm6', due_on: addDays(todayStr(), -220), status: 'paid', checklist: [], amount: 1800000, paid_on: addDays(todayStr(), -200), stopped_reason: null, created_at: daysAgo(400), updated_at: daysAgo(200) },
+        { id: 'sc8', employee_id: 'sy2', stage: 'm9', due_on: addDays(todayStr(), -130), status: 'paid', checklist: [], amount: 900000, paid_on: addDays(todayStr(), -110), stopped_reason: null, created_at: daysAgo(400), updated_at: daysAgo(110) },
+        { id: 'sc9', employee_id: 'sy2', stage: 'm12', due_on: addDays(todayStr(), -40), status: 'accepted', checklist: [], amount: 900000, paid_on: null, stopped_reason: null, created_at: daysAgo(400), updated_at: daysAgo(30) },
+        { id: 'sc10', employee_id: 'sy2', stage: 'y2', due_on: addDays(todayStr(), 325), status: 'waiting', checklist: [], amount: null, paid_on: null, stopped_reason: null, created_at: daysAgo(400), updated_at: daysAgo(400) }
+      ],
+      ops_subsidy_logs: [
+        { id: 'sl1', case_id: 'sc2', content: '메이크인에서 수정요청 메일 옴 — 6개월 근무 확인서 재직일수 다시 확인해서 보내달라고 함', file_path: null, created_by: 'o1', created_at: daysAgo(2) },
+        { id: 'sl2', case_id: 'sc2', content: '1차 제출함', file_path: null, created_by: 'o1', created_at: daysAgo(10) }
       ]
     };
   }
@@ -573,6 +593,20 @@
         html += '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:8px"><a href="#/buy-list"><div class="n">' + bs.n + '</div><div class="l">오늘 직원 구매' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
                 '<a href="#/buy-list"><div class="n" style="font-size:20px">' + won(bs.disc) + '<span style="font-size:13px">원</span></div><div class="l">오늘 직원 할인 합계 · 낸 금액 ' + won(bs.paid) + '원</div></a></div>';
       } catch(e){ console.warn('직원 구매 테이블 없음', e); }
+      try { // 청년지원금 표(supabase-migration-subsidy.sql)가 아직 없어도 홈은 열리게
+        if (isOwner()){
+          var scEmp = await db.select('ops_subsidy_employees'), scCases = await db.select('ops_subsidy_cases');
+          var scActive = {}; scEmp.forEach(function(e){ if (e.active !== false) scActive[e.id] = true; });
+          var scDue = 0, scRevision = 0, scYm = monthOf(todayStr());
+          scCases.forEach(function(c){
+            if (!scActive[c.employee_id]) return;
+            if (c.status === 'revision') scRevision++;
+            else if ((c.status === 'waiting' || c.status === 'submitted') && c.due_on && monthOf(c.due_on) === scYm) scDue++;
+          });
+          html += '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:8px"><a href="#/subsidy"><div class="n' + (scDue ? ' danger' : '') + '">' + scDue + '</div><div class="l">🧑‍💼 이번 달 청년지원금 신청 예정</div></a>' +
+                  '<a href="#/subsidy"><div class="n' + (scRevision ? ' danger' : '') + '">' + scRevision + '</div><div class="l">수정요청 중</div></a></div>';
+        }
+      } catch(e){ console.warn('청년지원금 표 없음', e); }
     }
     function row(href, tileBg, icon, title, sub, disabled){
       return '<a class="row' + (disabled ? ' disabled' : '') + '" href="' + href + '"' + (disabled ? ' data-act="soon"' : '') + (href.indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + tileBg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">' + (disabled ? '<span class="badge muted">준비 중</span>' : '›') + '</div></a>';
@@ -609,6 +643,7 @@
     html += row('#/health', 'tile-red', '🩺', '보건증', '내 보건증 만료일 · 새 보건증 사진 올리기');
     if (isManager()) html += row('#/health-admin', 'tile-red', '🩺', '보건증 관리', '만료 임박 빨간 표시 · 제출 확인(완료)');
     if (isManager()) html += row('#/roster-sync', 'tile-purple', '📋', '명부 동기화', '근무자 현황 시트 붙여넣기 한 번으로 신입·퇴사·보건증 정리');
+    if (isOwner()) html += row('#/subsidy', 'tile-blue', '🧑‍💼', '청년지원금', '참여자 등록·6/9/12개월·2년차 신청 현황·서류·입금 (사장님만)');
     if (isOwner()) html += row(LINKS.hiringAdmin, 'tile-blue', '🗂️', '지원자 관리', '지원서 확인 · 면접 제안 문자 · 엑셀 (사장님 이메일 로그인)');
     if (isManager()) html += row(LINKS.hiring, 'tile-yellow', '📮', '지원서 링크', '지원자에게 보내는 주소 · 열어서 공유');
     html += row(LINKS.hiringWelcome, 'tile-green', '🎉', '입사 안내', '합격자 준비물·복장 안내');
@@ -2873,6 +2908,211 @@
     render();
   }
 
+  // ===== 10차: 청년지원금 관리 (supabase-migration-subsidy.sql) =====
+  // 채용일 기준 5단계(참여자등록/6·9·12개월/2년차)를 자동 생성. 사장님 전용.
+  var SUBSIDY_BUCKET = 'documents';
+  var SUBSIDY_STAGES = [
+    { key: 'register', label: '참여자 등록', months: 0, amount: null, checklist: ['서식1 사업주확인서', '서식2 최종학력 자기확인서', '서식3 참여자확인서', '서식4 개인정보 동의서'] },
+    { key: 'm6', label: '6개월 신청', months: 6, amount: 1800000, checklist: [] },
+    { key: 'm9', label: '9개월 신청', months: 9, amount: 900000, checklist: [] },
+    { key: 'm12', label: '12개월 신청', months: 12, amount: 900000, checklist: [] },
+    { key: 'y2', label: '2년차 신청', months: 24, amount: null, checklist: [] }
+  ];
+  var SUBSIDY_STATUS = {
+    waiting: { label: '대기중', cls: 'muted' },
+    submitted: { label: '제출함', cls: '' },
+    revision: { label: '수정요청', cls: 'danger' },
+    accepted: { label: '접수완료', cls: 'ok' },
+    paid: { label: '입금완료', cls: 'ok' },
+    stopped: { label: '중단', cls: 'muted' }
+  };
+  var SUBSIDY_AGENCY = { jobmoa25: '25년 잡모아', makein26: '26년 메이크인' };
+  function subsidyStage(key){ return SUBSIDY_STAGES.filter(function(s){ return s.key === key; })[0] || SUBSIDY_STAGES[0]; }
+  function addMonthsToDate(dateStr, k){ var d = dateObj(dateStr); d.setMonth(d.getMonth() + k); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function subsidyDday(dateStr){ if (!dateStr) return ''; var diff = Math.round((dateObj(dateStr) - dateObj(todayStr())) / 86400000); return diff === 0 ? '오늘' : diff > 0 ? 'D-' + diff : 'D+' + (-diff); }
+  async function subsidyPickFile(file){
+    var isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name || '');
+    if (isPdf){ if (file.size > 8 * 1024 * 1024) throw new Error('PDF가 8MB보다 커요'); return { blob: file, mime: 'application/pdf', ext: 'pdf' }; }
+    var r = await resizeImage(file, 1600); return { blob: r.blob, mime: 'image/jpeg', ext: 'jpg' };
+  }
+
+  var subsidyState = { addOpen: false };
+  var subsidyLogFile = null;
+
+  routes.subsidy = async function(){
+    await loadBase();
+    if (!isOwner()){ nav('#/home'); return; }
+    var employees = await db.select('ops_subsidy_employees', { order: { col: 'hire_on', asc: false } });
+    var cases = await db.select('ops_subsidy_cases');
+    var html = topbar('청년지원금', true, '<button class="btn sm" data-act="subsidy-add-toggle">+ 참여자</button>');
+    if (subsidyState.addOpen){
+      html += '<div class="card" style="padding:12px 14px;margin-bottom:12px"><div class="group-title" style="margin:0 0 8px">새 참여자 등록</div><div class="form">';
+      html += '<div><label>이름</label><input class="in" id="sn-name" placeholder="이름"></div>';
+      html += '<div class="grid2"><div><label>기관</label><select class="in" id="sn-agency"><option value="makein26">26년 메이크인</option><option value="jobmoa25">25년 잡모아</option></select></div><div><label>매장</label><select class="in" id="sn-branch">' + branchOptions(session.branchId) + '</select></div></div>';
+      html += '<div><label>채용일</label><input class="in" type="date" id="sn-hire" value="' + esc(todayStr()) + '"></div>';
+      html += '<div class="inline" style="justify-content:flex-end;margin-top:8px"><button class="btn" data-act="subsidy-add-toggle">취소</button><button class="btn primary" data-act="subsidy-add-save">등록</button></div>';
+      html += '</div></div>';
+    }
+    var active = employees.filter(function(e){ return e.active !== false; });
+    var inactive = employees.filter(function(e){ return e.active === false; });
+    if (!active.length && !inactive.length) html += '<div class="empty">등록된 참여자가 없어요. 위 "+ 참여자"로 추가해 주세요.</div>';
+    active.forEach(function(emp){ html += subsidyEmployeeCard(emp, cases.filter(function(c){ return c.employee_id === emp.id; })); });
+    if (inactive.length){
+      html += '<div class="group-title" style="margin-top:16px">퇴사·중단 (' + inactive.length + '명)</div>';
+      inactive.forEach(function(emp){ html += subsidyEmployeeCard(emp, cases.filter(function(c){ return c.employee_id === emp.id; })); });
+    }
+    app.innerHTML = html;
+  };
+  function subsidyEmployeeCard(emp, cases){
+    var html = '<div class="card section" style="margin-bottom:10px"><div class="sec-h"><span data-act="subsidy-emp-edit" data-id="' + esc(emp.id) + '" style="cursor:pointer;text-decoration:underline">' + esc(emp.name) + '</span> <span class="badge muted">' + esc(SUBSIDY_AGENCY[emp.agency] || emp.agency) + '</span>' + (emp.branch_id ? ' <span class="muted" style="font-weight:400">' + esc(branchName(emp.branch_id)) + '</span>' : '') + '<span class="sp"></span><span class="muted" style="font-weight:400">채용 ' + esc(fmtYmdK(emp.hire_on)) + '</span></div>';
+    html += '<div class="item" style="flex-wrap:wrap;gap:8px">';
+    SUBSIDY_STAGES.forEach(function(st){
+      var c = cases.filter(function(x){ return x.stage === st.key; })[0];
+      var status = SUBSIDY_STATUS[(c && c.status) || 'waiting'];
+      var dd = c && ['waiting', 'submitted', 'revision'].indexOf(c.status) >= 0 ? subsidyDday(c.due_on) : '';
+      html += '<a href="#/subsidy-case/' + esc(c ? c.id : '') + '" class="badge ' + status.cls + '" style="display:inline-block">' + esc(st.label) + ' · ' + esc(status.label) + (dd ? ' · ' + esc(dd) : '') + '</a>';
+    });
+    html += '</div>';
+    if (emp.active !== false) html += '<div style="text-align:right;margin-top:6px;padding:0 14px 10px"><span class="muted" data-act="subsidy-stop" data-id="' + esc(emp.id) + '" style="cursor:pointer;text-decoration:underline;font-size:13px">퇴사 처리</span></div>';
+    else html += '<div class="muted" style="margin-top:6px;padding:0 14px 10px;font-size:13px">중단됨' + (emp.stop_reason ? ' · ' + esc(emp.stop_reason) : '') + ' <span data-act="subsidy-reactivate" data-id="' + esc(emp.id) + '" style="cursor:pointer;text-decoration:underline">되돌리기</span></div>';
+    html += '</div>';
+    return html;
+  }
+  async function subsidyAddSave(){
+    var v = function(id){ var el = document.getElementById(id); return el ? el.value : ''; };
+    var name = v('sn-name').trim(), agency = v('sn-agency'), branchId = v('sn-branch') || null, hireOn = v('sn-hire');
+    if (!name){ toast('이름을 넣어 주세요'); return; }
+    if (!hireOn){ toast('채용일을 넣어 주세요'); return; }
+    var ins = await db.insert('ops_subsidy_employees', { name: name, agency: agency, branch_id: branchId, hire_on: hireOn, active: true, created_at: nowIso(), updated_at: nowIso() });
+    var emp = ins[0];
+    var rows = SUBSIDY_STAGES.map(function(st){ return { employee_id: emp.id, stage: st.key, due_on: addMonthsToDate(hireOn, st.months), status: 'waiting', checklist: st.checklist.map(function(n){ return { name: n, done: false, file_path: null }; }), amount: st.amount, created_at: nowIso(), updated_at: nowIso() }; });
+    await db.insert('ops_subsidy_cases', rows);
+    subsidyState.addOpen = false;
+    toast(name + ' 등록했어요');
+    render();
+  }
+  async function subsidyStopEmployee(empId, reason){
+    await db.update('ops_subsidy_employees', { id: empId }, { active: false, stop_reason: reason || null, updated_at: nowIso() });
+    var cases = await db.select('ops_subsidy_cases', { eq: { employee_id: empId } });
+    for (var i = 0; i < cases.length; i++){
+      var c = cases[i];
+      if (c.status !== 'accepted' && c.status !== 'paid') await db.update('ops_subsidy_cases', { id: c.id }, { status: 'stopped', stopped_reason: reason || null, updated_at: nowIso() });
+    }
+    toast('퇴사 처리했어요'); render();
+  }
+  async function subsidyEditHire(empId){
+    var rows = await db.select('ops_subsidy_employees', { eq: { id: empId } }); var emp = rows[0]; if (!emp) return;
+    var nv = window.prompt('채용일 (YYYY-MM-DD)', emp.hire_on);
+    if (nv === null) return;
+    nv = nv.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nv)){ toast('YYYY-MM-DD 형식으로 넣어 주세요'); return; }
+    if (nv === emp.hire_on) return;
+    await db.update('ops_subsidy_employees', { id: empId }, { hire_on: nv, updated_at: nowIso() });
+    if (window.confirm('아직 끝나지 않은 단계(대기중·제출함·수정요청)의 예정일도 새 채용일 기준으로 다시 계산할까요?')){
+      var cases = await db.select('ops_subsidy_cases', { eq: { employee_id: empId } });
+      for (var i = 0; i < cases.length; i++){
+        var c = cases[i];
+        if (['waiting', 'submitted', 'revision'].indexOf(c.status) >= 0) await db.update('ops_subsidy_cases', { id: c.id }, { due_on: addMonthsToDate(nv, subsidyStage(c.stage).months), updated_at: nowIso() });
+      }
+    }
+    toast('채용일을 고쳤어요'); render();
+  }
+  routes['subsidy-case'] = async function(params){
+    await loadBase();
+    if (!isOwner()){ nav('#/home'); return; }
+    var caseId = params.arg;
+    var c = (await db.select('ops_subsidy_cases', { eq: { id: caseId } }))[0];
+    if (!c){ nav('#/subsidy'); return; }
+    var emp = (await db.select('ops_subsidy_employees', { eq: { id: c.employee_id } }))[0];
+    var stage = subsidyStage(c.stage);
+    var logs = await db.select('ops_subsidy_logs', { eq: { case_id: caseId }, order: { col: 'created_at', asc: false } });
+    var status = SUBSIDY_STATUS[c.status] || SUBSIDY_STATUS.waiting;
+    var html = topbar((emp ? emp.name + ' · ' : '') + stage.label, true);
+    html += '<div class="card" style="padding:12px 14px;margin-bottom:10px">';
+    html += '<div class="inline" style="justify-content:space-between"><span class="badge muted">' + esc(emp ? (SUBSIDY_AGENCY[emp.agency] || emp.agency) : '') + '</span><span class="badge ' + status.cls + '">' + esc(status.label) + '</span></div>';
+    html += '<div class="grid2" style="margin-top:10px"><div><label class="muted">예정일</label><input class="in" type="date" id="sc-due" value="' + esc(c.due_on || '') + '"></div><div><label class="muted">상태</label><select class="in" id="sc-status">' + Object.keys(SUBSIDY_STATUS).map(function(k){ return '<option value="' + k + '"' + (c.status === k ? ' selected' : '') + '>' + esc(SUBSIDY_STATUS[k].label) + '</option>'; }).join('') + '</select></div></div>';
+    html += '<div class="grid2" style="margin-top:8px"><div><label class="muted">지원금액(원)</label><input class="in" type="number" inputmode="numeric" id="sc-amount" value="' + (c.amount != null ? c.amount : '') + '" placeholder="' + (stage.amount || '') + '"></div><div><label class="muted">입금일</label><input class="in" type="date" id="sc-paid-on" value="' + esc(c.paid_on || '') + '"></div></div>';
+    html += '<div style="text-align:right;margin-top:8px"><button class="btn sm primary" data-act="subsidy-case-save" data-id="' + esc(c.id) + '">저장</button></div>';
+    html += '</div>';
+    html += '<div class="group-title">필요서류</div><div class="card">';
+    var checklist = c.checklist || [];
+    if (!checklist.length) html += '<div class="empty">아직 항목이 없어요. 아래에서 추가해 주세요.</div>';
+    checklist.forEach(function(item, i){
+      html += '<div class="item"><div class="iname" data-act="subsidy-checklist-toggle" data-case="' + esc(c.id) + '" data-i="' + i + '" style="cursor:pointer;flex:1"><div class="t">' + (item.done ? '✅ ' : '⬜ ') + esc(item.name) + '</div></div>' +
+        (item.file_path ? '<button class="btn sm" data-act="subsidy-file-view" data-path="' + esc(item.file_path) + '">보기</button>' : '') +
+        '<label class="btn sm">' + (item.file_path ? '다시 올리기' : '올리기') + '<input type="file" accept="image/*,application/pdf" class="hidden subsidy-checklist-file" data-case="' + esc(c.id) + '" data-i="' + i + '"></label>' +
+        '<button class="btn sm danger" data-act="subsidy-checklist-del" data-case="' + esc(c.id) + '" data-i="' + i + '">지움</button></div>';
+    });
+    html += '<div class="inline" style="padding:10px 14px"><input class="in" id="sc-new-item" placeholder="항목 이름 (예: 재직확인서)" style="flex:1"><button class="btn sm" data-act="subsidy-checklist-add" data-case="' + esc(c.id) + '">+ 추가</button></div>';
+    html += '</div>';
+    html += '<div class="group-title">진행 기록</div><div class="card" style="padding:12px 14px">';
+    html += '<div class="form" style="margin-bottom:10px"><textarea class="in" id="sc-log-text" rows="2" placeholder="예: 기관에서 수정요청 메일 옴 - 학력증명서 다시 첨부 요청"></textarea>';
+    html += '<div class="inline" style="margin-top:6px;justify-content:space-between"><label class="btn sm">📎 파일 첨부<input type="file" accept="image/*,application/pdf" id="sc-log-file" class="hidden"></label><span class="muted" id="sc-log-filename"></span><button class="btn sm primary" data-act="subsidy-log-add" data-case="' + esc(c.id) + '">기록 추가</button></div></div>';
+    if (!logs.length) html += '<div class="empty">아직 기록이 없어요.</div>';
+    logs.forEach(function(l){
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(l.content || '(내용 없음)') + '</div><div class="s">' + esc(fmtYmdK((l.created_at || '').slice(0, 10))) + (l.created_by ? ' · ' + esc(staffName(l.created_by)) : '') + '</div></div>' + (l.file_path ? '<button class="btn sm" data-act="subsidy-file-view" data-path="' + esc(l.file_path) + '">파일</button>' : '') + '</div>';
+    });
+    html += '</div>';
+    app.innerHTML = html;
+  };
+  async function subsidyCaseSave(caseId){
+    var v = function(id){ var el = document.getElementById(id); return el ? el.value : ''; };
+    await db.update('ops_subsidy_cases', { id: caseId }, { due_on: v('sc-due') || null, status: v('sc-status'), amount: num(v('sc-amount')), paid_on: v('sc-paid-on') || null, updated_at: nowIso() });
+    toast('저장했어요'); render();
+  }
+  async function subsidyChecklistToggle(caseId, i){
+    var c = (await db.select('ops_subsidy_cases', { eq: { id: caseId } }))[0]; if (!c) return;
+    var list = (c.checklist || []).slice(); if (!list[i]) return;
+    list[i] = Object.assign({}, list[i], { done: !list[i].done });
+    await db.update('ops_subsidy_cases', { id: caseId }, { checklist: list, updated_at: nowIso() });
+    render();
+  }
+  async function subsidyChecklistAdd(caseId){
+    var input = document.getElementById('sc-new-item'); var name = (input && input.value || '').trim();
+    if (!name){ toast('항목 이름을 넣어 주세요'); return; }
+    var c = (await db.select('ops_subsidy_cases', { eq: { id: caseId } }))[0]; if (!c) return;
+    var list = (c.checklist || []).concat([{ name: name, done: false, file_path: null }]);
+    await db.update('ops_subsidy_cases', { id: caseId }, { checklist: list, updated_at: nowIso() });
+    toast('추가했어요'); render();
+  }
+  async function subsidyChecklistDel(caseId, i){
+    var c = (await db.select('ops_subsidy_cases', { eq: { id: caseId } }))[0]; if (!c) return;
+    var list = (c.checklist || []).slice(); var removed = list.splice(i, 1)[0];
+    await db.update('ops_subsidy_cases', { id: caseId }, { checklist: list, updated_at: nowIso() });
+    if (removed && removed.file_path) db.removeFile(SUBSIDY_BUCKET, removed.file_path).catch(function(){});
+    toast('지웠어요'); render();
+  }
+  async function subsidyChecklistFilePicked(caseId, i, file){
+    if (!file) return;
+    var f; try { f = await subsidyPickFile(file); } catch(e){ toast(e.message || '파일을 열 수 없어요'); return; }
+    var c = (await db.select('ops_subsidy_cases', { eq: { id: caseId } }))[0]; if (!c) return;
+    var path = 'subsidy/' + c.employee_id + '/' + caseId + '/' + i + '_' + uid() + '.' + f.ext;
+    toast('올리는 중…');
+    try { await db.upload(SUBSIDY_BUCKET, path, f.blob, f.mime); } catch(e){ toast('올리기 실패: ' + (e.message || e)); return; }
+    var list = (c.checklist || []).slice(); var old = list[i];
+    list[i] = Object.assign({}, old, { file_path: path, done: true });
+    await db.update('ops_subsidy_cases', { id: caseId }, { checklist: list, updated_at: nowIso() });
+    if (old && old.file_path && old.file_path !== path) db.removeFile(SUBSIDY_BUCKET, old.file_path).catch(function(){});
+    toast('올렸어요'); render();
+  }
+  async function subsidyLogFilePicked(file){
+    if (!file) return;
+    try { subsidyLogFile = await subsidyPickFile(file); } catch(e){ toast(e.message || '파일을 열 수 없어요'); return; }
+    var nm = document.getElementById('sc-log-filename'); if (nm) nm.textContent = '첨부 준비됨 ✓';
+  }
+  async function subsidyLogAdd(caseId){
+    var ta = document.getElementById('sc-log-text'); var text = (ta && ta.value || '').trim();
+    if (!text && !subsidyLogFile){ toast('내용이나 파일을 넣어 주세요'); return; }
+    var path = null;
+    if (subsidyLogFile){
+      path = 'subsidy/logs/' + caseId + '/' + uid() + '.' + subsidyLogFile.ext;
+      try { await db.upload(SUBSIDY_BUCKET, path, subsidyLogFile.blob, subsidyLogFile.mime); } catch(e){ toast('파일 올리기 실패: ' + (e.message || e)); return; }
+    }
+    await db.insert('ops_subsidy_logs', { case_id: caseId, content: text || null, file_path: path, created_by: session.staffId, created_at: nowIso() });
+    subsidyLogFile = null;
+    toast('기록했어요'); render();
+  }
+
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
     var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
@@ -3007,6 +3247,18 @@
         case 'rs-import-preview': rsImportPreview(); break;
         case 'rs-import-save': el.disabled = true; try { await rsImportSave(); } finally { el.disabled = false; } break;
         case 'rs-refresh': el.disabled = true; try { await rsRefresh(); } finally { el.disabled = false; } break;
+        // 청년지원금
+        case 'subsidy-add-toggle': subsidyState.addOpen = !subsidyState.addOpen; render(); break;
+        case 'subsidy-add-save': el.disabled = true; try { await subsidyAddSave(); } finally { el.disabled = false; } break;
+        case 'subsidy-stop': { var reason = window.prompt('퇴사·중단 사유 (예: 8개월차 퇴사)', ''); if (reason === null) break; await subsidyStopEmployee(id, reason); break; }
+        case 'subsidy-reactivate': await db.update('ops_subsidy_employees', { id: id }, { active: true, stop_reason: null, updated_at: nowIso() }); toast('다시 재직중으로'); render(); break;
+        case 'subsidy-emp-edit': await subsidyEditHire(id); break;
+        case 'subsidy-case-save': el.disabled = true; try { await subsidyCaseSave(id); } finally { el.disabled = false; } break;
+        case 'subsidy-checklist-toggle': await subsidyChecklistToggle(el.getAttribute('data-case'), +el.getAttribute('data-i')); break;
+        case 'subsidy-checklist-add': await subsidyChecklistAdd(el.getAttribute('data-case')); break;
+        case 'subsidy-checklist-del': if (window.confirm('이 항목을 지울까요?')){ await subsidyChecklistDel(el.getAttribute('data-case'), +el.getAttribute('data-i')); } break;
+        case 'subsidy-file-view': { var fu = await db.signedUrl(SUBSIDY_BUCKET, el.getAttribute('data-path')); window.open(fu, '_blank'); break; }
+        case 'subsidy-log-add': el.disabled = true; try { await subsidyLogAdd(el.getAttribute('data-case')); } finally { el.disabled = false; } break;
       }
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
@@ -3015,6 +3267,8 @@
     if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.classList.contains('subsidy-checklist-file')){ await subsidyChecklistFilePicked(e.target.getAttribute('data-case'), +e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'sc-log-file'){ await subsidyLogFilePicked(e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('sub-file')){ subReadSkips(); await subPicked(e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('sub-file-later')){ await subLaterPicked(e.target.getAttribute('data-batch'), e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'rs-import'){ rsState.importText = e.target.value; if (e.target.value.trim()) rsImportPreview(); return; }   // 붙여넣기만 해도 바로 읽어 보기
