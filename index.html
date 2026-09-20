@@ -562,7 +562,7 @@
     await loadBase();
     var html = topbar('본노엘 운영', false, whoChip());
     if (!isOwner()){
-      html += '<div style="text-align:center;padding:8px 12px"><button data-act="owner-quick" style="padding:8px 16px;background:var(--main);color:white;border:none;border-radius:4px;font-size:14px;cursor:pointer;font-weight:600">👑 사장님 빠른 접근</button></div>';
+      html += '<div style="text-align:center;padding:8px 12px"><button class="btn primary sm" data-act="owner-quick" style="font-weight:600">👑 사장님 빠른 접근</button></div>';
     }
     if (isManager()){
       var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
@@ -1020,16 +1020,17 @@
     rows.forEach(function(r){
       var who = r.kind === 'sub' ? '<span class="dot" style="background:' + col(r.req.sub_staff_id) + '"></span><s style="color:var(--ink-faint)">' + esc(r.name) + '</s> → ' + esc(r.subName) : '<span class="dot" style="background:' + col(r.staffId) + '"></span>' + esc(r.name);
       var memo = (base.staff.filter(function(s){ return s.id === r.staffId; })[0] || {}).memo;
-      var mine = r.kind === 'normal' && r.staffId === session.staffId;
-      var badge = mine ? '<span class="badge muted" data-act="myshift-toggle" data-id="' + esc(r.staffId) + '" style="cursor:pointer">✎ 시간 바꾸기</span>' : kindBadge(r);
+      var isSelf = r.kind === 'normal' && r.staffId === session.staffId;
+      var canEdit = r.kind === 'normal' && (isSelf || isOwner());
+      var badge = canEdit ? '<span class="badge muted" data-act="myshift-toggle" data-id="' + esc(r.staffId) + '" style="cursor:pointer">✎ ' + (isSelf ? '시간 바꾸기' : '대신 바꾸기') + '</span>' : kindBadge(r);
       html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + (r.brk ? ' · 휴게 ' + esc(r.brk) : '') + (memo ? ' · <i>' + esc(memo) + '</i>' : '') + '</div></div>' + badge + '</div>';
-      if (mine){
+      if (canEdit){
         var bkS = r.brk ? r.brk.split('~')[0] : '', bkE = r.brk ? r.brk.split('~')[1] : '';
         html += '<div class="expand hidden" id="msx-' + esc(r.staffId) + '"><div class="form">' +
           '<div class="grid2"><div><label>시작</label><input class="in" type="time" id="ms-start" step="1800" value="' + esc(r.start) + '"></div><div><label>끝</label><input class="in" type="time" id="ms-end" step="1800" value="' + esc(r.end) + '"></div></div>' +
           '<div class="grid2"><div><label>휴게 시작 (없으면 비움)</label><input class="in" type="time" id="ms-bs" step="1800" value="' + esc(bkS) + '"></div><div><label>휴게 끝</label><input class="in" type="time" id="ms-be" step="1800" value="' + esc(bkE) + '"></div></div>' +
-          '<div class="muted">' + esc(fmtDateK(day)) + ' 이 날만 바뀌어요. 평소 요일 시간은 그대로 유지돼요. 아예 못 나오면 "휴무 신청"을 써 주세요.</div>' +
-          '<button class="btn sm primary" data-act="myshift-save" data-branch="' + esc(b) + '" data-date="' + esc(day) + '" data-weekday="' + wdOf(day) + '">저장</button>' +
+          '<div class="muted">' + (isSelf ? '' : esc(r.name) + '님 몫으로 ') + esc(fmtDateK(day)) + ' 이 날만 바뀌어요. 평소 요일 시간은 그대로 유지돼요. 아예 못 나오면 "휴무 신청"을 써 주세요.</div>' +
+          '<button class="btn sm primary" data-act="myshift-save" data-branch="' + esc(b) + '" data-date="' + esc(day) + '" data-weekday="' + wdOf(day) + '" data-staff="' + esc(r.staffId) + '">저장</button>' +
           '</div></div>';
       }
     });
@@ -1082,16 +1083,18 @@
     if (fixed.length) await db.insert('ops_shift_patterns', fixed.map(function(p){ return { staff_id: p.staff_id, branch_id: branchId, weekday: p.weekday, start_time: p.start_time, end_time: p.end_time, break_start: p.break_start, break_end: p.break_end, active: true, week_start: week }; }));
   }
   // 근무자 본인이 특정 날짜 시간만 직접 바꾸기 (신청·승인 절차 없음). 다른 사람·다른 날은 그대로 유지됨
-  async function myShiftSave(branchId, date, weekday){
+  async function myShiftSave(branchId, date, weekday, staffId){
+    staffId = staffId || session.staffId;
+    if (staffId !== session.staffId && !isOwner()){ toast('내 시간만 바꿀 수 있어요'); return; }
     var st = document.getElementById('ms-start').value, en = document.getElementById('ms-end').value;
     var bs = document.getElementById('ms-bs').value || null, be = document.getElementById('ms-be').value || null;
     if (!st || !en || toMin(st) >= toMin(en)){ toast('시작·끝 시간을 확인해 주세요'); return; }
     if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
     var week = weekStart(date);
     await ensureWeeklyPool(branchId, week);
-    await db.update('ops_shift_patterns', { branch_id: branchId, week_start: week, staff_id: session.staffId, weekday: weekday, active: true }, { active: false });
-    await db.insert('ops_shift_patterns', { staff_id: session.staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week });
-    toast('내 시간을 바꿨어요. 이번 주 근무표에 반영됐어요'); render();
+    await db.update('ops_shift_patterns', { branch_id: branchId, week_start: week, staff_id: staffId, weekday: weekday, active: true }, { active: false });
+    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week });
+    toast((staffId === session.staffId ? '내' : staffName(staffId)) + ' 시간을 바꿨어요. 이번 주 근무표에 반영됐어요'); render();
   }
   // 이 날 스케줄에 없는 사람도 이름 골라서 새 근무로 바로 추가 (승인 없음, 근무 패턴 화면과 같은 방식)
   async function addShift(branchId, date, weekday){
@@ -2600,6 +2603,7 @@
       if (disc == null && list != null) disc = paid != null ? list - paid : Math.round(list * rate / 100);
       if (paid == null && list != null) paid = list - disc;
       var defBranch = buyGuessBranch(o) || session.branchId || (base.branches[0] || {}).id;
+      if (isOwner()) html += '<div><label>구매한 사람</label><select class="in" id="buy-staff">' + base.staff.filter(function(s){ return s.active !== false; }).sort(function(a, b){ return a.name.localeCompare(b.name, 'ko'); }).map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === session.staffId ? ' selected' : '') + '>' + esc(s.name) + (s.id === session.staffId ? ' (본인)' : '') + '</option>'; }).join('') + '</select><div class="muted">사장님이 직원 대신 올릴 때만 여기서 이름을 바꿔 주세요.</div></div>';
       html += '<div class="grid2"><div><label>날짜</label><input class="in" type="date" id="buy-date" value="' + esc(o.bought_on || todayStr()) + '"></div><div><label>어느 매장에서?</label><select class="in" id="buy-branch">' + buyBranchOptions(defBranch) + '</select></div></div>';
       html += '<div><label>결제 방식</label><select class="in" id="buy-method">' + buyMethodOptions(method) + '</select></div>';
       html += '<div class="grid2"><div><label>정가 합계(원)</label><input class="in" type="number" inputmode="numeric" id="buy-list" value="' + (list != null ? list : '') + '" placeholder="5500"></div><div><label>할인(원)</label><input class="in" type="number" inputmode="numeric" id="buy-disc" value="' + (disc != null ? disc : '') + '" placeholder="자동"></div></div>';
@@ -2640,9 +2644,10 @@
     var path = 'staff/' + branchId + '/' + date.slice(0, 7) + '/' + uid() + '.jpg';
     try { await db.upload('receipts', path, buyState.photo.blob, 'image/jpeg'); }
     catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 내용만 저장할까요?')) return; path = null; }
-    await db.insert('ops_staff_purchases', { bought_on: date, staff_id: session.staffId, branch_id: branchId, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: v('buy-items').trim() || null, memo: v('buy-memo').trim() || null, photo_path: path, ocr: buyState.ocr || null, created_at: nowIso(), updated_at: nowIso() });
+    var buyerId = (isOwner() && v('buy-staff')) || session.staffId;
+    await db.insert('ops_staff_purchases', { bought_on: date, staff_id: buyerId, branch_id: branchId, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: v('buy-items').trim() || null, memo: v('buy-memo').trim() || null, photo_path: path, ocr: buyState.ocr || null, created_at: nowIso(), updated_at: nowIso() });
     buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
-    toast('저장했어요 · ' + branchName(branchId) + ' · 할인 ' + won(disc) + '원, 낸 금액 ' + won(paid) + '원');
+    toast('저장했어요 · ' + (buyerId !== session.staffId ? staffName(buyerId) + ' · ' : '') + branchName(branchId) + ' · 할인 ' + won(disc) + '원, 낸 금액 ' + won(paid) + '원');
     render();
   }
 
@@ -2714,6 +2719,7 @@
   // 규칙: 만료·30일 이내·보건증 없음 = 빨강, 60일 이내 = 노랑. 직원이 새 사진 올리면 '제출', 매니저가 날짜 확인하면 '완료'.
   var HC_BUCKET = 'documents', HC_RED = 30, HC_YELLOW = 60;
   var hcState = { photo: null, open: {} };
+  var hcAdminPhoto = {};   // 사장님이 직원 대신 올릴 사진 (제출 전 임시 보관, staffId별)
   async function loadHealth(){ return await db.select('ops_health_certs', { order: { col: 'created_at', asc: false } }); }
   function healthMap(rows){
     var m = {};
@@ -2834,7 +2840,10 @@
         html += '<div class="note ok" style="margin-top:6px">' + esc(fmtDT(p.created_at)) + ' 새 보건증 사진을 제출했어요. 사진을 열어 만료일을 확인하고 완료를 눌러 주세요.</div>';
         html += '<div class="inline" style="margin-top:8px;flex-wrap:wrap;gap:8px">' + (p.photo_path ? '<button class="btn sm" data-act="hc-photo" data-path="' + esc(p.photo_path) + '">📷 사진 열기</button>' : '') + '<input class="in" type="date" id="hc-date-' + esc(p.id) + '" value="' + esc(p.expires_on || '') + '" style="width:auto"><button class="btn sm primary" data-act="hc-confirm" data-id="' + esc(p.id) + '">완료</button><button class="btn sm danger" data-act="hc-del" data-id="' + esc(p.id) + '" data-path="' + esc(p.photo_path || '') + '">반려(지움)</button></div>';
       }
-      html += '<div class="inline" style="margin-top:10px;flex-wrap:wrap;gap:8px"><span class="muted">만료일 직접 넣기</span><input class="in" type="date" id="hc-new-' + esc(s.id) + '" style="width:auto"><button class="btn sm" data-act="hc-manual" data-id="' + esc(s.id) + '">저장</button></div>';
+      html += '<div class="inline" style="margin-top:10px;flex-wrap:wrap;gap:8px"><span class="muted">만료일 직접 넣기</span><input class="in" type="date" id="hc-new-' + esc(s.id) + '" style="width:auto">' +
+        (isOwner() ? '<label class="btn sm" style="cursor:pointer">' + (hcAdminPhoto[s.id] ? '📷 사진 넣음 (바꾸기)' : '📷 사진(선택)') + '<input type="file" accept="image/*" class="hidden hc-manual-file" data-staff="' + esc(s.id) + '"></label>' : '') +
+        '<button class="btn sm" data-act="hc-manual" data-id="' + esc(s.id) + '">저장</button></div>';
+      if (isOwner()) html += '<div class="muted" style="margin:2px 0 0">사장님은 직원 대신 만료일만 넣거나(증빙 없음), 텍스트로 받은 보건증 사진을 같이 첨부해서 저장할 수 있어요.</div>';
       html += '<div class="group-title" style="margin-top:10px">기록</div>' + hcHistory(info.rows, true);
       html += '</div>';
     });
@@ -2980,9 +2989,21 @@
   async function hcManual(staffId){
     var date = (document.getElementById('hc-new-' + staffId) || {}).value;
     if (!date){ toast('만료일을 넣어 주세요'); return; }
-    await db.insert('ops_health_certs', { staff_id: staffId, expires_on: date, status: 'confirmed', source: 'manual', confirmed_by: session.staffId, confirmed_at: nowIso(), created_at: nowIso(), updated_at: nowIso() });
-    toast('저장했어요 · ' + staffName(staffId) + ' 만료 ' + fmtYmdK(date));
+    var path = null, photo = hcAdminPhoto[staffId];
+    if (photo && photo.blob){
+      path = 'health/' + staffId + '/' + Date.now() + '.jpg';
+      try { await db.upload(HC_BUCKET, path, photo.blob, 'image/jpeg'); }
+      catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 날짜만 저장할까요?')) return; path = null; }
+    }
+    await db.insert('ops_health_certs', { staff_id: staffId, expires_on: date, status: 'confirmed', source: 'manual', photo_path: path, confirmed_by: session.staffId, confirmed_at: nowIso(), created_at: nowIso(), updated_at: nowIso() });
+    delete hcAdminPhoto[staffId];
+    toast('저장했어요 · ' + staffName(staffId) + ' 만료 ' + fmtYmdK(date) + (path ? ' (사진 첨부)' : ''));
     render();
+  }
+  async function hcAdminPhotoPicked(staffId, file){
+    if (!file) return;
+    try { hcAdminPhoto[staffId] = await resizeImage(file, 1600); toast('사진을 담았어요. 만료일 넣고 저장을 눌러 주세요'); render(); }
+    catch(e){ toast(e.message || '사진을 열 수 없어요'); }
   }
 
   // ===== 10차: 청년지원금 관리 (supabase-migration-subsidy.sql) =====
@@ -3227,7 +3248,7 @@
         // 근무표·휴무·대타
         case 'sched-day': nav('#/schedule/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-date')); break;
         case 'myshift-toggle': document.getElementById('msx-' + id).classList.toggle('hidden'); break;
-        case 'myshift-save': await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); break;
+        case 'myshift-save': await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday'), el.getAttribute('data-staff')); break;
         case 'addshift-toggle': document.getElementById('asx-' + id).classList.toggle('hidden'); break;
         case 'addshift-save': await addShift(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); break;
         case 'leave-submit': await leaveSubmit(); break;
@@ -3350,6 +3371,7 @@
     if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.classList.contains('hc-manual-file')){ await hcAdminPhotoPicked(e.target.getAttribute('data-staff'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('subsidy-checklist-file')){ await subsidyChecklistFilePicked(e.target.getAttribute('data-case'), +e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'sc-log-file'){ await subsidyLogFilePicked(e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('sub-file')){ subReadSkips(); await subPicked(e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
