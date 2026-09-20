@@ -990,7 +990,7 @@
     poolFor(sch, branchId, dateStr).forEach(function(p){
       if (p.weekday !== wd) return;
       var st = base.staff.filter(function(s){ return s.id === p.staff_id; })[0]; if (!st || st.active === false) return;
-      var row = { staffId: p.staff_id, name: st.name, start: p.start_time, end: p.end_time, brk: p.break_start ? p.break_start + '~' + p.break_end : '', kind: 'normal', req: null, patternId: p.id, weekStart: p.week_start || null };
+      var row = { staffId: p.staff_id, name: st.name, start: p.start_time, end: p.end_time, brk: p.break_start ? p.break_start + '~' + p.break_end : '', kind: 'normal', req: null, patternId: p.id, weekStart: p.week_start || null, note: p.note || null };
       var q = sch.requests.filter(function(x){ return x.staff_id === p.staff_id && x.date === dateStr && x.start_time === p.start_time && ['requested','covering','confirmed'].indexOf(x.status) >= 0; })[0];
       if (q){
         row.req = q;
@@ -1039,12 +1039,13 @@
       var isSelf = r.kind === 'normal' && r.staffId === session.staffId;
       var canEdit = r.kind === 'normal' && (isSelf || isOwner());
       var badge = canEdit ? '<span class="badge muted" data-act="myshift-toggle" data-id="' + esc(r.staffId) + '" style="cursor:pointer">✎ ' + (isSelf ? '시간 바꾸기' : '대신 바꾸기') + '</span>' : kindBadge(r);
-      html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + (r.brk ? ' · 휴게 ' + esc(r.brk) : '') + (memo ? ' · <i>' + esc(memo) + '</i>' : '') + '</div></div>' + badge + '</div>';
+      html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + (r.brk ? ' · 휴게 ' + esc(r.brk) : '') + (memo ? ' · <i>' + esc(memo) + '</i>' : '') + (r.note ? ' · <i>' + esc(r.note) + '</i>' : '') + '</div></div>' + badge + '</div>';
       if (canEdit){
         var bkS = r.brk ? r.brk.split('~')[0] : '', bkE = r.brk ? r.brk.split('~')[1] : '';
         html += '<div class="expand hidden" id="msx-' + esc(r.staffId) + '"><div class="form">' +
           '<div class="grid2"><div><label>시작</label><input class="in" type="time" id="ms-start" step="1800" value="' + esc(r.start) + '"></div><div><label>끝</label><input class="in" type="time" id="ms-end" step="1800" value="' + esc(r.end) + '"></div></div>' +
           '<div class="grid2"><div><label>휴게 시작 (없으면 비움)</label><input class="in" type="time" id="ms-bs" step="1800" value="' + esc(bkS) + '"></div><div><label>휴게 끝</label><input class="in" type="time" id="ms-be" step="1800" value="' + esc(bkE) + '"></div></div>' +
+          '<div><label>메모 (예: 실제 출근은 7:20, 없으면 비움)</label><input class="in" id="ms-note" value="' + esc(r.note || '') + '"></div>' +
           '<div class="muted">' + (isSelf ? '' : esc(r.name) + '님 몫으로 ') + esc(fmtDateK(day)) + ' 이 날만 바뀌어요. 평소 요일 시간은 그대로 유지돼요. 아예 못 나오면 "휴무 신청"을 써 주세요.</div>' +
           '<button class="btn sm primary" data-act="myshift-save" data-branch="' + esc(b) + '" data-date="' + esc(day) + '" data-weekday="' + wdOf(day) + '" data-staff="' + esc(r.staffId) + '">저장</button>' +
           '</div></div>';
@@ -1057,6 +1058,7 @@
       '<div><label>누구</label><select class="in" id="as-staff"><option value="">고르세요</option>' + addPeople.map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === session.staffId ? ' selected' : '') + '>' + esc(s.name) + (s.id === session.staffId ? ' (나)' : '') + '</option>'; }).join('') + '</select></div>' +
       '<div class="grid2"><div><label>시작</label><input class="in" type="time" id="as-start" step="1800" value="09:00"></div><div><label>끝</label><input class="in" type="time" id="as-end" step="1800" value="18:00"></div></div>' +
       '<div class="grid2"><div><label>휴게 시작 (없으면 비움)</label><input class="in" type="time" id="as-bs" step="1800"></div><div><label>휴게 끝</label><input class="in" type="time" id="as-be" step="1800"></div></div>' +
+      '<div><label>메모 (예: 실제 출근은 7:20, 없으면 비움)</label><input class="in" id="as-note"></div>' +
       '<button class="btn sm primary" data-act="addshift-save" data-branch="' + esc(b) + '" data-date="' + esc(day) + '" data-weekday="' + wdOf(day) + '">' + esc(fmtDateK(day)) + '에 추가</button>' +
       '</div></div>';
     // 주간 표: 30분 줄로 맞추고, 7:20처럼 어긋난 시작·끝이 있으면 그 줄만 따로 (예: 7:20~7:30)
@@ -1104,12 +1106,13 @@
     if (staffId !== session.staffId && !isOwner()){ toast('내 시간만 바꿀 수 있어요'); return; }
     var st = document.getElementById('ms-start').value, en = document.getElementById('ms-end').value;
     var bs = document.getElementById('ms-bs').value || null, be = document.getElementById('ms-be').value || null;
+    var nt = (document.getElementById('ms-note').value || '').trim() || null;
     if (!st || !en || toMin(st) >= toMin(en)){ toast('시작·끝 시간을 확인해 주세요'); return; }
     if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
     var week = weekStart(date);
     await ensureWeeklyPool(branchId, week);
     await db.update('ops_shift_patterns', { branch_id: branchId, week_start: week, staff_id: staffId, weekday: weekday, active: true }, { active: false });
-    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week });
+    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week, note: nt });
     toast((staffId === session.staffId ? '내' : staffName(staffId)) + ' 시간을 바꿨어요. 이번 주 근무표에 반영됐어요'); render();
   }
   // 이 날 스케줄에 없는 사람도 이름 골라서 새 근무로 바로 추가 (승인 없음, 근무 패턴 화면과 같은 방식)
@@ -1117,12 +1120,13 @@
     var staffId = document.getElementById('as-staff').value;
     var st = document.getElementById('as-start').value, en = document.getElementById('as-end').value;
     var bs = document.getElementById('as-bs').value || null, be = document.getElementById('as-be').value || null;
+    var nt = (document.getElementById('as-note').value || '').trim() || null;
     if (!staffId){ toast('이름을 골라 주세요'); return; }
     if (!st || !en || toMin(st) >= toMin(en)){ toast('시작·끝 시간을 확인해 주세요'); return; }
     if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
     var week = weekStart(date);
     await ensureWeeklyPool(branchId, week);
-    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week });
+    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week, note: nt });
     toast(staffName(staffId) + ' 근무를 추가했어요. 이번 주 근무표에 반영됐어요'); render();
   }
 
