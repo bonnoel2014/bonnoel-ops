@@ -606,7 +606,8 @@
         var buysToday = (await db.select('ops_staff_purchases', { eq: { bought_on: todayStr() } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
         var bs = buySums(buysToday);
         html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #FFC107"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">🥐 직원 구매</div><div class="summary" style="grid-template-columns:1fr 1fr;margin-top:0"><a href="#/buy-list"><div class="n">' + bs.n + '</div><div class="l">오늘 구매' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
-                '<a href="#/buy-list"><div class="n" style="font-size:20px">' + won(bs.disc) + '<span style="font-size:13px">원</span></div><div class="l">할인 합계</div></a></div></div>';
+                '<a href="#/buy-list"><div class="n" style="font-size:20px">' + won(bs.disc) + '<span style="font-size:13px">원</span></div><div class="l">할인 합계</div></a></div>' +
+                (buysToday.length ? '<a href="#/buy-list" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">' + buysToday.slice(0, 6).map(function(x){ return esc(branchName(x.branch_id)) + ' ' + esc(buyerLabel(x)); }).join(' · ') + (buysToday.length > 6 ? ' 외 ' + (buysToday.length - 6) + '건' : '') + '</a>' : '') + '</div>';
       } catch(e){ console.warn('직원 구매 테이블 없음', e); }
       try { // 청년지원금 표(supabase-migration-subsidy.sql)가 아직 없어도 홈은 열리게
         if (isOwner()){
@@ -2602,6 +2603,8 @@
   function buyIdsRow(id){ return { method: 'bm-' + id, list: 'bl-' + id, disc: 'bc-' + id, paid: 'bp-' + id, warn: 'bw-' + id }; }
   async function loadPurchases(ym){ var mr = monthRange(ym); return (await db.select('ops_staff_purchases', { gte: { bought_on: mr.from }, order: { col: 'bought_on', asc: false } })).filter(function(x){ return x.bought_on <= mr.to; }); }
   function buySums(list){ var s = { n: 0, list: 0, disc: 0, paid: 0 }; list.forEach(function(x){ s.n++; s.list += num(x.list_total) || 0; s.disc += num(x.discount) || 0; s.paid += num(x.paid) || 0; }); return s; }
+  // 실제 구매한 사람 이름: 등록 안 된 사람(베이커 등)은 buyer_name에 이름만 저장돼 있음. 누가 대신 입력했는지와 상관없이 항상 이걸 보여줌
+  function buyerLabel(x){ return x.buyer_name || staffName(x.staff_id) || '(이름 없음)'; }
 
   // --- 직원 구매 올리기 (모두) ---
   routes.buy = async function(){
@@ -2612,14 +2615,15 @@
     if (!st.photo){
       html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 · 카카오페이 <b>30%</b><br>카드 · 서울페이 · 온누리 · 현금영수증 끊은 현금 <b>20%</b></div>';
       html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="buy-file" class="hidden"></label>';
-      html += '<div class="muted">계산한 영수증 사진을 올리면 날짜·정가·할인·낸 금액을 자동으로 읽어요. 틀리면 고치고 저장하면 돼요. 사진은 꼭 있어야 해요 (증빙). 영수증 한 장에 한 번.</div>';
+      html += '<div class="muted">계산한 영수증 사진을 올리면 날짜·정가·할인·낸 금액을 자동으로 읽어요. 틀리면 고치고 저장하면 돼요. 사진이 있으면 증빙으로 남아요. 영수증 한 장에 한 번.</div>';
       html += '<div class="muted">화면 캡처(스크린샷)를 복사해 뒀으면 파일로 안 저장해도 돼요. 이 화면에서 <b>Ctrl+V</b> 눌러서 바로 붙여넣기 하세요.</div>';
+      html += '<div style="text-align:center"><span class="muted" data-act="buy-nophoto" style="cursor:pointer;text-decoration:underline">사진 없이 직접 입력</span></div>';
     } else {
       if (st.photo.dataUrl) html += '<img src="' + st.photo.dataUrl + '" alt="영수증" style="width:100%;max-height:240px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">';
       if (st.ocrBusy) html += '<div class="note">🔎 영수증을 읽는 중… 5초쯤 걸려요</div>';
       else if (st.ocrError) html += '<div class="note danger">자동 읽기가 안 됐어요: ' + esc(st.ocrError) + '<br><span class="muted">아래에 직접 넣어 주세요.</span></div>';
       else if (st.ocr) html += '<div class="note ok">읽었어요' + (o.confidence != null && o.confidence < 0.6 ? ' (사진이 흐려서 자신 없음)' : '') + '. 맞는지 확인하고 저장해 주세요.</div>';
-      html += '<div style="text-align:center"><span class="muted" data-act="buy-retake" style="cursor:pointer;text-decoration:underline">다른 사진으로</span></div>';
+      html += '<div style="text-align:center"><span class="muted" data-act="buy-retake" style="cursor:pointer;text-decoration:underline">' + (st.photo.dataUrl ? '다른 사진으로' : '← 사진 찍기로') + '</span></div>';
       var method = buyGuessMethod(o) || 'card', rate = buyMethod(method).rate;
       var list = num(o.list_total), disc = num(o.discount), paid = num(o.paid);
       if (list == null && paid == null && o.amount != null) paid = num(o.amount);   // 예전 함수(법인카드용)가 배포돼 있으면 결제 금액만 옴
@@ -2627,7 +2631,7 @@
       if (disc == null && list != null) disc = paid != null ? list - paid : Math.round(list * rate / 100);
       if (paid == null && list != null) paid = list - disc;
       var defBranch = buyGuessBranch(o) || session.branchId || (base.branches[0] || {}).id;
-      if (isOwner()) html += '<div><label>구매한 사람</label><select class="in" id="buy-staff">' + base.staff.filter(function(s){ return s.active !== false; }).sort(function(a, b){ return a.name.localeCompare(b.name, 'ko'); }).map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === session.staffId ? ' selected' : '') + '>' + esc(s.name) + (s.id === session.staffId ? ' (본인)' : '') + '</option>'; }).join('') + '</select><div class="muted">사장님이 직원 대신 올릴 때만 여기서 이름을 바꿔 주세요.</div></div>';
+      if (isOwner()) html += '<div><label>실제 구매한 사람 이름</label><input class="in" id="buy-staff-name" list="buy-staff-dl" value="' + esc(o.buyer_name || session.name) + '" placeholder="이름 입력"><datalist id="buy-staff-dl">' + base.staff.filter(function(s){ return s.active !== false; }).map(function(s){ return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist><div class="muted">등록된 직원이면 목록에서 골라지고, 베이커처럼 앱에 등록 안 된 사람이면 이름만 그대로 써 주세요.</div></div>';
       html += '<div class="grid2"><div><label>날짜</label><input class="in" type="date" id="buy-date" value="' + esc(o.bought_on || todayStr()) + '"></div><div><label>어느 매장에서?</label><select class="in" id="buy-branch">' + buyBranchOptions(defBranch) + '</select></div></div>';
       html += '<div><label>결제 방식</label><select class="in" id="buy-method">' + buyMethodOptions(method) + '</select></div>';
       html += '<div class="grid2"><div><label>정가 합계(원)</label><input class="in" type="number" inputmode="numeric" id="buy-list" value="' + (list != null ? list : '') + '" placeholder="5500"></div><div><label>할인(원)</label><input class="in" type="number" inputmode="numeric" id="buy-disc" value="' + (disc != null ? disc : '') + '" placeholder="자동"></div></div>';
@@ -2638,13 +2642,13 @@
     }
     html += '</div>';
     var ym = monthOf(todayStr());
-    var mine = (await loadPurchases(ym).catch(function(){ return []; })).filter(function(x){ return x.staff_id === session.staffId; });
+    var mine = (await loadPurchases(ym).catch(function(){ return []; })).filter(function(x){ return (x.entered_by || x.staff_id) === session.staffId; });
     if (mine.length){
       var s = buySums(mine);
-      html += '<div class="group-title">내 이번 달 구매 · ' + s.n + '건 · 할인 ' + won(s.disc) + '원 · 낸 금액 ' + won(s.paid) + '원</div><div class="card">';
+      html += '<div class="group-title">내가 이번 달에 넣은 구매 · ' + s.n + '건 · 할인 ' + won(s.disc) + '원 · 낸 금액 ' + won(s.paid) + '원</div><div class="card">';
       mine.forEach(function(x){
         var today = x.bought_on === todayStr() && (x.created_at || '').slice(0, 10) === new Date().toISOString().slice(0, 10);
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(fmtDateK(x.bought_on)) + ' · ' + esc(x.items || '(품목 없음)') + '</div><div class="s">' + esc(branchName(x.branch_id)) + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '원 − 할인 ' + won(x.discount) + '원</div></div><b style="white-space:nowrap">' + won(x.paid) + '원</b>' + (today ? '<button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">지움</button>' : '') + '</div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(fmtDateK(x.bought_on)) + ' · ' + esc(buyerLabel(x)) + (x.items ? ' · ' + esc(x.items) : '') + '</div><div class="s">' + esc(branchName(x.branch_id)) + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '원 − 할인 ' + won(x.discount) + '원</div></div><b style="white-space:nowrap">' + won(x.paid) + '원</b>' + (today ? '<button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">지움</button>' : '') + '</div>';
       });
       html += '</div><div class="muted" style="margin:6px 4px">오늘 올린 건 바로 지울 수 있어요. 지난 건은 매니저·사장님께 말해 주세요.</div>';
     }
@@ -2664,14 +2668,20 @@
     if (disc == null) disc = Math.round(list * method.rate / 100);
     if (paid == null) paid = list - disc;
     if (paid < 0 || disc < 0){ toast('금액이 이상해요. 정가·할인·낸 금액을 확인해 주세요'); return; }
-    if (!buyState.photo || !buyState.photo.blob){ toast('영수증 사진이 꼭 있어야 해요'); return; }
-    var path = 'staff/' + branchId + '/' + date.slice(0, 7) + '/' + uid() + '.jpg';
-    try { await db.upload('receipts', path, buyState.photo.blob, 'image/jpeg'); }
-    catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 내용만 저장할까요?')) return; path = null; }
-    var buyerId = (isOwner() && v('buy-staff')) || session.staffId;
-    await db.insert('ops_staff_purchases', { bought_on: date, staff_id: buyerId, branch_id: branchId, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: v('buy-items').trim() || null, memo: v('buy-memo').trim() || null, photo_path: path, ocr: buyState.ocr || null, created_at: nowIso(), updated_at: nowIso() });
+    var typedName = isOwner() ? v('buy-staff-name').trim() : '';
+    if (isOwner() && !typedName){ toast('구매한 사람 이름을 넣어 주세요'); return; }
+    var path = null;
+    if (buyState.photo && buyState.photo.blob){
+      path = 'staff/' + branchId + '/' + date.slice(0, 7) + '/' + uid() + '.jpg';
+      try { await db.upload('receipts', path, buyState.photo.blob, 'image/jpeg'); }
+      catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 내용만 저장할까요?')) return; path = null; }
+    }
+    var buyerMatch = typedName ? base.staff.filter(function(s){ return s.active !== false && s.name === typedName; })[0] : null;
+    var buyerId = isOwner() ? (buyerMatch ? buyerMatch.id : null) : session.staffId;
+    var buyerName = isOwner() ? typedName : null;
+    await db.insert('ops_staff_purchases', { bought_on: date, staff_id: buyerId, buyer_name: buyerName, branch_id: branchId, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: v('buy-items').trim() || null, memo: v('buy-memo').trim() || null, photo_path: path, ocr: buyState.ocr || null, entered_by: session.staffId, created_at: nowIso(), updated_at: nowIso() });
     buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
-    toast('저장했어요 · ' + (buyerId !== session.staffId ? staffName(buyerId) + ' · ' : '') + branchName(branchId) + ' · 할인 ' + won(disc) + '원, 낸 금액 ' + won(paid) + '원');
+    toast('저장했어요 · ' + (buyerName && buyerName !== session.name ? buyerName + ' · ' : '') + branchName(branchId) + ' · 할인 ' + won(disc) + '원, 낸 금액 ' + won(paid) + '원');
     render();
   }
 
@@ -2702,7 +2712,7 @@
       var rows = list.filter(function(x){ return x.bought_on === d; }), ds = buySums(rows);
       html += '<div class="item" style="background:var(--surface-sunken)"><div class="iname"><div class="t">' + esc(fmtDateK(d)) + (d === todayStr() ? ' <span class="badge ok">오늘</span>' : '') + '</div><div class="s">' + ds.n + '건 · 정가 ' + won(ds.list) + '원</div></div><span class="badge danger">−' + won(ds.disc) + '</span><b style="white-space:nowrap">' + won(ds.paid) + '</b></div>';
       rows.forEach(function(x){
-        html += '<div class="item" data-act="buy-toggle" data-id="' + esc(x.id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(staffName(x.staff_id) || '(이름 없음)') + (scope === 'all' ? ' · ' + esc(branchName(x.branch_id)) : '') + '</div><div class="s">' + esc(x.items || '(품목 없음)') + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '</div></div><span class="badge muted">−' + won(x.discount) + '</span>' + (x.photo_path ? '<span title="사진 있음">📷</span>' : '') + '<b style="white-space:nowrap">' + won(x.paid) + '</b></div>';
+        html += '<div class="item" data-act="buy-toggle" data-id="' + esc(x.id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(buyerLabel(x)) + (scope === 'all' ? ' · ' + esc(branchName(x.branch_id)) : '') + '</div><div class="s">' + esc(x.items || '(품목 없음)') + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '</div></div><span class="badge muted">−' + won(x.discount) + '</span>' + (x.photo_path ? '<span title="사진 있음">📷</span>' : '') + '<b style="white-space:nowrap">' + won(x.paid) + '</b></div>';
         html += '<div class="expand hidden" id="bx-' + esc(x.id) + '" style="padding-left:14px">' +
           '<div class="grid2"><div><label class="muted">날짜</label><input class="in" type="date" id="bd-' + esc(x.id) + '" value="' + esc(x.bought_on) + '"></div><div><label class="muted">매장</label><select class="in" id="bb-' + esc(x.id) + '">' + buyBranchOptions(x.branch_id) + '</select></div></div>' +
           '<div style="margin-top:8px"><label class="muted">결제 방식</label><select class="in" id="bm-' + esc(x.id) + '">' + buyMethodOptions(x.pay_method) + '</select></div>' +
@@ -2716,15 +2726,15 @@
     html += '</div>';
     // 사람별
     var byStaff = {};
-    list.forEach(function(x){ var k = x.staff_id || 'none'; var v = byStaff[k] = byStaff[k] || { staff_id: x.staff_id, rows: [] }; v.rows.push(x); });
+    list.forEach(function(x){ var k = x.staff_id || ('n:' + (x.buyer_name || '?')); var v = byStaff[k] = byStaff[k] || { staff_id: x.staff_id, buyer_name: x.buyer_name, rows: [] }; v.rows.push(x); });
     var people = Object.keys(byStaff).map(function(k){ var v = byStaff[k]; v.sum = buySums(v.rows); return v; }).sort(function(a, b){ return b.sum.paid - a.sum.paid; });
     html += '<div class="card section"><div class="sec-h">사람별 (이 달)<span class="sp"></span><span class="muted" style="font-weight:400">할인 · 낸 금액</span></div>';
     if (!people.length) html += '<div class="empty">아직 없어요</div>';
-    people.forEach(function(p){ var st = base.staff.filter(function(x){ return x.id === p.staff_id; })[0]; html += '<div class="item"><div class="iname"><div class="t">' + esc(st ? st.name : '(이름 없음)') + '</div><div class="s">' + esc(st && st.branch_id ? branchName(st.branch_id) : '전체') + ' · ' + p.sum.n + '건 · 정가 ' + won(p.sum.list) + '원</div></div><span class="badge danger">−' + won(p.sum.disc) + '</span><b style="white-space:nowrap">' + won(p.sum.paid) + '</b></div>'; });
+    people.forEach(function(p){ var st = base.staff.filter(function(x){ return x.id === p.staff_id; })[0]; html += '<div class="item"><div class="iname"><div class="t">' + esc(p.buyer_name || (st ? st.name : '(이름 없음)')) + '</div><div class="s">' + esc(st && st.branch_id ? branchName(st.branch_id) : (st ? '전체' : '등록 안 됨')) + ' · ' + p.sum.n + '건 · 정가 ' + won(p.sum.list) + '원</div></div><span class="badge danger">−' + won(p.sum.disc) + '</span><b style="white-space:nowrap">' + won(p.sum.paid) + '</b></div>'; });
     html += '</div>';
     html += '<div class="muted" style="margin-top:10px">직원 할인: 현금·계좌이체·카카오페이 30%, 카드·서울페이·온누리·현금영수증 20%. 줄을 누르면 고칠 수 있어요. CSV는 이 달 구매가 한 줄씩 다 들어가요.</div>';
     app.innerHTML = html;
-    app._csv = [['날짜', '매장', '이름', '결제 방식', '할인율', '정가', '할인', '낸 금액', '산 것', '메모', '사진']].concat(list.slice().sort(function(a, b){ return a.bought_on < b.bought_on ? -1 : 1; }).map(function(x){ return [x.bought_on, branchName(x.branch_id), staffName(x.staff_id), buyMethodName(x.pay_method), x.discount_rate + '%', x.list_total, x.discount, x.paid, x.items || '', x.memo || '', x.photo_path ? 'Y' : '']; }));
+    app._csv = [['날짜', '매장', '이름', '결제 방식', '할인율', '정가', '할인', '낸 금액', '산 것', '메모', '사진']].concat(list.slice().sort(function(a, b){ return a.bought_on < b.bought_on ? -1 : 1; }).map(function(x){ return [x.bought_on, branchName(x.branch_id), buyerLabel(x), buyMethodName(x.pay_method), x.discount_rate + '%', x.list_total, x.discount, x.paid, x.items || '', x.memo || '', x.photo_path ? 'Y' : '']; }));
     app._csvName = '직원구매_' + (scope === 'all' ? '전체' : branchName(scope)) + '_' + ym + '.csv';
   };
   async function buyUpdate(id){
@@ -3325,6 +3335,7 @@
         case 'exp-csv': downloadCsv(); break;
         // 직원 구매
         case 'buy-retake': buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
+        case 'buy-nophoto': buyState = { photo: { blob: null, dataUrl: null, mime: null }, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
         case 'buy-save': el.disabled = true; try { await buySave(); } finally { el.disabled = false; } break;
         case 'buy-toggle': document.getElementById('bx-' + id).classList.toggle('hidden'); break;
         case 'buy-photo': { var bu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(bu, '_blank'); break; }
