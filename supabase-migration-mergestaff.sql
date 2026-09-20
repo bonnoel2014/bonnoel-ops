@@ -22,7 +22,7 @@ begin
     ('진주', null::text, '장진주', null::text),
     ('박민서S', '성수점', '박민서', '성수점'),
     ('박민서D', '답십리점', '박민서', '답십리점'),
-    ('매니저', null::text, '최하늘', null::text),
+    ('메니저', null::text, '최하늘', null::text),
     ('민경', null::text, '박민경', null::text)
   ) as t(old_name, old_branch, new_name, new_branch)
   loop
