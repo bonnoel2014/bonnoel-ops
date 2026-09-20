@@ -23,7 +23,8 @@ begin
     ('박민서S', '성수점', '박민서', '성수점'),
     ('박민서D', '답십리점', '박민서', '답십리점'),
     ('메니저', null::text, '최하늘', null::text),
-    ('민경', null::text, '박민경', null::text)
+    ('민경', null::text, '박민경', null::text),
+    ('다인', null::text, '이다인', null::text)
   ) as t(old_name, old_branch, new_name, new_branch)
   loop
     select count(*) into old_cnt from manual_staff s left join manual_branches b on b.id = s.branch_id
