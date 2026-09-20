@@ -1077,14 +1077,24 @@
             var onBreak = r.brk && toMin(r.brk.split('~')[0]) < re && rs < toMin(r.brk.split('~')[1]);
             var who = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId;
             var nm = r.kind === 'sub' ? r.subName : r.name;
-            var style = onBreak || r.kind === 'covering' || r.kind === 'work' ? '' : ' style="background:' + col(who) + '"';
-            return '<span class="chip ' + (onBreak ? 'brk' : r.kind) + '"' + style + '>' + esc(onBreak ? '휴게' : nm.replace(/\s/g, '').slice(0, 4)) + '</span>';
+            var bg = onBreak || r.kind === 'covering' || r.kind === 'work' ? '' : 'background:' + col(who) + ';';
+            var pick = isOwner() && r.kind === 'normal' && !onBreak;
+            var attrs = (bg || pick) ? ' style="' + bg + (pick ? 'cursor:pointer;' : '') + '"' : '';
+            var act = pick ? ' data-act="chip-pick" data-pattern="' + esc(r.patternId) + '"' : '';
+            return '<span class="chip ' + (onBreak ? 'brk' : r.kind) + '"' + attrs + act + '>' + esc(onBreak ? '휴게' : nm.replace(/\s/g, '').slice(0, 4)) + '</span>';
           });
           html += '<td' + (days[di] === day ? ' class="on"' : '') + '>' + cells.join('') + '</td>';
         });
         html += '</tr>';
       }
-      html += '</table></div><div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게</div>';
+      html += '</table></div>';
+      if (isOwner()){
+        var pickPeople = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || (!s.branch_id && s.role !== 'owner') || pool.some(function(p){ return p.staff_id === s.id; })); });
+        html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px">이 근무, 누구로 바꿀까요?</div><div class="inline" style="flex-wrap:wrap;gap:6px">' +
+          pickPeople.map(function(s){ return '<button class="btn sm" data-act="chip-assign" data-staff="' + esc(s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
+          '<button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
+      }
+      html += '<div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게' + (isOwner() ? ' · 사장님은 표에서 이름을 누르면 다른 사람으로 바로 바꿀 수 있어요' : '') + '</div>';
     }
     // 매장 메모 (입사 예정·퇴사 예정·충원 예정 등)
     html += '<div class="group-title">매장 메모</div>';
@@ -3289,6 +3299,9 @@
         case 'myshift-save': await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday'), el.getAttribute('data-staff')); break;
         case 'addshift-toggle': document.getElementById('asx-' + id).classList.toggle('hidden'); break;
         case 'addshift-save': await addShift(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); break;
+        case 'chip-pick': { var cp = document.getElementById('chip-panel'); cp.dataset.pattern = el.getAttribute('data-pattern'); cp.classList.remove('hidden'); cp.scrollIntoView({ behavior: 'smooth', block: 'center' }); break; }
+        case 'chip-assign': { var cp2 = document.getElementById('chip-panel'); var pid = cp2.dataset.pattern; if (!pid){ break; } await db.update('ops_shift_patterns', { id: pid }, { staff_id: el.getAttribute('data-staff') }); toast('바꿨어요'); render(); break; }
+        case 'chip-cancel': document.getElementById('chip-panel').classList.add('hidden'); break;
         case 'leave-submit': await leaveSubmit(); break;
         case 'leave-cancel': if (window.confirm('신청을 취소할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'cancelled' }); toast('취소했어요'); render(); } break;
         case 'offer': await db.insert('ops_sub_offers', { request_id: id, staff_id: (isOwner() && el.getAttribute('data-staff')) || session.staffId, status: 'offered', created_at: new Date().toISOString() }); toast('지원했어요. 사장님·매니저 컨펌을 기다려 주세요'); render(); break;
