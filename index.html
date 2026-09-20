@@ -1019,6 +1019,14 @@
       }
     });
     html += '</div>';
+    // 새 근무 추가: 이 날 스케줄에 없는 사람도(자기 자신 포함) 이름 골라서 바로 추가 (승인 없음, 근무 패턴 화면과 같은 방식)
+    var addPeople = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || (!s.branch_id && s.role !== 'owner') || pool.some(function(p){ return p.staff_id === s.id; })); });
+    html += '<div class="group-title" data-act="addshift-toggle" data-id="' + esc(day) + '" style="cursor:pointer">+ 새 근무 추가</div><div class="card hidden" id="asx-' + esc(day) + '"><div class="form">' +
+      '<div><label>누구</label><select class="in" id="as-staff"><option value="">고르세요</option>' + addPeople.map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === session.staffId ? ' selected' : '') + '>' + esc(s.name) + (s.id === session.staffId ? ' (나)' : '') + '</option>'; }).join('') + '</select></div>' +
+      '<div class="grid2"><div><label>시작</label><input class="in" type="time" id="as-start" step="1800" value="09:00"></div><div><label>끝</label><input class="in" type="time" id="as-end" step="1800" value="18:00"></div></div>' +
+      '<div class="grid2"><div><label>휴게 시작 (없으면 비움)</label><input class="in" type="time" id="as-bs" step="1800"></div><div><label>휴게 끝</label><input class="in" type="time" id="as-be" step="1800"></div></div>' +
+      '<button class="btn sm primary" data-act="addshift-save" data-branch="' + esc(b) + '" data-date="' + esc(day) + '" data-weekday="' + wdOf(day) + '">' + esc(fmtDateK(day)) + '에 추가</button>' +
+      '</div></div>';
     // 주간 표: 30분 줄로 맞추고, 7:20처럼 어긋난 시작·끝이 있으면 그 줄만 따로 (예: 7:20~7:30)
     var mn = 24 * 60, mx = 0, bounds = {};
     pool.forEach(function(p){ mn = Math.min(mn, toMin(p.start_time)); mx = Math.max(mx, toMin(p.end_time)); bounds[toMin(p.start_time)] = 1; bounds[toMin(p.end_time)] = 1; });
@@ -1050,22 +1058,38 @@
     else html += '<div class="card"><div class="item"><div class="iname" style="white-space:pre-wrap">' + (note && note.text ? esc(note.text) : '<span class="muted">없어요</span>') + '</div></div></div>';
     app.innerHTML = html;
   };
-  // 근무자 본인이 특정 날짜 시간만 직접 바꾸기 (신청·승인 절차 없음). 그 주가 아직 "고정 패턴" 그대로면
-  // 이 주 전용 표로 먼저 통째로 복사한 뒤, 본인 것만 새 시간으로 바꿔치기 (다른 사람 것은 그대로 유지됨)
+  // 그 주가 아직 "고정 패턴" 그대로면 이 주 전용 표로 통째로 복사해 둠 (이후 그 주만 따로 손볼 수 있게).
+  // 이미 이 주 전용 표가 있으면 아무 것도 안 함.
+  async function ensureWeeklyPool(branchId, week){
+    var weekly = await db.select('ops_shift_patterns', { eq: { branch_id: branchId, week_start: week, active: true } });
+    if (weekly.length) return;
+    var fixed = (await db.select('ops_shift_patterns', { eq: { branch_id: branchId, active: true } })).filter(function(p){ return !p.week_start; });
+    if (fixed.length) await db.insert('ops_shift_patterns', fixed.map(function(p){ return { staff_id: p.staff_id, branch_id: branchId, weekday: p.weekday, start_time: p.start_time, end_time: p.end_time, break_start: p.break_start, break_end: p.break_end, active: true, week_start: week }; }));
+  }
+  // 근무자 본인이 특정 날짜 시간만 직접 바꾸기 (신청·승인 절차 없음). 다른 사람·다른 날은 그대로 유지됨
   async function myShiftSave(branchId, date, weekday){
     var st = document.getElementById('ms-start').value, en = document.getElementById('ms-end').value;
     var bs = document.getElementById('ms-bs').value || null, be = document.getElementById('ms-be').value || null;
     if (!st || !en || toMin(st) >= toMin(en)){ toast('시작·끝 시간을 확인해 주세요'); return; }
     if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
     var week = weekStart(date);
-    var weekly = await db.select('ops_shift_patterns', { eq: { branch_id: branchId, week_start: week, active: true } });
-    if (!weekly.length){
-      var fixed = (await db.select('ops_shift_patterns', { eq: { branch_id: branchId, active: true } })).filter(function(p){ return !p.week_start; });
-      if (fixed.length) await db.insert('ops_shift_patterns', fixed.map(function(p){ return { staff_id: p.staff_id, branch_id: branchId, weekday: p.weekday, start_time: p.start_time, end_time: p.end_time, break_start: p.break_start, break_end: p.break_end, active: true, week_start: week }; }));
-    }
+    await ensureWeeklyPool(branchId, week);
     await db.update('ops_shift_patterns', { branch_id: branchId, week_start: week, staff_id: session.staffId, weekday: weekday, active: true }, { active: false });
     await db.insert('ops_shift_patterns', { staff_id: session.staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week });
     toast('내 시간을 바꿨어요. 이번 주 근무표에 반영됐어요'); render();
+  }
+  // 이 날 스케줄에 없는 사람도 이름 골라서 새 근무로 바로 추가 (승인 없음, 근무 패턴 화면과 같은 방식)
+  async function addShift(branchId, date, weekday){
+    var staffId = document.getElementById('as-staff').value;
+    var st = document.getElementById('as-start').value, en = document.getElementById('as-end').value;
+    var bs = document.getElementById('as-bs').value || null, be = document.getElementById('as-be').value || null;
+    if (!staffId){ toast('이름을 골라 주세요'); return; }
+    if (!st || !en || toMin(st) >= toMin(en)){ toast('시작·끝 시간을 확인해 주세요'); return; }
+    if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
+    var week = weekStart(date);
+    await ensureWeeklyPool(branchId, week);
+    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week });
+    toast(staffName(staffId) + ' 근무를 추가했어요. 이번 주 근무표에 반영됐어요'); render();
   }
 
   // --- 휴무 신청 (근무자) ---
@@ -3187,6 +3211,8 @@
         case 'sched-day': nav('#/schedule/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-date')); break;
         case 'myshift-toggle': document.getElementById('msx-' + id).classList.toggle('hidden'); break;
         case 'myshift-save': await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); break;
+        case 'addshift-toggle': document.getElementById('asx-' + id).classList.toggle('hidden'); break;
+        case 'addshift-save': await addShift(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); break;
         case 'leave-submit': await leaveSubmit(); break;
         case 'leave-cancel': if (window.confirm('신청을 취소할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'cancelled' }); toast('취소했어요'); render(); } break;
         case 'offer': await db.insert('ops_sub_offers', { request_id: id, staff_id: session.staffId, status: 'offered', created_at: new Date().toISOString() }); toast('지원했어요. 사장님·매니저 컨펌을 기다려 주세요'); render(); break;
