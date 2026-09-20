@@ -186,7 +186,8 @@
   var SUPABASE_URL = 'https://caetlljnyxsusswqhtci.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_Oiqo2urdo-9s-HIso3rkmQ_7pP-I0nV';
   var LINKS = { manual: 'https://bakery-manual-book.vercel.app', logbook: 'https://bonnoel-manager-logbook.vercel.app',
-    hiring: 'https://bonnoel-hiring.vercel.app/', hiringAdmin: 'https://bonnoel-hiring.vercel.app/#admin', hiringWelcome: 'https://bonnoel-hiring.vercel.app/#welcome' };
+    hiring: 'https://bonnoel-hiring.vercel.app/', hiringAdmin: 'https://bonnoel-hiring.vercel.app/#admin', hiringWelcome: 'https://bonnoel-hiring.vercel.app/#welcome',
+    bakerAdmin: 'https://bonnoel-baker-hiring.vercel.app/' };
   var DEMO = /[?&]demo=1/.test(location.search);   // ?demo=1 : 창고 없이 가짜 데이터로 눌러보기
 
   var app = document.getElementById('app');
@@ -670,6 +671,7 @@
     if (isOwner()) html += row(LINKS.hiringAdmin, 'tile-blue', '🗂️', '지원자 관리', '지원서 확인 · 면접 제안 문자 · 엑셀 (사장님 이메일 로그인)');
     if (isManager()) html += row(LINKS.hiring, 'tile-yellow', '📮', '지원서 링크', '지원자에게 보내는 주소 · 열어서 공유');
     html += row(LINKS.hiringWelcome, 'tile-green', '🎉', '입사 안내', '합격자 준비물·복장 안내');
+    if (isOwner()) html += row(LINKS.bakerAdmin, 'tile-purple', '🥐', '베이커 채용 관리', '정직원 후보자 · 면접 제안 문자(지점 안내) · 엑셀 (사장님 이메일 로그인)');
     html += tge();
     html += grp('자료');
     html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
@@ -1237,9 +1239,11 @@
       var passed = shiftPassed(q.date, q.start_time);
       html += '<div class="item"><div class="iname"><div class="t">' + esc(branchName(q.branch_id)) + ' · ' + reqLine(q) + '</div><div class="s">' + (passed ? '<span style="color:var(--ok)">근무 시작 지남 → 출근 처리됨</span>' : '지원 ' + offers.length + '명') + (q.solo_ok_by ? ' · ' + esc(staffName(q.solo_ok_by)) + ' "혼자 가능"' : '') + '</div></div></div>';
       if (!passed){
+        var branchPeople = base.staff.filter(function(s){ return s.active !== false && s.id !== q.staff_id && (s.branch_id === q.branch_id || !s.branch_id); });
         html += '<div class="expand"><div class="inline">';
         offers.forEach(function(o){ html += '<button class="btn sm primary" data-act="req-confirm" data-id="' + esc(q.id) + '" data-staff="' + esc(o.staff_id) + '">' + esc(staffName(o.staff_id)) + '(으)로 확정</button>'; });
-        html += '<button class="btn sm" data-act="req-confirm" data-id="' + esc(q.id) + '" data-staff="">1인 근무로 휴무 확정</button><button class="btn sm" data-act="req-reject" data-id="' + esc(q.id) + '">취소(출근)</button></div></div>';
+        html += '<button class="btn sm" data-act="req-confirm" data-id="' + esc(q.id) + '" data-staff="">1인 근무로 휴무 확정</button><button class="btn sm" data-act="req-reject" data-id="' + esc(q.id) + '">취소(출근)</button></div>' +
+          '<div class="inline" style="margin-top:6px"><select class="in" id="mc-' + esc(q.id) + '" style="flex:1"><option value="">대타 직접 지정 (알바랑 얘기해서 정했으면)</option>' + branchPeople.map(function(s){ return '<option value="' + esc(s.id) + '">' + esc(s.name) + '</option>'; }).join('') + '</select><button class="btn sm primary" data-act="req-confirm-pick" data-id="' + esc(q.id) + '">확정</button></div></div>';
       }
     });
     html += '</div>';
@@ -3310,6 +3314,7 @@
         case 'req-accept': await db.update('ops_leave_requests', { id: id }, { status: 'covering', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('수락. 같은 매장에 "대타 구하는 중"으로 떠요'); render(); break;
         case 'req-reject': if (window.confirm('거절(출근)으로 할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'rejected', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('거절했어요'); render(); } break;
         case 'req-confirm': await reqConfirm(id, el.getAttribute('data-staff')); break;
+        case 'req-confirm-pick': { var mcSel = document.getElementById('mc-' + id); if (!mcSel.value){ toast('사람을 골라 주세요'); break; } await reqConfirm(id, mcSel.value); break; }
         case 'req-reopen': if (window.confirm('확정을 풀고 다시 "대타 구하는 중"으로 돌릴까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'covering', sub_staff_id: null, confirmed_by: null, confirmed_at: null }); await db.update('ops_sub_offers', { request_id: id }, { status: 'offered' }); toast('풀었어요'); render(); } break;
         case 'pat-add': await patAdd(el.getAttribute('data-branch'), el.getAttribute('data-week') || null); break;
         case 'pat-mode': nav('#/patterns/' + el.getAttribute('data-branch') + '/' + el.getAttribute('data-mode')); break;
