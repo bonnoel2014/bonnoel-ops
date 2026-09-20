@@ -545,10 +545,25 @@
     nav('#/home');
   }
 
+  async function ownerQuick(){
+    var owner = base.staff.filter(function(x){ return x.role === 'owner'; })[0];
+    if (!owner) { toast('사장님 정보가 없어요'); return; }
+    var pwd = window.prompt('사장님 비밀번호:');
+    if (!pwd) return;
+    if (pwd !== owner.pin) { toast('비밀번호가 틀려요'); return; }
+    session.role = 'owner';
+    saveSession(session);
+    toast('사장님으로 접근했어요!');
+    render();
+  }
+
   // ===== 화면: 홈 =====
   routes.home = async function(){
     await loadBase();
     var html = topbar('본노엘 운영', false, whoChip());
+    if (!isOwner()){
+      html += '<div style="text-align:center;padding:8px 12px"><button data-act="owner-quick" style="padding:8px 16px;background:var(--main);color:white;border:none;border-radius:4px;font-size:14px;cursor:pointer;font-weight:600">👑 사장님 빠른 접근</button></div>';
+    }
     if (isManager()){
       var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
       var st = await loadStock(ids);
@@ -2571,6 +2586,7 @@
       html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 · 카카오페이 <b>30%</b><br>카드 · 서울페이 · 온누리 · 현금영수증 끊은 현금 <b>20%</b></div>';
       html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="buy-file" class="hidden"></label>';
       html += '<div class="muted">계산한 영수증 사진을 올리면 날짜·정가·할인·낸 금액을 자동으로 읽어요. 틀리면 고치고 저장하면 돼요. 사진은 꼭 있어야 해요 (증빙). 영수증 한 장에 한 번.</div>';
+      html += '<div class="muted">화면 캡처(스크린샷)를 복사해 뒀으면 파일로 안 저장해도 돼요. 이 화면에서 <b>Ctrl+V</b> 눌러서 바로 붙여넣기 하세요.</div>';
     } else {
       if (st.photo.dataUrl) html += '<img src="' + st.photo.dataUrl + '" alt="영수증" style="width:100%;max-height:240px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">';
       if (st.ocrBusy) html += '<div class="note">🔎 영수증을 읽는 중… 5초쯤 걸려요</div>';
@@ -3181,6 +3197,7 @@
       switch (act){
         case 'back': history.length > 1 ? history.back() : nav('#/home'); break;
         case 'logout': if (window.confirm('다른 이름으로 들어갈까요?')){ saveSession(null); nav('#/login'); } break;
+        case 'owner-quick': await ownerQuick(); break;
         case 'soon': e.preventDefault(); toast('다음 단계에서 만들어요'); break;
         case 'pick-branch': loginState.branchId = id; render(); break;
         case 'pick-branch-reset': loginState.branchId = null; render(); break;
@@ -3345,6 +3362,16 @@
     try { await db.update('manual_staff', { id: el.getAttribute('data-id') }, { role: el.value }); toast('역할을 바꿨어요'); render(); } catch(err){ toast('실패: ' + (err.message || err)); }
   });
   app.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
+  // 화면 캡처(스크린샷)를 파일로 안 저장하고 바로 붙여넣기(Ctrl+V) — 직원 구매 사진 올리기 화면에서만
+  document.addEventListener('paste', async function(e){
+    if (!current || current.route !== 'buy' || buyState.ocrBusy) return;
+    var dt = e.clipboardData || window.clipboardData; if (!dt || !dt.items) return;
+    var file = null;
+    for (var i = 0; i < dt.items.length; i++){ if (dt.items[i].kind === 'file' && /^image\//.test(dt.items[i].type)){ file = dt.items[i].getAsFile(); break; } }
+    if (!file) return;
+    e.preventDefault();
+    await buyPhotoPicked(file);
+  });
   app.addEventListener('input', function(e){
     if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
     if (/^buy-(list|disc|paid)$/.test(e.target.id || '')){ buyRecalc(buyIdsForm(), e.target.id); return; }
