@@ -1075,7 +1075,10 @@
         var rs = times[i], re = times[i + 1];
         html += '<tr><th>' + fromMin(rs) + (re - rs !== 30 ? '<br><span style="font-weight:400">~' + fromMin(re) + '</span>' : '') + '</th>';
         byDay.forEach(function(list, di){
-          var cells = list.filter(function(r){ return toMin(r.start) < re && rs < toMin(r.end) && r.kind !== 'off'; }).map(function(r){
+          var cells = list.filter(function(r){ return toMin(r.start) < re && rs < toMin(r.end) && r.kind !== 'off'; }).sort(function(a, b){
+            var na = a.kind === 'sub' ? a.subName : a.name, nb = b.kind === 'sub' ? b.subName : b.name;
+            return na.localeCompare(nb);
+          }).map(function(r){
             var onBreak = r.brk && toMin(r.brk.split('~')[0]) < re && rs < toMin(r.brk.split('~')[1]);
             var who = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId;
             var nm = r.kind === 'sub' ? r.subName : r.name;
@@ -1291,7 +1294,15 @@
     if (!people.length) html += '<div class="empty">아직 없어요. 위에서 이름을 추가하거나 아래에 붙여넣으세요.</div>';
     people.forEach(function(s){
       var mine = pats.filter(function(p){ return p.staff_id === s.id; }).sort(function(x, y){ return WD_ORDER.indexOf(x.weekday) - WD_ORDER.indexOf(y.weekday) || toMin(x.start_time) - toMin(y.start_time); });
-      html += '<div class="item" style="align-items:flex-start"><div class="iname"><div class="t">' + esc(s.name) + (s.branch_id !== b ? ' <span class="badge muted">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</span>' : '') + ' <span data-act="memo-edit" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:12px;color:var(--ink-faint)">✎ 메모</span></div>' + (s.memo ? '<div class="s"><i>' + esc(s.memo) + '</i></div>' : '') + (mine.length ? mine.map(function(p){ return '<div class="s">' + WD[p.weekday] + ' ' + esc(tRange(p.start_time, p.end_time)) + (p.break_start ? ' (휴게 ' + esc(p.break_start) + '~' + esc(p.break_end) + ')' : '') + ' <span data-act="pat-del" data-id="' + esc(p.id) + '" style="cursor:pointer;color:var(--danger)">✕</span></div>'; }).join('') : '<div class="s warn">패턴 없음</div>') + '</div></div>';
+      var patLines = mine.length ? mine.map(function(p){
+        return '<div class="s">' + WD[p.weekday] + ' ' + esc(tRange(p.start_time, p.end_time)) + (p.break_start ? ' (휴게 ' + esc(p.break_start) + '~' + esc(p.break_end) + ')' : '') +
+          ' <span data-act="pat-edit-toggle" data-id="' + esc(p.id) + '" style="cursor:pointer;color:var(--ink-faint)">✎</span>' +
+          ' <span data-act="pat-del" data-id="' + esc(p.id) + '" style="cursor:pointer;color:var(--danger)">✕</span></div>' +
+          '<div class="expand hidden" id="ptx-' + esc(p.id) + '"><div class="grid2"><div><label>시작</label><input class="in" type="time" id="pte-s-' + esc(p.id) + '" step="1800" value="' + esc(p.start_time) + '"></div><div><label>끝</label><input class="in" type="time" id="pte-e-' + esc(p.id) + '" step="1800" value="' + esc(p.end_time) + '"></div></div>' +
+          '<div class="grid2"><div><label>휴게 시작 (없으면 비움)</label><input class="in" type="time" id="pte-bs-' + esc(p.id) + '" step="1800" value="' + esc(p.break_start || '') + '"></div><div><label>휴게 끝</label><input class="in" type="time" id="pte-be-' + esc(p.id) + '" step="1800" value="' + esc(p.break_end || '') + '"></div></div>' +
+          '<button class="btn sm primary" data-act="pat-edit-save" data-id="' + esc(p.id) + '">저장</button></div>';
+      }).join('') : '<div class="s warn">패턴 없음</div>';
+      html += '<div class="item" style="align-items:flex-start"><div class="iname"><div class="t">' + esc(s.name) + (s.branch_id !== b ? ' <span class="badge muted">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</span>' : '') + ' <span data-act="memo-edit" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:12px;color:var(--ink-faint)">✎ 메모</span></div>' + (s.memo ? '<div class="s"><i>' + esc(s.memo) + '</i></div>' : '') + patLines + '</div></div>';
     });
     html += '</div>';
     html += '<div class="group-title">패턴 추가 (한 명씩)' + (week ? ' · ' + esc(weekLabel(week)) : '') + '</div><div class="form">' +
@@ -1304,6 +1315,14 @@
     app.innerHTML = html;
     var wk = document.getElementById('pt-week'); if (wk) wk.addEventListener('change', function(){ if (wk.value) nav('#/patterns/' + b + '/' + weekStart(wk.value)); });
   };
+  async function patEditSave(id){
+    var st = document.getElementById('pte-s-' + id).value, en = document.getElementById('pte-e-' + id).value;
+    var bs = document.getElementById('pte-bs-' + id).value || null, be = document.getElementById('pte-be-' + id).value || null;
+    if (!st || !en || toMin(st) >= toMin(en)){ toast('시작·끝 시간을 확인해 주세요'); return; }
+    if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
+    await db.update('ops_shift_patterns', { id: id }, { start_time: st, end_time: en, break_start: bs, break_end: be });
+    toast('바꿨어요'); render();
+  }
   async function patAdd(b, week){
     var staffId = document.getElementById('pt-staff').value; var wds = Array.prototype.map.call(document.querySelectorAll('.pt-wd:checked'), function(c){ return +c.value; });
     var st = document.getElementById('pt-start').value, en = document.getElementById('pt-end').value, bs = document.getElementById('pt-bs').value || null, be = document.getElementById('pt-be').value || null;
@@ -3324,6 +3343,8 @@
         case 'note-save': { var nb = el.getAttribute('data-branch'), nt = document.getElementById('bn-text').value; await db.upsert('ops_branch_notes', [{ branch_id: nb, text: nt, updated_by: session.staffId, updated_at: new Date().toISOString() }], 'branch_id'); toast('매장 메모 저장'); render(); break; }
         case 'pat-staff-add': { var pn = document.getElementById('ps-name').value.trim(); if (!pn){ toast('이름을 넣어 주세요'); break; } if (base.staff.some(function(x){ return x.name === pn && x.active !== false; })){ toast('이미 명단에 있는 이름이에요'); break; } await db.insert('manual_staff', { name: pn, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast(pn + ' 추가했어요'); render(); break; }
         case 'pat-del': if (window.confirm('이 패턴을 지울까요?')){ await db.update('ops_shift_patterns', { id: id }, { active: false }); render(); } break;
+        case 'pat-edit-toggle': document.getElementById('ptx-' + id).classList.toggle('hidden'); break;
+        case 'pat-edit-save': await patEditSave(id); break;
         case 'pat-bulk': await patBulk(el.getAttribute('data-branch'), el.getAttribute('data-week') || null); break;
         // 출퇴근
         case 'clock-branch': clockState.branchId = id; try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} render(); break;
