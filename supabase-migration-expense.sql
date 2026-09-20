@@ -60,8 +60,8 @@ insert into ops_cards (last4, name, branch_id, ask_branch, sort_order)
 select v.last4, v.name, (select id from manual_branches where name = v.branch limit 1), v.ask, v.ord
 from (values
   ('3216', '사장님 기명카드', '성수점', true, 1),
-  ('2851', '성수 카드 1', '성수점', false, 2),
-  ('0667', '성수 카드 2', '성수점', false, 3),
+  ('2851', '성수 매장 카드', '성수점', false, 2),
+  ('0667', '성수 베이킹실 카드', '성수점', false, 3),
   ('6365', '중계 베이킹실 카드', '중계점', false, 4),
   ('9468', '중계 1층 매장 카드', '중계점', false, 5),
   ('2098', '답십리 카드', '답십리점', false, 6),
