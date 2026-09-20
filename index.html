@@ -1141,6 +1141,8 @@
     if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
     var week = weekStart(date);
     await ensureWeeklyPool(branchId, week);
+    // 같은 사람이 그 날 이미 근무가 있으면 겹쳐 쌓지 않고 새 시간으로 바꿔치기 (중복 방지)
+    await db.update('ops_shift_patterns', { branch_id: branchId, week_start: week, staff_id: staffId, weekday: weekday, active: true }, { active: false });
     await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week, note: nt });
     toast(staffName(staffId) + ' 근무를 추가했어요. 이번 주 근무표에 반영됐어요'); render();
   }
@@ -3319,11 +3321,11 @@
         // 근무표·휴무·대타
         case 'sched-day': nav('#/schedule/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-date')); break;
         case 'myshift-toggle': document.getElementById('msx-' + id).classList.toggle('hidden'); break;
-        case 'myshift-save': await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday'), el.getAttribute('data-staff')); break;
+        case 'myshift-save': el.disabled = true; try { await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday'), el.getAttribute('data-staff')); } finally { el.disabled = false; } break;
         case 'addshift-toggle': document.getElementById('asx-' + id).classList.toggle('hidden'); break;
-        case 'addshift-save': await addShift(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); break;
+        case 'addshift-save': el.disabled = true; try { await addShift(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); } finally { el.disabled = false; } break;
         case 'chip-pick': { var cp = document.getElementById('chip-panel'); cp.dataset.pattern = el.getAttribute('data-pattern'); cp.classList.remove('hidden'); cp.scrollIntoView({ behavior: 'smooth', block: 'center' }); break; }
-        case 'chip-assign': { var cp2 = document.getElementById('chip-panel'); var pid = cp2.dataset.pattern; if (!pid){ break; } await db.update('ops_shift_patterns', { id: pid }, { staff_id: el.getAttribute('data-staff') }); toast('바꿨어요'); render(); break; }
+        case 'chip-assign': { var cp2 = document.getElementById('chip-panel'); var pid = cp2.dataset.pattern; if (!pid){ break; } el.disabled = true; try { await db.update('ops_shift_patterns', { id: pid }, { staff_id: el.getAttribute('data-staff') }); toast('바꿨어요'); render(); } finally { el.disabled = false; } break; }
         case 'chip-cancel': document.getElementById('chip-panel').classList.add('hidden'); break;
         case 'leave-submit': await leaveSubmit(); break;
         case 'leave-cancel': if (window.confirm('신청을 취소할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'cancelled' }); toast('취소했어요'); render(); } break;
@@ -3333,7 +3335,7 @@
         case 'req-accept': await db.update('ops_leave_requests', { id: id }, { status: 'covering', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('수락. 같은 매장에 "대타 구하는 중"으로 떠요'); render(); break;
         case 'req-reject': if (window.confirm('거절(출근)으로 할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'rejected', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('거절했어요'); render(); } break;
         case 'req-confirm': await reqConfirm(id, el.getAttribute('data-staff')); break;
-        case 'req-confirm-pick': { var mcSel = document.getElementById('mc-' + id); if (!mcSel.value){ toast('사람을 골라 주세요'); break; } await reqConfirm(id, mcSel.value); break; }
+        case 'req-confirm-pick': { var mcSel = document.getElementById('mc-' + id); if (!mcSel.value){ toast('사람을 골라 주세요'); break; } el.disabled = true; try { await reqConfirm(id, mcSel.value); } finally { el.disabled = false; } break; }
         case 'req-reopen': if (window.confirm('확정을 풀고 다시 "대타 구하는 중"으로 돌릴까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'covering', sub_staff_id: null, confirmed_by: null, confirmed_at: null }); await db.update('ops_sub_offers', { request_id: id }, { status: 'offered' }); toast('풀었어요'); render(); } break;
         case 'pat-add': await patAdd(el.getAttribute('data-branch'), el.getAttribute('data-week') || null); break;
         case 'pat-mode': nav('#/patterns/' + el.getAttribute('data-branch') + '/' + el.getAttribute('data-mode')); break;
@@ -3344,7 +3346,7 @@
         case 'pat-staff-add': { var pn = document.getElementById('ps-name').value.trim(); if (!pn){ toast('이름을 넣어 주세요'); break; } if (base.staff.some(function(x){ return x.name === pn && x.active !== false; })){ toast('이미 명단에 있는 이름이에요'); break; } await db.insert('manual_staff', { name: pn, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast(pn + ' 추가했어요'); render(); break; }
         case 'pat-del': if (window.confirm('이 패턴을 지울까요?')){ await db.update('ops_shift_patterns', { id: id }, { active: false }); render(); } break;
         case 'pat-edit-toggle': document.getElementById('ptx-' + id).classList.toggle('hidden'); break;
-        case 'pat-edit-save': await patEditSave(id); break;
+        case 'pat-edit-save': el.disabled = true; try { await patEditSave(id); } finally { el.disabled = false; } break;
         case 'pat-bulk': await patBulk(el.getAttribute('data-branch'), el.getAttribute('data-week') || null); break;
         // 출퇴근
         case 'clock-branch': clockState.branchId = id; try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} render(); break;
