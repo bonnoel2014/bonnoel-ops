@@ -1529,7 +1529,7 @@
   };
 
   // ===== 카드 지출 (법인카드 영수증) =====
-  var EXP_CATS = ['식자재', '포장재', '비품·소모품', '수리·설비', '공과금·통신', '식대·회식', '차량·교통', '기타'];
+  var EXP_CATS = ['식자재', '포장재', '종량제 봉투', '비품·소모품', '수리·설비', '공과금·통신', '식대·회식', '차량·교통', '기타'];
   var expState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
   var stmtState = { ym: null, text: '', rows: null };
   var cardsState = null, cardsKeep = false;
@@ -1554,7 +1554,7 @@
   function catOptions(sel){ return EXP_CATS.map(function(c){ return '<option value="' + esc(c) + '"' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join(''); }
   function branchOptions(sel){ var html = '<option value=""' + (!sel ? ' selected' : '') + '>공통(사장님)</option>'; base.branches.forEach(function(b){ html += '<option value="' + esc(b.id) + '"' + (sel === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }); return html; }
   // 가맹점 기억: 한 번 고른 지점·항목을 같은 가맹점에 다음부터 자동으로 채움. 키 = 이름에서 (주)·띄어쓰기·뒤에 붙는 번호(우버택시_5 등)를 뺀 것
-  function merchantKey(name){ return String(name || '').toLowerCase().replace(/\(주\)|주식회사|\(유\)|\(\*\)/g, '').replace(/[_\-].*$/, '').replace(/\s+/g, '').replace(/\d+$/, '').slice(0, 24); }
+  function merchantKey(name){ return String(name || '').toLowerCase().replace(/\(주\)|주식회사|\(유\)|\(\*\)/g, '').replace(/^(아성|gs|cu|편의점)\s+/i, '').replace(/[_\-].*$/, '').replace(/\s+/g, '').replace(/\d+$/, '').slice(0, 24); }
   async function loadRules(){ var map = {}; (await db.select('ops_merchant_rules').catch(function(){ return []; })).forEach(function(r){ map[r.merchant_key] = r; }); return map; }
   async function learnRules(items){
     var rows = {};
