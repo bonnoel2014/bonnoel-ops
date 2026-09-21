@@ -2754,6 +2754,7 @@
         html += '<div class="item" data-act="buy-toggle" data-id="' + esc(x.id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(buyerLabel(x)) + (scope === 'all' ? ' · ' + esc(branchName(x.branch_id)) : '') + '</div><div class="s">' + esc(x.items || '(품목 없음)') + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '</div></div><span class="badge muted">−' + won(x.discount) + '</span>' + (x.photo_path ? '<span title="사진 있음">📷</span>' : '') + '<b style="white-space:nowrap">' + won(x.paid) + '</b></div>';
         html += '<div class="expand hidden" id="bx-' + esc(x.id) + '" style="padding-left:14px">' +
           '<div class="grid2"><div><label class="muted">날짜</label><input class="in" type="date" id="bd-' + esc(x.id) + '" value="' + esc(x.bought_on) + '"></div><div><label class="muted">매장</label><select class="in" id="bb-' + esc(x.id) + '">' + buyBranchOptions(x.branch_id) + '</select></div></div>' +
+          '<div style="margin-top:8px"><label class="muted">구매한 사람</label><input class="in" id="bn-' + esc(x.id) + '" list="bndl-' + esc(x.id) + '" value="' + esc(buyerLabel(x)) + '"><datalist id="bndl-' + esc(x.id) + '">' + base.staff.filter(function(s){ return s.active !== false; }).map(function(s){ return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist><div class="muted">등록 안 된 사람(베이커 등)은 이름만 써도 돼요.</div></div>' +
           '<div style="margin-top:8px"><label class="muted">결제 방식</label><select class="in" id="bm-' + esc(x.id) + '">' + buyMethodOptions(x.pay_method) + '</select></div>' +
           '<div class="grid2" style="margin-top:8px"><div><label class="muted">정가</label><input class="in" type="number" id="bl-' + esc(x.id) + '" value="' + esc(x.list_total) + '"></div><div><label class="muted">할인</label><input class="in" type="number" id="bc-' + esc(x.id) + '" value="' + esc(x.discount) + '"></div></div>' +
           '<div class="grid2" style="margin-top:8px"><div><label class="muted">낸 금액</label><input class="in" type="number" id="bp-' + esc(x.id) + '" value="' + esc(x.paid) + '"></div><div><label class="muted">산 것</label><input class="in" id="bi-' + esc(x.id) + '" value="' + esc(x.items || '') + '"></div></div>' +
@@ -2781,10 +2782,13 @@
     var method = buyMethod(g('bm')); var list = num(g('bl')), disc = num(g('bc')), paid = num(g('bp'));
     if (!g('bd')){ toast('날짜를 넣어 주세요'); return; }
     if (!list || list <= 0){ toast('정가를 넣어 주세요'); return; }
+    var typedName = g('bn').trim();
+    if (!typedName){ toast('구매한 사람 이름을 넣어 주세요'); return; }
     if (disc == null) disc = Math.round(list * method.rate / 100);
     if (paid == null) paid = list - disc;
-    await db.update('ops_staff_purchases', { id: id }, { bought_on: g('bd'), branch_id: g('bb') || null, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: g('bi').trim() || null, memo: g('bo').trim() || null, updated_at: nowIso() });
-    toast('고쳤어요'); render();
+    var match = base.staff.filter(function(s){ return s.active !== false && s.name === typedName; })[0];
+    await db.update('ops_staff_purchases', { id: id }, { bought_on: g('bd'), branch_id: g('bb') || null, staff_id: match ? match.id : null, buyer_name: typedName, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: g('bi').trim() || null, memo: g('bo').trim() || null, updated_at: nowIso() });
+    toast('고쳤어요 · ' + typedName); render();
   }
 
   // ===== 이벤트 =====
