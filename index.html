@@ -938,13 +938,15 @@
       html += '<div class="card section" id="cat-' + esc(g.cat.id || 'none') + '" style="scroll-margin-top:64px"><div class="sec-h">' + esc(g.cat.name) + '<span class="sp"></span>' + (isOwner() ? '<button class="btn sm" data-act="cat-rename" data-id="' + esc(g.cat.id || '') + '">이름</button>' : '') + '</div>';
       g.rows.forEach(function(x){
         var ib = map[x.item.id]; var on = ib ? ib.active !== false : false; var t = ib ? num(ib.target_qty) : 0;
-        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.name) + ' · <u>고치기</u></div><div class="s" data-act="item-edit-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.unit) + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
+        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.name) + ' · <u>고치기</u></div><div class="s" data-act="item-edit-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.unit) + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div><div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
       });
       html += '</div>';
     });
     html += '</div>';
     html += '<div class="group-title">품목 추가</div><div class="form"><div class="grid2"><div><label>분류</label><select class="in" id="ni-cat">' + base.categories.map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>'; }).join('') + '</select></div><div><label>단위</label><select class="in" id="ni-unit">' + ['묶음','box','포대','줄','봉','개','병','팩'].map(function(u){ return '<option>' + u + '</option>'; }).join('') + '</select></div></div>' +
-      '<div><label>품목 이름</label><input class="in" id="ni-name" placeholder="예: 치아바타 봉투"></div><div class="inline"><button class="btn" data-act="item-add">품목 추가 (모든 매장에 켬)</button>' + (isOwner() ? '<button class="btn" data-act="cat-add">분류 추가</button>' : '') + '</div></div>';
+      '<div><label>품목 이름</label><input class="in" id="ni-name" placeholder="예: 치아바타 봉투"></div>' +
+      '<div><label>쓰는 매장 (기본: 지금 보는 매장만)</label><div class="tabs" style="flex-wrap:wrap;overflow:visible">' + base.branches.map(function(bch){ return '<label style="display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border:1px solid var(--line-strong);border-radius:999px"><input type="checkbox" class="ni-branch" value="' + esc(bch.id) + '"' + (bch.id === b ? ' checked' : '') + '>' + esc(bch.name) + '</label>'; }).join('') + '</div></div>' +
+      '<div class="inline"><button class="btn" data-act="item-add">품목 추가</button>' + (isOwner() ? '<button class="btn" data-act="cat-add">분류 추가</button>' : '') + '</div></div>';
     html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="items-save" data-branch="' + esc(b) + '">' + esc(branchName(b)) + ' 적정재고 저장</button></div></div>';
     app.innerHTML = html;
   };
@@ -958,11 +960,42 @@
   async function itemAdd(){
     var name = document.getElementById('ni-name').value.trim(); if (!name){ toast('품목 이름을 넣어 주세요'); return; }
     var cat = document.getElementById('ni-cat').value || null, unit = document.getElementById('ni-unit').value;
+    var branchIds = Array.prototype.map.call(document.querySelectorAll('.ni-branch:checked'), function(c){ return c.value; });
+    if (!branchIds.length){ toast('쓸 매장을 하나 이상 골라 주세요'); return; }
     var maxSort = 0; base.items.forEach(function(i){ if (i.category_id === cat) maxSort = Math.max(maxSort, i.sort_order || 0); });
     var ins = await db.insert('ops_items', { category_id: cat, name: name, unit: unit, sort_order: maxSort + 1, active: true });
     var it = ins[0];
-    await db.upsert('ops_item_branch', base.branches.map(function(b){ return { item_id: it.id, branch_id: b.id, target_qty: 0, active: true }; }), 'item_id,branch_id');
-    toast('추가했어요'); render();
+    await db.upsert('ops_item_branch', branchIds.map(function(bid){ return { item_id: it.id, branch_id: bid, target_qty: 0, active: true }; }), 'item_id,branch_id');
+    toast('추가했어요 (' + branchIds.map(branchName).join(', ') + ')'); render();
+  }
+  async function itemMove(id){
+    var it = itemById(id); if (!it) return;
+    var opts = base.categories.map(function(c, i){ return (i + 1) + '. ' + c.name; }).join('\n');
+    var input = window.prompt('어느 분류로 옮길까요? 번호를 입력하세요\n' + opts, '');
+    if (input === null) return;
+    var idx = parseInt(input, 10);
+    if (!idx || idx < 1 || idx > base.categories.length){ toast('번호를 정확히 입력해 주세요'); return; }
+    var newCat = base.categories[idx - 1];
+    await db.update('ops_items', { id: id }, { category_id: newCat.id });
+    toast('"' + newCat.name + '"(으)로 옮겼어요'); render();
+  }
+  async function itemDelete(id){
+    var it = itemById(id); if (!it) return;
+    var refs = await Promise.all([
+      db.select('ops_stock_checks', { eq: { item_id: id }, limit: 1 }),
+      db.select('ops_orders', { eq: { item_id: id }, limit: 1 }),
+      db.select('ops_transfers', { eq: { item_id: id }, limit: 1 })
+    ]);
+    var hasHistory = refs.some(function(r){ return r && r.length; });
+    if (hasHistory){
+      if (!window.confirm('"' + it.name + '"은(는) 이미 체크·주문 기록이 있어서 완전히 지우진 못하고, 목록에서만 숨길게요 (기록은 남아요). 계속할까요?')) return;
+      await db.update('ops_items', { id: id }, { active: false });
+      toast('숨겼어요'); render(); return;
+    }
+    if (!window.confirm('"' + it.name + '"을(를) 완전히 삭제할까요? 되돌릴 수 없어요.')) return;
+    await db.remove('ops_item_branch', { item_id: id });
+    await db.remove('ops_items', { id: id });
+    toast('삭제했어요'); render();
   }
   async function itemEditName(id){
     var it = itemById(id); if (!it) return;
@@ -3403,6 +3436,8 @@
         case 'item-add': await itemAdd(); break;
         case 'item-edit-name': await itemEditName(id); break;
         case 'item-edit-unit': await itemEditUnit(id); break;
+        case 'item-move': await itemMove(id); break;
+        case 'item-delete': await itemDelete(id); break;
         case 'cat-jump': { var ce = document.getElementById('cat-' + id); if (ce) ce.scrollIntoView({ behavior: 'smooth' }); break; }
         case 'cat-add': await catAdd(); break;
         case 'cat-rename': await catRename(id); break;
