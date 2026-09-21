@@ -1078,6 +1078,7 @@
   function overlaps(aS, aE, bS, bE){ return toMin(aS) < toMin(bE) && toMin(bS) < toMin(aE); }
   function weekStart(dateStr){ var d = dateObj(dateStr); var day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
   function tRange(s, e){ return s + '~' + e; }
+  function shiftHours(r){ var mins = toMin(r.end) - toMin(r.start); if (r.brk){ var p = r.brk.split('~'); mins -= (toMin(p[1]) - toMin(p[0])); } return (mins / 60).toFixed(1) + '시간'; }
   var STATUS_K = { requested: '신청함', rejected: '거절됨', covering: '대타 구하는 중', confirmed: '확정', cancelled: '취소' };
 
   async function loadSchedule(branchIds, fromDate, toDate){
@@ -1151,7 +1152,7 @@
       var isSelf = r.kind === 'normal' && r.staffId === session.staffId;
       var canEdit = r.kind === 'normal' && (isSelf || isOwner());
       var badge = canEdit ? '<span class="badge muted" data-act="myshift-toggle" data-id="' + esc(r.staffId) + '" style="cursor:pointer">✎ ' + (isSelf ? '시간 바꾸기' : '대신 바꾸기') + '</span>' : kindBadge(r);
-      html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + (r.brk ? ' · <b style="color:var(--danger)">휴게 ' + esc(r.brk) + '</b>' : '') + (memo ? ' · <i>' + esc(memo) + '</i>' : '') + (r.note ? ' · <i>' + esc(r.note) + '</i>' : '') + '</div></div>' + badge + '</div>';
+      html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + ' · ' + shiftHours(r) + (r.brk ? ' · <b style="color:var(--danger)">휴게 ' + esc(r.brk) + '</b>' : '') + (memo ? ' · <i>' + esc(memo) + '</i>' : '') + (r.note ? ' · <i>' + esc(r.note) + '</i>' : '') + '</div></div>' + badge + '</div>';
       if (canEdit){
         var bkS = r.brk ? r.brk.split('~')[0] : '', bkE = r.brk ? r.brk.split('~')[1] : '';
         html += '<div class="expand hidden" id="msx-' + esc(r.staffId) + '"><div class="form">' +
@@ -1232,7 +1233,7 @@
           var who = r.kind === 'sub' ? '<span class="dot" style="background:' + col(r.req.sub_staff_id) + '"></span><s style="color:var(--ink-faint)">' + esc(r.name) + '</s> → ' + esc(r.subName) : '<span class="dot" style="background:' + col(r.staffId) + '"></span>' + esc(r.name);
           var pick = isOwner() && r.kind === 'normal';
           var badge = pick ? '<span class="badge muted" data-act="chip-pick" data-pattern="' + esc(r.patternId) + '" style="cursor:pointer">✎ 바꾸기</span>' : kindBadge(r);
-          html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + (r.brk ? ' · <b style="color:var(--danger)">휴게 ' + esc(r.brk) + '</b>' : '') + (r.note ? ' · <i>' + esc(r.note) + '</i>' : '') + '</div></div>' + badge + '</div>';
+          html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + ' · ' + shiftHours(r) + (r.brk ? ' · <b style="color:var(--danger)">휴게 ' + esc(r.brk) + '</b>' : '') + (r.note ? ' · <i>' + esc(r.note) + '</i>' : '') + '</div></div>' + badge + '</div>';
         });
         html += '</div>';
       });
