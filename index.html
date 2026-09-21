@@ -1229,7 +1229,11 @@
             var active = dl.list.filter(function(r){ return toMin(r.start) < re && rs < toMin(r.end); });
             for (var ln = 0; ln < dl.lanes; ln++){
               var r = active.filter(function(x){ return x.lane === ln; })[0];
-              if (!r){ html += '<td' + (days[di] === day ? ' class="on"' : '') + '></td>'; continue; }
+              if (!r){
+                var emptyAct = isOwner() ? ' data-act="chip-pick-empty" data-branch="' + esc(b) + '" data-date="' + esc(days[di]) + '" data-weekday="' + wdOf(days[di]) + '" data-start="' + esc(fromMin(rs)) + '" style="cursor:pointer"' : '';
+                html += '<td' + (days[di] === day ? ' class="on"' : '') + emptyAct + '></td>';
+                continue;
+              }
               var onBreak = r.brk && toMin(r.brk.split('~')[0]) < re && rs < toMin(r.brk.split('~')[1]);
               var who = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId;
               var nm = r.kind === 'sub' ? r.subName : r.name;
@@ -1262,7 +1266,7 @@
     }
     if (isOwner()){
       var pickPeople = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || (!s.branch_id && s.role !== 'owner') || pool.some(function(p){ return p.staff_id === s.id; })); });
-      html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px">이 근무, 누구로 바꿀까요?</div><div class="inline" style="flex-wrap:wrap;gap:6px">' +
+      html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px">이 자리, 누구로 할까요?</div><div class="inline" style="flex-wrap:wrap;gap:6px">' +
         pickPeople.map(function(s){ return '<button class="btn sm" data-act="chip-assign" data-staff="' + esc(s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
         '<button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
     }
@@ -1311,6 +1315,16 @@
     await db.update('ops_shift_patterns', { branch_id: branchId, week_start: week, staff_id: staffId, weekday: weekday, active: true }, { active: false });
     await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week, note: nt });
     toast(staffName(staffId) + ' 근무를 추가했어요. 이번 주 근무표에 반영됐어요'); render();
+  }
+  // 시간표의 빈 칸을 눌러서 바로 사람 넣기 (일단 4시간짜리로 넣고, 시간은 나중에 "바꾸기"로 조정)
+  async function chipAddShift(branchId, date, weekday, startTime, staffId){
+    var week = weekStart(date);
+    var endMin = Math.min(23 * 60 + 30, toMin(startTime) + 240);
+    var endTime = fromMin(endMin);
+    await ensureWeeklyPool(branchId, week);
+    await db.update('ops_shift_patterns', { branch_id: branchId, week_start: week, staff_id: staffId, weekday: weekday, active: true }, { active: false });
+    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: startTime, end_time: endTime, active: true, week_start: week });
+    toast(staffName(staffId) + ' ' + startTime + '~' + endTime + '로 넣었어요. 끝나는 시간은 "바꾸기"에서 조정하세요'); render();
   }
 
   // --- 휴무 신청 (근무자) ---
@@ -3522,8 +3536,17 @@
         case 'myshift-save': el.disabled = true; try { await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday'), el.getAttribute('data-staff')); } finally { el.disabled = false; } break;
         case 'addshift-toggle': document.getElementById('asx-' + id).classList.toggle('hidden'); break;
         case 'addshift-save': el.disabled = true; try { await addShift(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); } finally { el.disabled = false; } break;
-        case 'chip-pick': { var cp = document.getElementById('chip-panel'); cp.dataset.pattern = el.getAttribute('data-pattern'); cp.classList.remove('hidden'); cp.scrollIntoView({ behavior: 'smooth', block: 'center' }); break; }
-        case 'chip-assign': { var cp2 = document.getElementById('chip-panel'); var pid = cp2.dataset.pattern; if (!pid){ break; } el.disabled = true; try { await db.update('ops_shift_patterns', { id: pid }, { staff_id: el.getAttribute('data-staff') }); toast('바꿨어요'); render(); } finally { el.disabled = false; } break; }
+        case 'chip-pick': { var cp = document.getElementById('chip-panel'); cp.dataset.mode = 'reassign'; cp.dataset.pattern = el.getAttribute('data-pattern'); cp.classList.remove('hidden'); cp.scrollIntoView({ behavior: 'smooth', block: 'center' }); break; }
+        case 'chip-pick-empty': { var cpe = document.getElementById('chip-panel'); cpe.dataset.mode = 'add'; cpe.dataset.branch = el.getAttribute('data-branch'); cpe.dataset.date = el.getAttribute('data-date'); cpe.dataset.weekday = el.getAttribute('data-weekday'); cpe.dataset.start = el.getAttribute('data-start'); cpe.classList.remove('hidden'); cpe.scrollIntoView({ behavior: 'smooth', block: 'center' }); break; }
+        case 'chip-assign': {
+          var cp2 = document.getElementById('chip-panel');
+          el.disabled = true;
+          try {
+            if (cp2.dataset.mode === 'add'){ await chipAddShift(cp2.dataset.branch, cp2.dataset.date, +cp2.dataset.weekday, cp2.dataset.start, el.getAttribute('data-staff')); }
+            else { var pid = cp2.dataset.pattern; if (!pid){ break; } await db.update('ops_shift_patterns', { id: pid }, { staff_id: el.getAttribute('data-staff') }); toast('바꿨어요'); render(); }
+          } finally { el.disabled = false; }
+          break;
+        }
         case 'chip-cancel': document.getElementById('chip-panel').classList.add('hidden'); break;
         case 'leave-submit': await leaveSubmit(); break;
         case 'leave-cancel': if (window.confirm('신청을 취소할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'cancelled' }); toast('취소했어요'); render(); } break;
