@@ -718,6 +718,7 @@
     var list = itemsForBranch(b);
     var html = topbar('비품 체크 · ' + branchName(b), true) + branchTabs(b, false);
     html += '<div class="muted" style="margin:4px 4px 10px">지금 매장에 있는 수량을 넣어 주세요. 안 센 건 비워 두면 돼요. 소수점(0.5)도 돼요.</div>';
+    html += '<div style="margin:0 4px 10px"><a href="#/checkhist/' + esc(b) + '" style="text-decoration:underline">📅 지난 기록 보기</a></div>';
     html += actorPicker('chk-staff', '누가 세었어요?');
     var groups = groupByCategory(list);
     if (!groups.length) html += '<div class="empty">이 매장에 켜진 품목이 없어요. 비품 설정에서 켜 주세요.</div>';
@@ -753,6 +754,38 @@
     toast(rows.length + '개 저장했어요');
     nav('#/home');
   }
+
+  // ===== 화면: 지난 기록 보기 =====
+  var checkHistState = { date: null };
+  routes.checkhist = async function(params){
+    await loadBase();
+    var b = pickBranch(params, false);
+    if (!checkHistState.date) checkHistState.date = todayStr();
+    var d = checkHistState.date;
+    var dayStart = new Date(d + 'T00:00:00').toISOString();
+    var dayEnd = new Date(addDays(d, 1) + 'T00:00:00').toISOString();
+    var rows = (await db.select('ops_stock_checks', { eq: { branch_id: b }, gte: { checked_at: dayStart }, order: { col: 'checked_at', asc: false } })).filter(function(r){ return r.checked_at < dayEnd; });
+    var byItem = {};
+    rows.forEach(function(r){ if (!byItem[r.item_id]) byItem[r.item_id] = r; });
+    var html = topbar('지난 기록 보기 · ' + branchName(b), true) + branchTabs(b, false);
+    html += '<div class="muted" style="margin:4px 4px 10px">날짜를 골라서 그날 기록한 수량을 봐요.</div>';
+    html += '<div style="margin:0 4px 10px"><input type="date" class="in" id="ch-date" value="' + esc(d) + '" max="' + esc(todayStr()) + '" style="width:auto"></div>';
+    var list = itemsForBranch(b);
+    var groups = groupByCategory(list);
+    var any = false;
+    if (!groups.length) html += '<div class="empty">이 매장에 켜진 품목이 없어요.</div>';
+    groups.forEach(function(g){
+      html += '<div class="card section"><div class="sec-h">' + esc(g.cat.name) + '</div>';
+      g.rows.forEach(function(x){
+        var r = byItem[x.item.id];
+        if (r) any = true;
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + (r ? fmtQ(num(r.qty)) + ' ' + esc(x.item.unit) + ' · ' + esc(staffName(r.staff_id)) + ' · ' + md(r.checked_at) : '<span class="muted">기록 없음</span>') + '</div></div></div>';
+      });
+      html += '</div>';
+    });
+    if (groups.length && !any) html += '<div class="note">' + esc(d) + '엔 기록이 없어요.</div>';
+    app.innerHTML = html;
+  };
 
   // ===== 화면: 부족·주문 =====
   routes.short = async function(params){
@@ -3534,6 +3567,7 @@
   app.addEventListener('input', function(e){
     if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
     if (e.target.id === 'item-search'){ itemSearchFilter(e.target.value); return; }
+    if (e.target.id === 'ch-date'){ checkHistState.date = e.target.value || todayStr(); render(); return; }
     if (/^buy-(list|disc|paid)$/.test(e.target.id || '')){ buyRecalc(buyIdsForm(), e.target.id); return; }
     var bim = /^b[lcp]-(.+)$/.exec(e.target.id || ''); if (bim){ buyRecalc(buyIdsRow(bim[1]), e.target.id); return; }
     if (current.route !== 'check' || !e.target.classList.contains('qty')) return;
