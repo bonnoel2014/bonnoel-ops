@@ -1398,7 +1398,10 @@
     html += '</div>';
     html += '<div class="card section"><div class="sec-h">확정된 것<span class="sp"></span>' + confirmed.length + '</div>';
     if (!confirmed.length) html += '<div class="empty">없어요</div>';
-    confirmed.forEach(function(q){ html += '<div class="item"><div class="iname"><div class="t">' + esc(branchName(q.branch_id)) + ' · ' + reqLine(q) + '</div><div class="s">' + (q.sub_staff_id ? '대타 ' + esc(staffName(q.sub_staff_id)) : '1인 근무 휴무') + ' · ' + esc(staffName(q.confirmed_by)) + ' 컨펌 ' + md(q.confirmed_at) + '</div></div><button class="btn sm" data-act="req-reopen" data-id="' + esc(q.id) + '">풀기</button></div>'; });
+    confirmed.forEach(function(q){
+      var titleName = q.sub_staff_id ? esc(staffName(q.staff_id)) + ' → ' + esc(staffName(q.sub_staff_id)) : esc(staffName(q.staff_id));
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(branchName(q.branch_id)) + ' · ' + esc(fmtDateK(q.date)) + ' ' + esc(tRange(q.start_time, q.end_time)) + ' · ' + titleName + '</div><div class="s">' + (q.sub_staff_id ? '대타' : '1인 근무 휴무') + ' · ' + esc(staffName(q.confirmed_by)) + ' 컨펌 ' + md(q.confirmed_at) + '</div></div><button class="btn sm" data-act="req-reopen" data-id="' + esc(q.id) + '">풀기</button></div>';
+    });
     html += '</div>';
     if (past.length){
       html += '<div class="card section"><div class="sec-h">지난 기록 (30일)</div>';
