@@ -1156,10 +1156,15 @@
     html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="sched-day" data-date="' + addDays(ws, -7) + '">‹ 지난주</button><b>' + esc(fmtDateK(ws)) + ' ~ ' + esc(fmtDateK(days[6])) + '</b><button class="btn sm" data-act="sched-day" data-date="' + addDays(ws, 7) + '">다음주 ›</button></div>';
     html += '<div class="muted" style="margin:0 4px 6px">' + (isWeekly ? '이 주 전용 표' : '고정 패턴 (매주 같음)') + (isManager() ? ' · <a href="#/patterns/' + esc(b) + '/' + (isWeekly ? ws : 'fixed') + '" style="text-decoration:underline">고치기</a>' : '') + '</div>';
     html += '<div class="tabs">' + days.map(function(d){ return '<span class="tab' + (d === day ? ' on' : '') + '" data-act="sched-day" data-date="' + d + '">' + WD[wdOf(d)] + ' ' + dateObj(d).getDate() + '</span>'; }).join('') + '</div>';
-    // 근무자마다 색 (이 주 표에 나오는 사람 순서대로)
+    // 근무자마다 색: manual_staff에 저장된 고정 색을 쓰고, 아직 없는 사람만 그때그때 배정
     var colorOf = {}, ci = 0;
-    pool.map(function(p){ return p.staff_id; }).sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); }).forEach(function(id){ if (!colorOf[id]) colorOf[id] = PALETTE[(ci++) % PALETTE.length]; });
-    function col(id){ if (!colorOf[id]) colorOf[id] = PALETTE[(ci++) % PALETTE.length]; return colorOf[id]; }
+    function col(id){
+      if (colorOf[id]) return colorOf[id];
+      var s = base.staff.filter(function(x){ return x.id === id; })[0];
+      if (s && s.color){ colorOf[id] = s.color; return s.color; }
+      colorOf[id] = PALETTE[(ci++) % PALETTE.length];
+      return colorOf[id];
+    }
     var rows = shiftsOn(sch, b, day);
     html += '<div class="card section"><div class="sec-h">' + esc(fmtDateK(day)) + (day === todayStr() ? ' · 오늘' : '') + '<span class="sp"></span>' + rows.length + '명</div>';
     if (!rows.length) html += '<div class="empty">이 날 근무 패턴이 없어요' + (isManager() ? '. "근무 패턴"에서 넣어 주세요' : '') + '</div>';
