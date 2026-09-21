@@ -466,7 +466,7 @@
           if (t.from_branch === b && last && t.created_at > last.checked_at && est != null) est -= num(t.qty) || 0;
         });
         if (est != null && est < 0) est = 0;   // 보낸 게 종이 재고보다 많으면 0으로 봄
-        var shortage = (est != null && x.target > 0) ? Math.max(0, x.target - est - pending) : 0;
+        var shortage = (est != null && x.target > 0 && !it.unlimited) ? Math.max(0, x.target - est - pending) : 0;
         m[it.id] = { item: it, target: x.target, last: last, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
       });
       out[b] = m;
@@ -733,7 +733,7 @@
         var todayVal = (s.last && isToday(s.last.checked_at)) ? num(s.last.qty) : null;
         if (todayVal != null) doneCount++;
         var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + fmtQ(num(s.last.qty)) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
-        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><div class="iname"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + sub + (x.item.note ? ' · ' + esc(x.item.note) : '') + '</div></div>' +
+        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><div class="iname"><div class="t">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + '</div><div class="s">' + sub + (x.item.note ? ' · ' + esc(x.item.note) : '') + '</div></div>' +
                 '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + ' placeholder="-"><span class="unit">' + esc(x.item.unit) + '</span></div>';
       });
       html += '</div>';
@@ -938,7 +938,7 @@
       html += '<div class="card section" id="cat-' + esc(g.cat.id || 'none') + '" style="scroll-margin-top:64px"><div class="sec-h">' + esc(g.cat.name) + '<span class="sp"></span>' + (isOwner() ? '<button class="btn sm" data-act="cat-rename" data-id="' + esc(g.cat.id || '') + '">이름</button>' : '') + '</div>';
       g.rows.forEach(function(x){
         var ib = map[x.item.id]; var on = ib ? ib.active !== false : false; var t = ib ? num(ib.target_qty) : 0;
-        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.name) + ' · <u>고치기</u></div><div class="s" data-act="item-edit-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.unit) + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div><div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
+        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + ' · <u>고치기</u></div><div class="s" data-act="item-edit-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.unit) + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div><div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-toggle-unlimited" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.unlimited ? 'α 해제' : 'α 무제한으로') + '</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
       });
       html += '</div>';
     });
@@ -967,6 +967,13 @@
     var it = ins[0];
     await db.upsert('ops_item_branch', branchIds.map(function(bid){ return { item_id: it.id, branch_id: bid, target_qty: 0, active: true }; }), 'item_id,branch_id');
     toast('추가했어요 (' + branchIds.map(branchName).join(', ') + ')'); render();
+  }
+  async function itemToggleUnlimited(id){
+    var it = itemById(id); if (!it) return;
+    var next = !it.unlimited;
+    await db.update('ops_items', { id: id }, { unlimited: next });
+    toast(next ? 'α(무제한)로 표시했어요 · 부족·주문 목록에서 빠져요' : 'α 표시를 풀었어요');
+    render();
   }
   async function itemMove(id){
     var it = itemById(id); if (!it) return;
@@ -3436,6 +3443,7 @@
         case 'item-add': await itemAdd(); break;
         case 'item-edit-name': await itemEditName(id); break;
         case 'item-edit-unit': await itemEditUnit(id); break;
+        case 'item-toggle-unlimited': await itemToggleUnlimited(id); break;
         case 'item-move': await itemMove(id); break;
         case 'item-delete': await itemDelete(id); break;
         case 'cat-jump': { var ce = document.getElementById('cat-' + id); if (ce) ce.scrollIntoView({ behavior: 'smooth' }); break; }
