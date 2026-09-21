@@ -3183,15 +3183,15 @@
   // ===== 9차: 명부 동기화 (supabase-migration-roster.sql) — 시트 붙여넣기 한 번으로 신입·보건증·퇴사 같이 처리 =====
   var rsState = { importText: '', importRows: null };
   function rsParseSheet(text){
-    var colName = -1, colExp = -1, colBranch = -1, colHire = -1, colLeave = -1, out = [];
+    var colName = -1, colExp = -1, colBranch = -1, colHire = -1, colLeave = -1, colEmail = -1, out = [];
     text.split(/\r?\n/).forEach(function(line){
       var cells = line.split('\t').map(function(c){ return c.trim(); });
       if (cells.length < 2) return;
       var hi = -1; cells.forEach(function(c, i){ if (hi < 0 && /보건증/.test(c)) hi = i; });
       if (hi >= 0 && cells.indexOf('이름') >= 0){
         colExp = hi; colName = cells.indexOf('이름'); colBranch = cells.indexOf('지점');
-        colHire = -1; colLeave = -1;
-        cells.forEach(function(c, i){ if (colHire < 0 && /입사/.test(c)) colHire = i; if (colLeave < 0 && /퇴사/.test(c)) colLeave = i; });
+        colHire = -1; colLeave = -1; colEmail = -1;
+        cells.forEach(function(c, i){ if (colHire < 0 && /입사/.test(c)) colHire = i; if (colLeave < 0 && /퇴사/.test(c)) colLeave = i; if (colEmail < 0 && /이메일|메일/.test(c)) colEmail = i; });
         return;   // 머리글 줄
       }
       var bi = -1, br = null;
@@ -3200,17 +3200,19 @@
       if (!br) return;   // "예시)" 줄, 빈 줄, 다른 표
       var name = ((colName >= 0 ? cells[colName] : cells[bi + 1]) || '').replace(/\s/g, '');
       if (!/^[가-힣]{2,5}$/.test(name)) return;
-      var expCell, hireCell = '', leaveCell = '';
-      if (colExp >= 0){ expCell = cells[colExp]; if (colHire >= 0) hireCell = cells[colHire] || ''; if (colLeave >= 0) leaveCell = cells[colLeave] || ''; }
-      else if (cells.length >= bi + 8) expCell = cells[bi + 7];   // 시트 원래 순서(머리글 없이 복사): 지점·이름·주민번호·입사일·전화·이메일·주소·보건증
+      var expCell, hireCell = '', leaveCell = '', emailCell = '';
+      if (colExp >= 0){ expCell = cells[colExp]; if (colHire >= 0) hireCell = cells[colHire] || ''; if (colLeave >= 0) leaveCell = cells[colLeave] || ''; if (colEmail >= 0) emailCell = cells[colEmail] || ''; }
+      else if (cells.length >= bi + 8){ expCell = cells[bi + 7]; emailCell = cells[bi + 5] || ''; }   // 시트 원래 순서(머리글 없이 복사): 지점·이름·주민번호·입사일·전화·이메일·주소·보건증
       else { var cand = cells.slice(bi + 2).filter(function(c){ return hcParseDate(c); }); expCell = cand.length === 1 ? cand[0] : ''; }
       var leaveOn = leaveCell ? hcParseDate(leaveCell) : null;
       var leaveResign = !leaveOn && /퇴사|퇴직/.test(leaveCell || '');   // 날짜는 없지만 "퇴사"라고만 적힌 경우도 퇴사로 봄
+      var email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailCell) ? emailCell.trim() : null;
       out.push({
         branch_id: br.id, name: name,
         hire_on: hireCell ? hcParseDate(hireCell) : null,
         expires_on: hcParseDate(expCell), exp_raw: expCell || '',
         leave_raw: leaveCell, leave_on: leaveOn, leave_resign: leaveResign, leave_unclear: !!leaveCell && !leaveOn && !leaveResign,
+        email: email,
         staff: hcMatchStaff(name, br.id)
       });
     });
@@ -3231,7 +3233,8 @@
   }
   async function rsImportSave(){
     var rows = rsState.importRows || []; var map = healthMap(await loadHealth());
-    var added = 0, healthUpdated = 0, hireUpdated = 0, left = 0;
+    var payMap = {}; (await db.select('ops_pay_profiles')).forEach(function(p){ payMap[p.staff_id] = p; });
+    var added = 0, healthUpdated = 0, hireUpdated = 0, left = 0, emailUpdated = 0;
     for (var i = 0; i < rows.length; i++){
       var r = rows[i], s = r.staff;
       if (!s){
@@ -3248,6 +3251,10 @@
           healthUpdated++;
         }
       }
+      if (r.email && (!payMap[s.id] || payMap[s.id].email !== r.email)){
+        await db.upsert('ops_pay_profiles', [{ staff_id: s.id, email: r.email }], 'staff_id');
+        emailUpdated++;
+      }
       if ((r.leave_on || r.leave_resign) && s.active !== false){
         var cbl = document.getElementById('rs-leave-' + i); if (!cbl || !cbl.checked) continue;
         var memo2 = (s.memo ? s.memo + '\n' : '') + '퇴사 ' + (r.leave_on || '날짜 미상') + ' (명부 동기화)';
@@ -3255,21 +3262,22 @@
       }
     }
     rsState.importRows = null; rsState.importText = '';
-    toast('저장했어요 · 신입 ' + added + '명 · 보건증 ' + healthUpdated + '명 · 입사일 ' + hireUpdated + '명 · 퇴사 처리 ' + left + '명');
+    toast('저장했어요 · 신입 ' + added + '명 · 보건증 ' + healthUpdated + '명 · 입사일 ' + hireUpdated + '명 · 이메일 ' + emailUpdated + '명 · 퇴사 처리 ' + left + '명');
     render();
   }
   routes['roster-sync'] = async function(){
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
     var html = topbar('명부 동기화', true, '<button class="btn sm" data-act="rs-refresh">🔄 새로고침</button>');
-    html += '<div class="muted" style="margin:4px 4px 10px">근무자 현황 시트에서 <b>머리글 줄(지점·이름·입사일·보건증 만료일·퇴사일)까지 같이</b> 드래그해 복사(Ctrl+C)하면 더 정확해요. 아래에 붙여넣기(Ctrl+V). 지점·이름·입사일·보건증 만료일·퇴사일만 읽고, 주민번호·주소·전화·이메일은 저장하지 않아요. 붙여넣거나 저장할 때마다 직원 명단을 새로 불러오지만, 다른 화면에서 방금 직원을 추가·변경했다면 오른쪽 위 <b>새로고침</b>을 한 번 눌러 주세요.</div>';
+    html += '<div class="muted" style="margin:4px 4px 10px">근무자 현황 시트에서 <b>머리글 줄(지점·이름·입사일·보건증 만료일·퇴사일)까지 같이</b> 드래그해 복사(Ctrl+C)하면 더 정확해요. 아래에 붙여넣기(Ctrl+V). 지점·이름·입사일·보건증 만료일·퇴사일을 읽고, 이메일이 있으면 급여 설정(명세서 발송용)에만 채워요. 주민번호·주소·전화는 저장하지 않아요. 붙여넣거나 저장할 때마다 직원 명단을 새로 불러오지만, 다른 화면에서 방금 직원을 추가·변경했다면 오른쪽 위 <b>새로고침</b>을 한 번 눌러 주세요.</div>';
     html += '<div class="form"><textarea class="in" id="rs-import" rows="4" placeholder="여기에 붙여넣기">' + esc(rsState.importText) + '</textarea>';
     if (rsState.importRows){
       var rows = rsState.importRows, map = healthMap(await loadHealth());
+      var payMap2 = {}; (await db.select('ops_pay_profiles')).forEach(function(p){ payMap2[p.staff_id] = p; });
       if (!rows.length) html += '<div class="note danger">읽을 수 있는 줄이 없어요. 지점 이름(예: 성수점)이 들어간 줄을 복사했는지 확인해 주세요.</div>';
       else {
-        var newRows = [], healthRows = [], leaveRows = [], unclearRows = [];
-        rows.forEach(function(r, i){ r._i = i; if (!r.staff) newRows.push(r); else { if (r.leave_unclear) unclearRows.push(r); if ((r.leave_on || r.leave_resign) && r.staff.active !== false) leaveRows.push(r); var cur = map[r.staff.id] && map[r.staff.id].confirmed; if (r.expires_on && (!cur || cur.expires_on < r.expires_on)) healthRows.push(r); } });
+        var newRows = [], healthRows = [], leaveRows = [], unclearRows = [], emailRows = [];
+        rows.forEach(function(r, i){ r._i = i; if (!r.staff) newRows.push(r); else { if (r.leave_unclear) unclearRows.push(r); if ((r.leave_on || r.leave_resign) && r.staff.active !== false) leaveRows.push(r); var cur = map[r.staff.id] && map[r.staff.id].confirmed; if (r.expires_on && (!cur || cur.expires_on < r.expires_on)) healthRows.push(r); if (r.email && (!payMap2[r.staff.id] || payMap2[r.staff.id].email !== r.email)) emailRows.push(r); } });
         if (newRows.length){
           html += '<div class="group-title">신입으로 추가 (' + newRows.length + '명)</div><div class="card">';
           newRows.forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t"><label class="inline" style="gap:6px"><input type="checkbox" id="rs-add-' + r._i + '" checked>' + esc(r.name) + '</label> <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span></div><div class="s">' + (r.hire_on ? '입사 ' + esc(fmtYmdK(r.hire_on)) + ' · ' : '') + (r.expires_on ? '보건증 ' + esc(fmtYmdK(r.expires_on)) : '보건증 정보 없음') + '</div></div></div>'; });
@@ -3290,7 +3298,12 @@
           healthRows.forEach(function(r){ var cur = map[r.staff.id] && map[r.staff.id].confirmed; html += '<div class="item"><div class="iname"><div class="t">' + esc(r.name) + ' <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span></div><div class="s">' + (cur ? esc(fmtYmdK(cur.expires_on)) + ' → ' : '새로 ') + esc(fmtYmdK(r.expires_on)) + '</div></div></div>'; });
           html += '</div>';
         }
-        if (!newRows.length && !leaveRows.length && !healthRows.length && !unclearRows.length) html += '<div class="note ok">바뀔 게 없어요. 이미 다 최신이에요.</div>';
+        if (emailRows.length){
+          html += '<div class="group-title">이메일 등록 (급여 설정, ' + emailRows.length + '명)</div><div class="card">';
+          emailRows.forEach(function(r){ var cur = payMap2[r.staff.id] && payMap2[r.staff.id].email; html += '<div class="item"><div class="iname"><div class="t">' + esc(r.name) + ' <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span></div><div class="s">' + (cur ? esc(cur) + ' → ' : '새로 ') + esc(r.email) + '</div></div></div>'; });
+          html += '</div>';
+        }
+        if (!newRows.length && !leaveRows.length && !healthRows.length && !unclearRows.length && !emailRows.length) html += '<div class="note ok">바뀔 게 없어요. 이미 다 최신이에요.</div>';
         else html += '<button class="btn primary block" data-act="rs-import-save">이대로 저장</button>';
       }
     } else html += '<button class="btn block" data-act="rs-import-preview">읽어 보기</button>';
