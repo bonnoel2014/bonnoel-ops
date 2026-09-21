@@ -125,7 +125,7 @@ begin
 
   insert into ops_categories (name, sort_order) values ('식빵', 1) returning id into c;
   insert into ops_items (category_id, name, unit, sort_order) values
-    (c, '식빵 대(접착)', 'box', 1), (c, '식빵 중', '묶음', 2);
+    (c, '식빵 대(접착)', '묶음', 1), (c, '식빵 중', '묶음', 2);
 
   insert into ops_categories (name, sort_order) values ('손잡이', 2) returning id into c;
   insert into ops_items (category_id, name, unit, sort_order) values
@@ -146,7 +146,7 @@ begin
 
   insert into ops_categories (name, sort_order) values ('몰드 케이스', 6) returning id into c;
   insert into ops_items (category_id, name, unit, sort_order) values
-    (c, '호박 몰드 (마늘·산딸기)', '묶음', 1), (c, '두파이 몰드', '묶음', 2);
+    (c, '은박 몰드 (마늘·산딸기)', '묶음', 1), (c, '호두파이 몰드', '묶음', 2);
 
   insert into ops_categories (name, sort_order) values ('러스크 봉투 / 제습제', 7) returning id into c;
   insert into ops_items (category_id, name, unit, sort_order) values
