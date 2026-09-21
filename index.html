@@ -200,6 +200,7 @@
   function todayStr(){ var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
   function addDays(dateStr, n){ var d = new Date(dateStr + 'T00:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
   function md(s){ if(!s) return ''; var d = new Date(s); if (isNaN(d)) return ''; return (d.getMonth()+1) + '/' + d.getDate(); }
+  function isToday(s){ if (!s) return false; var d = new Date(s); if (isNaN(d)) return false; var t = new Date(); return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate(); }
   function num(v){ var n = parseFloat(v); return isNaN(n) ? null : n; }
   function fmtQ(n){ if (n == null) return '-'; return (Math.round(n * 100) / 100).toString(); }
   function daysAgo(n){ var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); }
@@ -720,17 +721,20 @@
     html += actorPicker('chk-staff', '누가 세었어요?');
     var groups = groupByCategory(list);
     if (!groups.length) html += '<div class="empty">이 매장에 켜진 품목이 없어요. 비품 설정에서 켜 주세요.</div>';
+    var doneCount = 0;
     groups.forEach(function(g){
       html += '<div class="card section"><div class="sec-h">' + esc(g.cat.name) + '</div>';
       g.rows.forEach(function(x){
         var s = m[x.item.id] || {};
+        var todayVal = (s.last && isToday(s.last.checked_at)) ? num(s.last.qty) : null;
+        if (todayVal != null) doneCount++;
         var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + fmtQ(num(s.last.qty)) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
         html += '<div class="item"><div class="iname"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + sub + (x.item.note ? ' · ' + esc(x.item.note) : '') + '</div></div>' +
-                '<input class="qty" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" placeholder="-"><span class="unit">' + esc(x.item.unit) + '</span></div>';
+                '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + ' placeholder="-"><span class="unit">' + esc(x.item.unit) + '</span></div>';
       });
       html += '</div>';
     });
-    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="save-check" data-branch="' + esc(b) + '">저장 <span id="cnt">(0/' + list.length + ')</span></button></div></div>';
+    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="save-check" data-branch="' + esc(b) + '">저장 <span id="cnt">(' + doneCount + '/' + list.length + ')</span></button></div></div>';
     app.innerHTML = html;
     app._checkTotal = list.length;
   };
@@ -738,8 +742,13 @@
     var chkSel = document.getElementById('chk-staff');
     var staffId = (isOwner() && chkSel && chkSel.value) || session.staffId;
     var rows = [];
-    app.querySelectorAll('.qty').forEach(function(inp){ var v = num(inp.value); if (v != null && inp.value !== '') rows.push({ branch_id: b, item_id: inp.getAttribute('data-item'), qty: v, staff_id: staffId, checked_at: new Date().toISOString() }); });
-    if (!rows.length){ toast('넣은 수량이 없어요'); return; }
+    app.querySelectorAll('.qty').forEach(function(inp){
+      var v = num(inp.value); if (v == null || inp.value === '') return;
+      var orig = inp.getAttribute('data-orig'); var origNum = orig ? num(orig) : null;
+      if (origNum != null && v === origNum) return;   // 오늘 이미 이 값으로 기록됨 · 다시 안 넣어도 돼요
+      rows.push({ branch_id: b, item_id: inp.getAttribute('data-item'), qty: v, staff_id: staffId, checked_at: new Date().toISOString() });
+    });
+    if (!rows.length){ toast('새로 넣거나 바뀐 수량이 없어요'); return; }
     await db.insert('ops_stock_checks', rows);
     toast(rows.length + '개 저장했어요');
     nav('#/home');
