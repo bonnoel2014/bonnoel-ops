@@ -1158,7 +1158,7 @@
     var sel = /^\d{4}-\d{2}-\d{2}$/.test(params.arg || '') ? params.arg : addDays(todayStr(), 1);
     var html = topbar('휴무 신청', true);
     html += actorPicker('lv-staff', '누구 휴무예요?', actingId);
-    html += '<div class="note">휴무는 <b>본인이 대타를 구해야</b> 하고, 못 구하면 출근이에요. 파트너가 그날 혼자 가능하다고 해 주면 대타 없이도 돼요.</div>';
+    html += '<div class="note">휴무는 <b>본인이 대타를 구해야</b> 하고, 못 구하면 출근이에요.</div>';
     if (!myPat.length){ html += '<div class="card section"><div class="empty">' + (actingId === session.staffId ? '내' : esc(staffName(actingId)) + '님') + ' 근무 패턴이 아직 없어요. 매니저에게 등록을 부탁하세요.</div></div>'; }
     else {
       var pats = [];
