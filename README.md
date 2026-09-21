@@ -4,6 +4,7 @@
 
 **앱 주소: https://sungpil-1225.github.io/bonnoel-ops/** (GitHub Pages. main에 push하면 1분 안에 자동 반영) 홈 화면 하나에 아이콘별로 도구가 붙습니다.
 
+- 11차(완성): **명세서 이메일 발송** — 급여 초안 → 명세서 화면에 [이메일로 보내기] 버튼. 급여 설정에서 등록한 직원 이메일로 명세서를 보내고, 발송 시각·실패 이유를 기록해 재시도할 수 있어요. `send-document`와 같은 Gmail 비밀값을 그대로 재사용(새 설정 없음) — 테이블은 [`supabase-migration-payslip-email.sql`](supabase-migration-payslip-email.sql), 메일 함수는 [`supabase/functions/send-payslip/index.ts`](supabase/functions/send-payslip/index.ts). 아래 "명세서 발송 설정".
 - 10차(완성): **청년지원금**(사장님만: 청년일자리도약장려금 참여 직원 등록 → 채용일 기준 5단계(참여자등록·6개월·9개월·12개월·2년차) 신청 건이 자동 생성 → 단계별 필요서류 체크리스트에 파일 올리기, 상태(대기중/제출함/수정요청/접수완료/입금완료) 관리, 기관 회신·메모를 진행 기록에 계속 쌓아서 "지금 뭘 기다리는지" 한눈에 확인, 입금액·입금일 기록) — 테이블은 [`supabase-migration-subsidy.sql`](supabase-migration-subsidy.sql). 아래 "청년지원금 설정". 설계: [기획/청년지원금관리_설계.md](기획/청년지원금관리_설계.md)
 - 6차(완성): **입사 서류**(사장님·매니저가 계약 조건 준비 → 신입이 매장폰 `#/sign`에서 이름·비밀번호로 들어와 근로계약서·임금계약서, 개인정보 동의서, 서약서, CCTV 동의서, 유니폼 지급대장(+미성년자 친권자 동의서)을 읽고 손가락 서명 → PDF를 직원 메일 + 사장님 메일로 자동 발송, 교부 기록 보관 → 이어서 등본·통장사본·보건증 제출(지금 없으면 나중에)) · **내 서류**(직원이 다시 보기, 미제출 서류는 여기서 올리기) — 테이블·저장소는 [`supabase-migration-docs.sql`](supabase-migration-docs.sql), 양식은 [`docs-templates.js`](docs-templates.js), 메일 함수는 [`supabase/functions/send-document/index.ts`](supabase/functions/send-document/index.ts). 설정 순서는 아래 "입사 서류 설정". 설계: [기획/입사서류_설계.md](기획/입사서류_설계.md)
 - 7차(완성): **직원 구매**(직원 할인으로 산 빵 기록. 사진은 선택, 결제 방식별 할인·낸 금액 자동 계산, 사장님은 베이커처럼 앱에 없는 사람 이름도 직접 써서 대신 입력 가능) · **직원 구매 내역**(사장님·매니저: 날짜별 할인·낸 금액 합계(마감용), 사람별, 수정·삭제, CSV) — 테이블은 [`supabase-migration-staffbuy.sql`](supabase-migration-staffbuy.sql) + [`supabase-migration-staffbuy2.sql`](supabase-migration-staffbuy2.sql). 아래 "직원 구매 설정".
@@ -60,6 +61,13 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 명세서 대조에서 "영수증 없음"은 **같은 가맹점끼리 한 줄로 묶여요** (우버택시 245건 → 한 줄). 지점·항목을 고르고 [등록]하면 그 가맹점 결제가 전부 들어가고, 다 골랐으면 [전부 등록] 한 번이면 끝. 한 번 고른 가맹점은 **기억**해서 다음 달부터 자동으로 채워져요(초록 "기억" 표시). 영수증 올리기에서도 같은 가게면 항목이 자동으로 채워져요.
 
 명세서 대조 규칙: 같은 금액 + 날짜 2일 이내(+카드 끝 4자리가 있으면 같아야) = 일치. 날짜·가게는 같은데 금액만 다르면 "금액 다름". 취소(−금액) 줄은 뺌. 지점이 `공통(사장님)`인 지출은 특정 매장에 넣지 않은 것.
+
+## 명세서 발송 설정 (11차) — 처음 한 번
+
+1. **테이블 컬럼 추가**: Supabase 대시보드 → SQL Editor → New query → [`supabase-migration-payslip-email.sql`](supabase-migration-payslip-email.sql) 전체 붙여넣기 → Run.
+2. **메일 함수 올리기**: Edge Functions → Deploy a new function → **Via Editor** → 이름 `send-payslip` → [`supabase/functions/send-payslip/index.ts`](supabase/functions/send-payslip/index.ts) 내용을 전부 붙여넣기 → Deploy → 함수 상세에서 **Verify JWT** 끄기. 비밀값(GMAIL_USER 등)은 `send-document`가 이미 쓰고 있는 것과 같아서 새로 넣을 것 없어요.
+3. **직원 이메일 등록**: 급여 설정 화면에서 사람별 이메일 칸을 채워주세요(비어 있으면 명세서 화면에 발송 버튼 대신 "이메일 미등록" 안내만 떠요).
+4. **써 보기**: 급여 초안에서 [초안 저장] → 명세서 화면 → [이메일로 보내기] → "OOO로 보냈어요"가 뜨면 성공. 실패하면 이유가 화면에 남고 다시 눌러 재시도할 수 있어요.
 
 ## 입사 서류 설정 (6차) — 처음 한 번
 

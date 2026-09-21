@@ -247,6 +247,13 @@
         var j = null; try { j = await res.json(); } catch(e){}
         if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '메일 발송 함수(send-document)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
         return j;
+      },
+      // 급여명세서 메일 발송 함수
+      sendPayslip: async function(runId, to, subject, html){
+        var res = await fetch(SUPABASE_URL + '/functions/v1/send-payslip', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify({ run_id: runId, to: to, subject: subject, html: html }) });
+        var j = null; try { j = await res.json(); } catch(e){}
+        if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '메일 발송 함수(send-payslip)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
+        return j;
       }
     };
   }
@@ -277,7 +284,8 @@
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
       ocr: async function(b64, mime, kind){ await new Promise(function(r){ setTimeout(r, 900); }); if (kind === 'staff_purchase') return { ok: true, bought_on: todayStr(), list_total: 5500, discount: 1100, paid: 4400, pay_method: '카드', cash_receipt: false, branch: '중계점', items: '(시연) 버터프레첼 1개', confidence: 0.9 }; return { ok: true, merchant: '(시연) 성수 식자재마트', spent_on: todayStr(), amount: 34500, card_last4: '1234', summary: '시연 모드라 가짜로 읽었어요', confidence: 0.9 }; },
-      sendDocs: async function(batchId){ await new Promise(function(r){ setTimeout(r, 800); }); var to = ''; (tables.ops_documents || []).forEach(function(r){ if (r.batch_id === batchId && r.pdf_path && ['signed','failed','sent'].indexOf(r.status) >= 0){ to = r.email_to || to; r.status = 'sent'; r.email_sent_at = new Date().toISOString(); r.email_cc = '(시연) 사장님 메일'; r.signed_ip = '127.0.0.1'; } }); return { ok: true, sent_to: to, cc: '(시연) 사장님 메일' }; }
+      sendDocs: async function(batchId){ await new Promise(function(r){ setTimeout(r, 800); }); var to = ''; (tables.ops_documents || []).forEach(function(r){ if (r.batch_id === batchId && r.pdf_path && ['signed','failed','sent'].indexOf(r.status) >= 0){ to = r.email_to || to; r.status = 'sent'; r.email_sent_at = new Date().toISOString(); r.email_cc = '(시연) 사장님 메일'; r.signed_ip = '127.0.0.1'; } }); return { ok: true, sent_to: to, cc: '(시연) 사장님 메일' }; },
+      sendPayslip: async function(runId, to){ await new Promise(function(r){ setTimeout(r, 800); }); (tables.ops_pay_runs || []).forEach(function(r){ if (r.id === runId){ r.email_to = to; r.email_sent_at = new Date().toISOString(); r.email_error = null; } }); return { ok: true, sent_to: to }; }
     };
   }
 
@@ -1844,18 +1852,41 @@
     if (!rows.length){ toast('저장할 사람이 없어요'); return; }
     await db.upsert('ops_pay_runs', rows, 'ym,branch_id,staff_id'); toast(rows.length + '명 초안 저장'); render();
   }
+  // 이메일 본문용 명세서 HTML (인라인 스타일 — 메일 앱은 페이지 CSS를 못 읽어서 .slip 클래스를 그대로 못 씀)
+  function paySlipEmailHtml(run, x, t, s, S, days, payRows, dedRows, title){
+    var row = function(p, d){ return '<tr><td style="padding:4px 6px;border-bottom:1px solid #eee">' + esc(p[0]) + '</td><td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:right">' + (p[1] === '' ? '' : won(p[1])) + '</td><td style="padding:4px 6px;border-bottom:1px solid #eee">' + esc(d[0]) + '</td><td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:right">' + (d[1] === '' ? '' : won(d[1])) + '</td></tr>'; };
+    var n = Math.max(payRows.length, dedRows.length), body = '';
+    for (var i = 0; i < n; i++) body += row(payRows[i] || ['', ''], dedRows[i] || ['', '']);
+    return '<div style="font-family:\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif;font-size:14px;line-height:1.6;color:#222;max-width:560px">' +
+      '<h2 style="text-align:center;margin:0 0 12px">' + esc(title) + '</h2>' +
+      '<p>' + esc(s.name) + ' 님, 안녕하세요. 주식회사 본노엘입니다. 아래는 ' + run.ym.slice(5) + '월 급여명세서예요' + (run.status !== 'confirmed' ? ' (아직 초안이라 금액이 바뀔 수 있어요)' : '') + '.</p>' +
+      '<p style="font-size:13px;color:#666">회사명: ' + esc(S.company) + '(' + esc(branchName(run.branch_id)) + ') · 산정기간: ' + days[0] + ' ~ ' + days[days.length - 1] + ' · 지급일자: ' + esc(run.pay_date || '') + '</p>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th colspan="2" style="text-align:left;padding:4px 6px;border-bottom:2px solid #642E2C;color:#642E2C">지급</th><th colspan="2" style="text-align:left;padding:4px 6px;border-bottom:2px solid #642E2C;color:#642E2C">공제</th></tr>' + body +
+      '<tr><td style="padding:6px;font-weight:bold">지급총액</td><td style="padding:6px;text-align:right;font-weight:bold">' + won(x.gross + t.adj) + '</td><td style="padding:6px;font-weight:bold">공제총액</td><td style="padding:6px;text-align:right;font-weight:bold">' + won(t.dedSum) + '</td></tr></table>' +
+      '<div style="margin-top:14px;padding:12px;background:#faf7f5;border-radius:8px;text-align:center"><div style="font-size:13px;color:#666">실지급액</div><div style="font-size:22px;font-weight:bold;color:#642E2C">' + won(t.net) + '원</div></div>' +
+      '<p style="font-size:12px;color:#999;margin-top:16px">내용에 궁금한 점이 있으면 매장 매니저나 대표에게 말씀해 주세요.</p>' +
+      '</div>';
+  }
+
   routes.slip = async function(params){
     await loadBase();
     var run = (await db.select('ops_pay_runs', { eq: { id: params.arg } }))[0];
     if (!run){ app.innerHTML = topbar('명세서', true) + '<div class="empty">없어요</div>'; return; }
     if (!isOwner()){ toast('명세서는 사장님만 볼 수 있어요'); nav('#/home'); return; }
     var S = await loadPaySettings(), x = run.data, t = payTotals(run), s = base.staff.filter(function(z){ return z.id === run.staff_id; })[0] || {};
+    var profile = (await db.select('ops_pay_profiles', { eq: { staff_id: run.staff_id } }))[0] || {};
     var days = monthDays(run.ym), title = run.ym.slice(0, 4) + '년 ' + run.ym.slice(5) + '월 임금명세서';
     var payRows = [['기본급', x.base], ['주휴수당', x.juhyu], ['야간근로수당', x.night_pay], ['연장근로수당', x.ot_pay]]; if (x.bonus) payRows.push(['근속수당 (근무일당 ' + won(x.bonus_per_day) + '원)', x.bonus]); if (t.adj) payRows.push(['조정' + (run.adjust_memo ? ' (' + run.adjust_memo + ')' : ''), t.adj]);
     var dedRows = x.pay_type === 'freelance' ? [['사업소득세 (3%)', t.tax], ['지방소득세 (0.3%)', t.local]] : (x.short_time || x.pay_type === 'none') ? [['근로소득세', t.tax], ['지방소득세', t.local]] : [['근로소득세', t.tax], ['지방소득세', t.local], ['국민연금', x.ded.np], ['건강보험', x.ded.hi], ['장기요양보험', x.ded.ltc], ['고용보험', x.ded.ei]];
     var n = Math.max(payRows.length, dedRows.length), body = '';
     for (var i = 0; i < n; i++){ var p = payRows[i] || ['', ''], d = dedRows[i] || ['', '']; body += '<tr><td>' + esc(p[0]) + '</td><td class="r">' + (p[1] === '' ? '' : won(p[1])) + '</td><td>' + esc(d[0]) + '</td><td class="r">' + (d[1] === '' ? '' : won(d[1])) + '</td></tr>'; }
     var html = '<div class="topbar noprint">' + '<button class="back" data-act="back">‹</button><h1>명세서</h1><button class="btn sm" onclick="window.print()">인쇄 · PDF</button></div>';
+    html += '<div class="noprint" style="margin-bottom:10px">' + (
+      profile.email
+        ? '<button class="btn sm" data-act="pay-send" data-id="' + esc(run.id) + '">이메일로 보내기 (' + esc(profile.email) + ')</button>'
+        : '<span class="muted" style="font-size:13px">이메일 미등록 — 급여 설정 화면에서 등록해주세요</span>'
+      ) + (run.email_sent_at ? '<div class="muted" style="font-size:12px;margin-top:4px">' + esc(run.email_to) + '로 ' + fmtDT(run.email_sent_at) + ' 발송됨</div>' : '') +
+      (run.email_error ? '<div class="bad" style="font-size:12px;margin-top:4px">발송 실패: ' + esc(run.email_error) + '</div>' : '') + '</div>';
     html += '<div class="slip"><h2>' + esc(title) + '</h2><div class="slip-meta"><div>회사명: ' + esc(S.company) + '(' + esc(branchName(run.branch_id)) + ')<br>산정기간: ' + days[0] + ' ~ ' + days[days.length - 1] + '</div><div>지급일자: ' + esc(run.pay_date || '') + '<br>' + (run.status === 'confirmed' ? '확정' : '<b>초안</b>') + '</div></div>';
     html += '<table class="slip-t"><tr><th>성명</th><td>' + esc(s.name) + '</td><th>구분</th><td>' + (x.pay_type === 'freelance' ? '사업소득(3.3%)' : x.short_time ? '근로소득(초단시간 · 4대보험 미적용)' : x.pay_type === 'none' ? '근로소득(공제 없음)' : '근로소득(4대보험)') + '</td></tr><tr><th>시급</th><td>' + won(x.wage) + '원</td><th>근무일수</th><td>' + x.days + '일</td></tr></table>';
     html += '<table class="slip-t"><tr><th colspan="4">세부 내역</th></tr><tr><th colspan="2">지급</th><th colspan="2">공제</th></tr><tr><th>지급항목</th><th>지급금액</th><th>공제항목</th><th>공제금액</th></tr>' + body + '<tr><th>지급총액</th><td class="r"><b>' + won(x.gross + t.adj) + '</b></td><th>공제총액</th><td class="r"><b>' + won(t.dedSum) + '</b></td></tr><tr><td colspan="2"></td><th>실지급액</th><td class="r"><b>' + won(t.net) + '</b></td></tr></table>';
@@ -1863,7 +1894,16 @@
     html += '<table class="slip-t"><tr><th colspan="2">계산방법</th></tr><tr><td>기본급</td><td>총 근로시간 × 시급</td></tr><tr><td>주휴수당</td><td>주 15시간 이상인 주: (주 근로시간 ÷ 40) × 8시간 × 시급</td></tr><tr><td>야간근로수당</td><td>22시~06시 시간 × 시급 × ' + S.night_premium + '</td></tr><tr><td>연장근로수당</td><td>1일 8시간 또는 1주 40시간 초과 시간 × 시급 × ' + S.ot_premium + '</td></tr>' + (x.pay_type === 'freelance' ? '<tr><td>사업소득세</td><td>지급총액 × 3% · 지방소득세 0.3%</td></tr>' : (x.short_time || x.pay_type === 'none') ? '<tr><td>근로소득세</td><td>간이세액표 적용</td></tr><tr><td>4대보험</td><td>주 15시간·월 60시간 미만 초단시간 근로자 → 미적용</td></tr>' : '<tr><td>근로소득세</td><td>간이세액표 적용</td></tr><tr><td>지방소득세</td><td>근로소득세 × 10%</td></tr><tr><td>국민연금</td><td>기준소득월액 × ' + S.np_rate + '%</td></tr><tr><td>건강보험</td><td>보수월액 × ' + S.hi_rate + '%</td></tr><tr><td>장기요양보험</td><td>건강보험료 × ' + S.ltc_rate + '%</td></tr><tr><td>고용보험</td><td>보수월액 × ' + S.ei_rate + '%</td></tr>') + '</table>';
     html += '<table class="slip-t"><tr><th>날짜</th><th>인정 시간</th></tr>' + (x.dayList || []).map(function(d){ return '<tr><td>' + esc(fmtDateK(d.date)) + '</td><td class="r">' + fmtH(d.min) + '</td></tr>'; }).join('') + '</table></div>';
     app.innerHTML = html;
+    app._slip = { runId: run.id, to: profile.email || '', subject: '[본노엘] ' + run.ym + ' 급여명세서 - ' + (s.name || ''), html: paySlipEmailHtml(run, x, t, s, S, days, payRows, dedRows, title) };
   };
+  async function paySlipSend(el){
+    var P = app._slip; if (!P || !P.to) return;
+    el.disabled = true;
+    try { await db.sendPayslip(P.runId, P.to, P.subject, P.html); toast(P.to + '로 보냈어요'); }
+    catch(e){ toast('발송 실패: ' + (e.message || e)); }
+    finally { el.disabled = false; }
+    render();
+  }
 
   // ===== 카드 지출 (법인카드 영수증) =====
   var EXP_CATS = ['식자재', '포장재', '종량제 봉투', '비품·소모품', '수리·설비', '공과금·통신', '식대·회식', '차량·교통', '기타'];
@@ -3590,6 +3630,7 @@
         case 'pay-month': nav('#/pay/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-ym')); break;
         case 'pay-save': await paySave(el.getAttribute('data-branch'), el.getAttribute('data-ym')); break;
         case 'pay-confirm': { var on = el.getAttribute('data-on') === '1'; if (on && !window.confirm('이 사람 급여를 확정할까요? 확정하면 출퇴근 기록이 바뀌어도 금액이 안 바뀌어요.')) break; await db.update('ops_pay_runs', { id: id }, { status: on ? 'confirmed' : 'draft', confirmed_by: on ? session.staffId : null, confirmed_at: on ? nowIso() : null }); toast(on ? '확정했어요' : '확정을 풀었어요'); render(); break; }
+        case 'pay-send': await paySlipSend(el); break;
         // 카드 지출
         case 'go': nav(el.getAttribute('data-href')); break;
         case 'exp-nophoto': expState = { photo: { blob: null, dataUrl: null, mime: null }, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
