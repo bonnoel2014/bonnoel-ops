@@ -2590,7 +2590,8 @@
     { id: 'cash_receipt', name: '현금 + 현금영수증', rate: 20 },
     { id: 'card', name: '카드', rate: 20 },
     { id: 'seoulpay', name: '서울페이', rate: 20 },
-    { id: 'onnuri', name: '온누리상품권', rate: 20 }
+    { id: 'onnuri', name: '온누리상품권', rate: 20 },
+    { id: 'other', name: '기타 (할인 없음)', rate: 0 }
   ];
   function buyMethod(id){ return BUY_METHODS.filter(function(m){ return m.id === id; })[0] || null; }
   function buyMethodName(id){ var m = buyMethod(id); return m ? m.name : (id || '?'); }
@@ -2663,7 +2664,7 @@
       else if (st.ocrError) html += '<div class="note danger">자동 읽기가 안 됐어요: ' + esc(st.ocrError) + '<br><span class="muted">아래에 직접 넣어 주세요.</span></div>';
       else if (st.ocr) html += '<div class="note ok">읽었어요' + (o.confidence != null && o.confidence < 0.6 ? ' (사진이 흐려서 자신 없음)' : '') + '. 맞는지 확인하고 저장해 주세요.</div>';
       html += '<div style="text-align:center"><span class="muted" data-act="buy-retake" style="cursor:pointer;text-decoration:underline">' + (st.photo.dataUrl ? '다른 사진으로' : '← 사진 찍기로') + '</span></div>';
-      var method = buyGuessMethod(o) || 'card', rate = buyMethod(method).rate;
+      var method = buyGuessMethod(o) || 'transfer', rate = buyMethod(method).rate;
       var list = num(o.list_total), disc = num(o.discount), paid = num(o.paid);
       if (list == null && paid == null && o.amount != null) paid = num(o.amount);   // 예전 함수(법인카드용)가 배포돼 있으면 결제 금액만 옴
       if (list == null && paid != null) list = Math.round(paid / (1 - rate / 100));
