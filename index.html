@@ -1173,44 +1173,77 @@
       '<div><label>메모 (예: 실제 출근은 7:20, 없으면 비움)</label><input class="in" id="as-note"></div>' +
       '<button class="btn sm primary" data-act="addshift-save" data-branch="' + esc(b) + '" data-date="' + esc(day) + '" data-weekday="' + wdOf(day) + '">' + esc(fmtDateK(day)) + '에 추가</button>' +
       '</div></div>';
-    // 주간 표: 30분 줄로 맞추고, 7:20처럼 어긋난 시작·끝이 있으면 그 줄만 따로 (예: 7:20~7:30). 겹치는 사람은 이름 가나다순으로 세로로 쌓임
-    var mn = 24 * 60, mx = 0, bounds = {};
-    pool.forEach(function(p){ mn = Math.min(mn, toMin(p.start_time)); mx = Math.max(mx, toMin(p.end_time)); bounds[toMin(p.start_time)] = 1; bounds[toMin(p.end_time)] = 1; });
-    if (mx > mn){
-      for (var t = Math.ceil(mn / 30) * 30; t <= Math.floor(mx / 30) * 30; t += 30) bounds[t] = 1;
-      var times = Object.keys(bounds).map(Number).sort(function(x, y){ return x - y; });
-      html += '<div class="group-title">주간 표 (옆으로 밀어 보세요)</div><div class="card" style="overflow-x:auto"><table class="grid"><tr><th></th>' + days.map(function(d){ return '<th' + (d === day ? ' class="on"' : '') + '>' + WD[wdOf(d)] + '<br>' + dateObj(d).getDate() + '</th>'; }).join('') + '</tr>';
-      var byDay = days.map(function(d){ return shiftsOn(sch, b, d); });
-      for (var i = 0; i < times.length - 1; i++){
-        var rs = times[i], re = times[i + 1];
-        html += '<tr><th>' + fromMin(rs) + (re - rs !== 30 ? '<br><span style="font-weight:400">~' + fromMin(re) + '</span>' : '') + '</th>';
-        byDay.forEach(function(list, di){
-          var cells = list.filter(function(r){ return toMin(r.start) < re && rs < toMin(r.end) && r.kind !== 'off'; }).sort(function(a, b){
-            var na = a.kind === 'sub' ? a.subName : a.name, nb = b.kind === 'sub' ? b.subName : b.name;
-            return na.localeCompare(nb);
-          }).map(function(r){
-            var onBreak = r.brk && toMin(r.brk.split('~')[0]) < re && rs < toMin(r.brk.split('~')[1]);
-            var who = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId;
-            var nm = r.kind === 'sub' ? r.subName : r.name;
-            var bg = onBreak || r.kind === 'covering' || r.kind === 'work' ? '' : 'background:' + col(who) + ';';
-            var pick = isOwner() && r.kind === 'normal' && !onBreak;
-            var attrs = (bg || pick) ? ' style="' + bg + (pick ? 'cursor:pointer;' : '') + '"' : '';
-            var act = pick ? ' data-act="chip-pick" data-pattern="' + esc(r.patternId) + '"' : '';
-            return '<span class="chip ' + (onBreak ? 'brk' : r.kind) + '"' + attrs + act + '>' + esc(onBreak ? '휴게' : nm.replace(/\s/g, '').slice(0, 4)) + '</span>';
-          });
-          html += '<td' + (days[di] === day ? ' class="on"' : '') + '>' + cells.join('') + '</td>';
-        });
-        html += '</tr>';
-      }
-      html += '</table></div>';
-      if (isOwner()){
-        var pickPeople = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || (!s.branch_id && s.role !== 'owner') || pool.some(function(p){ return p.staff_id === s.id; })); });
-        html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px">이 근무, 누구로 바꿀까요?</div><div class="inline" style="flex-wrap:wrap;gap:6px">' +
-          pickPeople.map(function(s){ return '<button class="btn sm" data-act="chip-assign" data-staff="' + esc(s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
-          '<button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
-      }
-      html += '<div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게' + (isOwner() ? ' · 사장님은 표에서 이름을 누르면 다른 사람으로 바로 바꿀 수 있어요' : '') + '</div>';
+    // 주간 표: "시간표"(30분×요일, 겹치는 사람은 그날 시작 시간 순으로 고정된 자리에) / "요일별 보기"(하루씩 카드) 두 방식을 스위치로 전환
+    var viewMode = (localStorage.getItem('bn_sched_view') || 'grid');
+    html += '<div class="group-title inline" style="justify-content:space-between"><span>주간 표' + (viewMode === 'grid' ? ' <span class="muted" style="font-weight:400">(옆으로 밀어 보세요)</span>' : '') + '</span><span class="tabs" style="margin:0"><span class="tab' + (viewMode === 'grid' ? ' on' : '') + '" data-act="sched-view" data-mode="grid">시간표</span><span class="tab' + (viewMode === 'daylist' ? ' on' : '') + '" data-act="sched-view" data-mode="daylist">요일별 보기</span></span></div>';
+    var byDay = days.map(function(d){ return shiftsOn(sch, b, d); });
+    // 그날 시작 시간이 빠른 사람부터 1번 자리, 겹치지 않게 되면(예: 오픈이 끝나면) 그 자리를 다음 사람이 이어받음
+    function assignLanes(list){
+      var sorted = list.filter(function(r){ return r.kind !== 'off'; }).slice().sort(function(a, b){ return toMin(a.start) - toMin(b.start); });
+      var laneEnd = [];
+      sorted.forEach(function(r){
+        var lane = -1;
+        for (var i = 0; i < laneEnd.length; i++){ if (laneEnd[i] <= toMin(r.start)){ lane = i; break; } }
+        if (lane === -1){ lane = laneEnd.length; laneEnd.push(0); }
+        laneEnd[lane] = toMin(r.end);
+        r.lane = lane;
+      });
+      return { list: sorted, lanes: Math.max(1, laneEnd.length) };
     }
+    var byDayLanes = byDay.map(assignLanes);
+
+    if (viewMode === 'grid'){
+      var mn = 24 * 60, mx = 0, bounds = {};
+      pool.forEach(function(p){ mn = Math.min(mn, toMin(p.start_time)); mx = Math.max(mx, toMin(p.end_time)); bounds[toMin(p.start_time)] = 1; bounds[toMin(p.end_time)] = 1; });
+      if (mx > mn){
+        for (var t = Math.ceil(mn / 30) * 30; t <= Math.floor(mx / 30) * 30; t += 30) bounds[t] = 1;
+        var times = Object.keys(bounds).map(Number).sort(function(x, y){ return x - y; });
+        html += '<div class="card" style="overflow-x:auto"><table class="grid"><tr><th></th>' + days.map(function(d, di){ return '<th' + (d === day ? ' class="on"' : '') + (byDayLanes[di].lanes > 1 ? ' colspan="' + byDayLanes[di].lanes + '"' : '') + '>' + WD[wdOf(d)] + '<br>' + dateObj(d).getDate() + '</th>'; }).join('') + '</tr>';
+        for (var i = 0; i < times.length - 1; i++){
+          var rs = times[i], re = times[i + 1];
+          html += '<tr><th>' + fromMin(rs) + (re - rs !== 30 ? '<br><span style="font-weight:400">~' + fromMin(re) + '</span>' : '') + '</th>';
+          byDayLanes.forEach(function(dl, di){
+            var active = dl.list.filter(function(r){ return toMin(r.start) < re && rs < toMin(r.end); });
+            for (var ln = 0; ln < dl.lanes; ln++){
+              var r = active.filter(function(x){ return x.lane === ln; })[0];
+              if (!r){ html += '<td' + (days[di] === day ? ' class="on"' : '') + '></td>'; continue; }
+              var onBreak = r.brk && toMin(r.brk.split('~')[0]) < re && rs < toMin(r.brk.split('~')[1]);
+              var who = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId;
+              var nm = r.kind === 'sub' ? r.subName : r.name;
+              var bg = onBreak || r.kind === 'covering' || r.kind === 'work' ? '' : 'background:' + col(who) + ';';
+              var pick = isOwner() && r.kind === 'normal' && !onBreak;
+              var attrs = (bg || pick) ? ' style="' + bg + (pick ? 'cursor:pointer;' : '') + '"' : '';
+              var act = pick ? ' data-act="chip-pick" data-pattern="' + esc(r.patternId) + '"' : '';
+              html += '<td' + (days[di] === day ? ' class="on"' : '') + '><span class="chip ' + (onBreak ? 'brk' : r.kind) + '"' + attrs + act + '>' + esc(onBreak ? '휴게' : nm.replace(/\s/g, '').slice(0, 4)) + '</span></td>';
+            }
+          });
+          html += '</tr>';
+        }
+        html += '</table></div>';
+      }
+    } else {
+      var anyWeek = false;
+      days.forEach(function(d, di){
+        var dayRows = byDayLanes[di].list;
+        if (dayRows.length) anyWeek = true;
+        html += '<div class="card section" style="margin-bottom:8px"><div class="sec-h">' + esc(fmtDateK(d)) + (d === todayStr() ? ' · 오늘' : '') + '<span class="sp"></span>' + dayRows.length + '명</div>';
+        if (!dayRows.length) html += '<div class="empty">근무 없음</div>';
+        dayRows.forEach(function(r){
+          var who = r.kind === 'sub' ? '<span class="dot" style="background:' + col(r.req.sub_staff_id) + '"></span><s style="color:var(--ink-faint)">' + esc(r.name) + '</s> → ' + esc(r.subName) : '<span class="dot" style="background:' + col(r.staffId) + '"></span>' + esc(r.name);
+          var pick = isOwner() && r.kind === 'normal';
+          var badge = pick ? '<span class="badge muted" data-act="chip-pick" data-pattern="' + esc(r.patternId) + '" style="cursor:pointer">✎ 바꾸기</span>' : kindBadge(r);
+          html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + (r.brk ? ' · 휴게 ' + esc(r.brk) : '') + (r.note ? ' · <i>' + esc(r.note) + '</i>' : '') + '</div></div>' + badge + '</div>';
+        });
+        html += '</div>';
+      });
+    }
+    if (isOwner()){
+      var pickPeople = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || (!s.branch_id && s.role !== 'owner') || pool.some(function(p){ return p.staff_id === s.id; })); });
+      html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px">이 근무, 누구로 바꿀까요?</div><div class="inline" style="flex-wrap:wrap;gap:6px">' +
+        pickPeople.map(function(s){ return '<button class="btn sm" data-act="chip-assign" data-staff="' + esc(s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
+        '<button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
+    }
+    html += '<div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 자리는 그날 시작 시간이 빠른 순 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게' + (isOwner() ? ' · 사장님은 눌러서 다른 사람으로 바로 바꿀 수 있어요' : '') + '</div>';
     // 매장 메모 (입사 예정·퇴사 예정·충원 예정 등)
     html += '<div class="group-title">매장 메모</div>';
     if (isManager()) html += '<div class="form"><textarea class="in" id="bn-text" rows="5" placeholder="입사 예정 · 퇴사 예정 · 충원 예정 · 기타">' + esc(note ? note.text : '') + '</textarea><div class="inline" style="justify-content:space-between"><span class="muted">' + (note ? esc(staffName(note.updated_by)) + ' · ' + md(note.updated_at) : '') + '</span><button class="btn sm primary" data-act="note-save" data-branch="' + esc(b) + '">메모 저장</button></div></div>';
@@ -3456,6 +3489,7 @@
         case 'staff-inactive-toggle': { var sb = el.getAttribute('data-branch'); staffUI.showInactive[sb] = !staffUI.showInactive[sb]; render(); break; }
         // 근무표·휴무·대타
         case 'sched-day': nav('#/schedule/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-date')); break;
+        case 'sched-view': try { localStorage.setItem('bn_sched_view', el.getAttribute('data-mode')); } catch(e){} render(); break;
         case 'myshift-toggle': document.getElementById('msx-' + id).classList.toggle('hidden'); break;
         case 'myshift-save': el.disabled = true; try { await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday'), el.getAttribute('data-staff')); } finally { el.disabled = false; } break;
         case 'addshift-toggle': document.getElementById('asx-' + id).classList.toggle('hidden'); break;
