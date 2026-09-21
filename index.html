@@ -888,7 +888,7 @@
       html += '<div class="card section"><div class="sec-h">' + esc(g.cat.name) + '<span class="sp"></span>' + (isOwner() ? '<button class="btn sm" data-act="cat-rename" data-id="' + esc(g.cat.id || '') + '">이름</button>' : '') + '</div>';
       g.rows.forEach(function(x){
         var ib = map[x.item.id]; var on = ib ? ib.active !== false : false; var t = ib ? num(ib.target_qty) : 0;
-        html += '<div class="item"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname" data-act="item-edit" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + esc(x.item.unit) + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
+        html += '<div class="item"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.name) + ' · <u>고치기</u></div><div class="s" data-act="item-edit-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.unit) + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
       });
       html += '</div>';
     });
@@ -913,13 +913,19 @@
     await db.upsert('ops_item_branch', base.branches.map(function(b){ return { item_id: it.id, branch_id: b.id, target_qty: 0, active: true }; }), 'item_id,branch_id');
     toast('추가했어요'); render();
   }
-  async function itemEdit(id){
+  async function itemEditName(id){
     var it = itemById(id); if (!it) return;
     var name = window.prompt('품목 이름 (비우면 이 품목을 숨겨요)', it.name); if (name === null) return;
     if (!name.trim()){ if (window.confirm('"' + it.name + '"을(를) 모든 매장에서 숨길까요? 기록은 남아요.')){ await db.update('ops_items', { id: id }, { active: false }); toast('숨겼어요'); render(); } return; }
-    var unit = window.prompt('단위', it.unit) || it.unit;
     var note = window.prompt('메모 (요청처 등, 없으면 비움)', it.note || ''); if (note === null) note = it.note;
-    await db.update('ops_items', { id: id }, { name: name.trim(), unit: unit.trim(), note: (note || '').trim() || null });
+    await db.update('ops_items', { id: id }, { name: name.trim(), note: (note || '').trim() || null });
+    toast('고쳤어요'); render();
+  }
+  async function itemEditUnit(id){
+    var it = itemById(id); if (!it) return;
+    var unit = window.prompt('단위 (예: 묶음, 개, box)', it.unit); if (unit === null) return;
+    if (!unit.trim()){ toast('단위를 입력해 주세요'); return; }
+    await db.update('ops_items', { id: id }, { unit: unit.trim() });
     toast('고쳤어요'); render();
   }
   async function catAdd(){ var name = window.prompt('새 분류 이름'); if (!name || !name.trim()) return; await db.insert('ops_categories', { name: name.trim(), sort_order: base.categories.length + 1 }); toast('추가했어요'); render(); }
@@ -3333,7 +3339,8 @@
         case 'tf-save': await transferSave(); break;
         case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
         case 'item-add': await itemAdd(); break;
-        case 'item-edit': await itemEdit(id); break;
+        case 'item-edit-name': await itemEditName(id); break;
+        case 'item-edit-unit': await itemEditUnit(id); break;
         case 'cat-add': await catAdd(); break;
         case 'cat-rename': await catRename(id); break;
         case 'pin-reset': if (window.confirm('비밀번호를 지울까요? 다음에 들어올 때 새로 정하게 돼요.')){ await db.update('manual_staff', { id: id }, { pin: null }); toast('초기화했어요'); render(); } break;

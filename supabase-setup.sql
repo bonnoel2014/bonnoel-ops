@@ -150,7 +150,7 @@ begin
 
   insert into ops_categories (name, sort_order) values ('러스크 봉투 / 제습제', 7) returning id into c;
   insert into ops_items (category_id, name, unit, sort_order) values
-    (c, '러스크 봉투', '묶음', 1), (c, '제습제', '개', 2);
+    (c, '러스크 봉투', '개', 1), (c, '제습제', '개', 2);
 
   insert into ops_categories (name, sort_order) values ('리뷰 스티커', 8) returning id into c;
   insert into ops_items (category_id, name, unit, sort_order) values
