@@ -3265,11 +3265,22 @@
     toast('저장했어요 · 신입 ' + added + '명 · 보건증 ' + healthUpdated + '명 · 입사일 ' + hireUpdated + '명 · 이메일 ' + emailUpdated + '명 · 퇴사 처리 ' + left + '명');
     render();
   }
-  routes['roster-sync'] = async function(){
+  routes['roster-sync'] = async function(params){
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
     var html = topbar('명부 동기화', true, '<button class="btn sm" data-act="rs-refresh">🔄 새로고침</button>');
     html += '<div class="muted" style="margin:4px 4px 10px">근무자 현황 시트에서 <b>머리글 줄(지점·이름·입사일·보건증 만료일·퇴사일)까지 같이</b> 드래그해 복사(Ctrl+C)하면 더 정확해요. 아래에 붙여넣기(Ctrl+V). 지점·이름·입사일·보건증 만료일·퇴사일을 읽고, 이메일이 있으면 급여 설정(명세서 발송용)에만 채워요. 주민번호·주소·전화는 저장하지 않아요. 붙여넣거나 저장할 때마다 직원 명단을 새로 불러오지만, 다른 화면에서 방금 직원을 추가·변경했다면 오른쪽 위 <b>새로고침</b>을 한 번 눌러 주세요.</div>';
+    var rsBranch = pickBranch(params, true);
+    html += branchTabs(rsBranch, true);
+    var rsHealth = healthMap(await loadHealth());
+    var rsPay = {}; (await db.select('ops_pay_profiles')).forEach(function(p){ rsPay[p.staff_id] = p; });
+    var rsList = base.staff.filter(function(s){ return s.role === 'staff' && s.active !== false && (rsBranch === 'all' || s.branch_id === rsBranch); }).sort(function(a, b){ return a.name.localeCompare(b.name, 'ko'); });
+    html += '<div class="group-title">현재 명단 (' + rsList.length + '명)</div><div class="card">';
+    html += rsList.length ? rsList.map(function(s){
+      var hc = rsHealth[s.id] && rsHealth[s.id].confirmed, em = rsPay[s.id] && rsPay[s.id].email;
+      return '<div class="item"><div class="iname"><div class="t">' + esc(s.name) + (rsBranch === 'all' ? ' <span class="badge muted">' + esc(branchName(s.branch_id)) + '</span>' : '') + '</div><div class="s">' + (s.hire_on ? '입사 ' + esc(fmtYmdK(s.hire_on)) + ' · ' : '입사일 없음 · ') + (hc ? '보건증 ' + esc(fmtYmdK(hc.expires_on)) : '보건증 없음') + ' · ' + (em ? esc(em) : '<span class="bad">이메일 없음</span>') + '</div></div></div>';
+    }).join('') : '<div class="empty">근무자가 없어요</div>';
+    html += '</div>';
     html += '<div class="form"><textarea class="in" id="rs-import" rows="4" placeholder="여기에 붙여넣기">' + esc(rsState.importText) + '</textarea>';
     if (rsState.importRows){
       var rows = rsState.importRows, map = healthMap(await loadHealth());
