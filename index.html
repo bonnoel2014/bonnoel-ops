@@ -722,19 +722,23 @@
     html += actorPicker('chk-staff', '누가 세었어요?');
     var groups = groupByCategory(list);
     if (!groups.length) html += '<div class="empty">이 매장에 켜진 품목이 없어요. 비품 설정에서 켜 주세요.</div>';
+    html += '<div style="position:relative;margin:0 4px 10px"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none">🔍</span><input class="in" id="chk-search" placeholder="품목 검색" style="padding-left:34px"></div>';
+    html += '<div id="check-list">';
+    html += '<div class="tabs" style="flex-wrap:wrap;overflow:visible">' + groups.map(function(g){ return '<span class="tab" data-act="cat-jump" data-id="' + esc(g.cat.id || 'none') + '" style="cursor:pointer">' + esc(g.cat.name) + '</span>'; }).join('') + '</div>';
     var doneCount = 0;
     groups.forEach(function(g){
-      html += '<div class="card section"><div class="sec-h">' + esc(g.cat.name) + '</div>';
+      html += '<div class="card section" id="cat-' + esc(g.cat.id || 'none') + '" style="scroll-margin-top:64px"><div class="sec-h">' + esc(g.cat.name) + '</div>';
       g.rows.forEach(function(x){
         var s = m[x.item.id] || {};
         var todayVal = (s.last && isToday(s.last.checked_at)) ? num(s.last.qty) : null;
         if (todayVal != null) doneCount++;
         var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + fmtQ(num(s.last.qty)) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + sub + (x.item.note ? ' · ' + esc(x.item.note) : '') + '</div></div>' +
+        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><div class="iname"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + sub + (x.item.note ? ' · ' + esc(x.item.note) : '') + '</div></div>' +
                 '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + ' placeholder="-"><span class="unit">' + esc(x.item.unit) + '</span></div>';
       });
       html += '</div>';
     });
+    html += '</div>';
     html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="save-check" data-branch="' + esc(b) + '">저장 <span id="cnt">(' + doneCount + '/' + list.length + ')</span></button></div></div>';
     app.innerHTML = html;
     app._checkTotal = list.length;
@@ -976,9 +980,9 @@
     toast('고쳤어요'); render();
   }
   async function catAdd(){ var name = window.prompt('새 분류 이름'); if (!name || !name.trim()) return; await db.insert('ops_categories', { name: name.trim(), sort_order: base.categories.length + 1 }); toast('추가했어요'); render(); }
-  function itemSearchFilter(q){
+  function nameSearchFilter(containerId, q){
     q = (q || '').trim().toLowerCase();
-    var list = document.getElementById('items-list'); if (!list) return;
+    var list = document.getElementById(containerId); if (!list) return;
     list.querySelectorAll('.item').forEach(function(row){ row.style.display = (!q || (row.getAttribute('data-name') || '').indexOf(q) >= 0) ? '' : 'none'; });
     list.querySelectorAll('.card.section').forEach(function(card){
       var any = Array.prototype.some.call(card.querySelectorAll('.item'), function(r){ return r.style.display !== 'none'; });
@@ -986,6 +990,8 @@
     });
     var tabs = list.querySelector('.tabs'); if (tabs) tabs.style.display = q ? 'none' : '';
   }
+  function itemSearchFilter(q){ nameSearchFilter('items-list', q); }
+  function checkSearchFilter(q){ nameSearchFilter('check-list', q); }
   async function catRename(id){ if (!id) return; var c = base.categories.filter(function(x){ return x.id === id; })[0]; var name = window.prompt('분류 이름', c.name); if (!name || !name.trim()) return; await db.update('ops_categories', { id: id }, { name: name.trim() }); render(); }
 
   // ===== 화면: 직원 =====
@@ -3567,6 +3573,7 @@
   app.addEventListener('input', function(e){
     if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
     if (e.target.id === 'item-search'){ itemSearchFilter(e.target.value); return; }
+    if (e.target.id === 'chk-search'){ checkSearchFilter(e.target.value); return; }
     if (e.target.id === 'ch-date'){ checkHistState.date = e.target.value || todayStr(); render(); return; }
     if (/^buy-(list|disc|paid)$/.test(e.target.id || '')){ buyRecalc(buyIdsForm(), e.target.id); return; }
     var bim = /^b[lcp]-(.+)$/.exec(e.target.id || ''); if (bim){ buyRecalc(buyIdsRow(bim[1]), e.target.id); return; }
