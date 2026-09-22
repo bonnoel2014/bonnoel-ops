@@ -866,9 +866,9 @@
     var any = false, noTarget = 0, noCheck = 0;
     ids.forEach(function(b){
       var m = st.byBranch[b];
-      var rows = [], pendingRows = [];
-      for (var k in m){ var s = m[k]; if (s.target <= 0) noTarget++; else if (s.est == null) noCheck++; if (s.shortage > 0) rows.push(s); else if (s.pending > 0) pendingRows.push(s); }
-      if (!rows.length && !pendingRows.length) return;
+      var rows = [], pendingRows = [], noteRows = [];
+      for (var k in m){ var s = m[k]; if (s.target <= 0) noTarget++; else if (s.est == null) noCheck++; if (s.shortage > 0) rows.push(s); else if (s.pending > 0){ if (s.item.note) noteRows.push(s); else pendingRows.push(s); } }
+      if (!rows.length && !pendingRows.length && !noteRows.length) return;
       any = true;
       html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + '<span class="sp"></span>' + (rows.length ? '<button class="btn sm" data-act="copy" data-branch="' + esc(b) + '">카톡용 복사</button>' : '<span class="badge ok">부족 없음</span>') + '</div>';
       rows.forEach(function(s){
@@ -885,7 +885,12 @@
       });
       pendingRows.forEach(function(s){
         var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + (s.item.note ? ' · ' + esc(s.item.note) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>' + (s.item.note ? '메모 고치기' : '+ 메모(대체품·품절 등)') + '</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>+ 메모(대체품·품절 등)</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
+      });
+      if (noteRows.length) html += '<div class="sec-h" style="background:var(--surface-sunken);font-size:12px">기타 (메모 있음)</div>';
+      noteRows.forEach(function(s){
+        var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + ' · ' + esc(s.item.note) + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>메모 고치기</u></span></div>' : '') + '</div><span class="badge muted">확인 필요</span></div>';
       });
       html += '</div>';
     });
