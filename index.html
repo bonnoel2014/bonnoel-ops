@@ -2911,7 +2911,15 @@
       if (disc == null && list != null) disc = paid != null ? list - paid : Math.round(list * rate / 100);
       if (paid == null && list != null) paid = list - disc;
       var defBranch = buyGuessBranch(o) || session.branchId || (base.branches[0] || {}).id;
-      if (isOwner()) html += '<div><label>실제 구매한 사람 이름</label><input class="in" id="buy-staff-name" list="buy-staff-dl" value="' + esc(o.buyer_name || session.name) + '" placeholder="이름 입력"><datalist id="buy-staff-dl">' + base.staff.filter(function(s){ return s.active !== false; }).map(function(s){ return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist><div class="muted">등록된 직원이면 목록에서 골라지고, 베이커처럼 앱에 등록 안 된 사람이면 이름만 그대로 써 주세요.</div></div>';
+      if (isOwner()){
+        var curBuyerName = o.buyer_name || session.name;
+        var curBuyerMatch = base.staff.filter(function(s){ return s.active !== false && s.name === curBuyerName; })[0];
+        html += '<div><label>실제 구매한 사람</label><select class="in" id="buy-staff-sel">' +
+          base.staff.filter(function(s){ return s.active !== false; }).sort(function(a, b){ return a.name.localeCompare(b.name, 'ko'); }).map(function(s){ return '<option value="' + esc(s.name) + '"' + (curBuyerMatch && curBuyerMatch.id === s.id ? ' selected' : '') + '>' + esc(s.name) + (s.id === session.staffId ? ' (본인)' : '') + '</option>'; }).join('') +
+          '<option value=""' + (!curBuyerMatch ? ' selected' : '') + '>✏️ 직접 입력 (베이커 등 등록 안 된 사람)</option></select>' +
+          '<input class="in" id="buy-staff-name" style="margin-top:6px" value="' + esc(curBuyerName) + '" placeholder="이름 입력"' + (curBuyerMatch ? ' hidden' : '') + '>' +
+          '<div class="muted">등록된 직원이면 목록에서 고르면 되고, 베이커처럼 앱에 등록 안 된 사람이면 "직접 입력"을 고른 뒤 이름을 써 주세요.</div></div>';
+      }
       html += '<div class="grid2"><div><label>날짜</label><input class="in" type="date" id="buy-date" value="' + esc(o.bought_on || todayStr()) + '"></div><div><label>어느 매장에서?</label><select class="in" id="buy-branch">' + buyBranchOptions(defBranch) + '</select></div></div>';
       html += '<div><label>결제 방식</label><select class="in" id="buy-method">' + buyMethodOptions(method) + '</select></div>';
       html += '<div class="grid2"><div><label>정가 합계(원)</label><input class="in" type="number" inputmode="numeric" id="buy-list" value="' + (list != null ? list : '') + '" placeholder="5500"></div><div><label>할인(원)</label><input class="in" type="number" inputmode="numeric" id="buy-disc" value="' + (disc != null ? disc : '') + '" placeholder="자동"></div></div>';
@@ -3738,6 +3746,12 @@
     if (e.target.id === 'exp-file'){ await expPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'buy-staff-sel'){
+      var bsn = document.getElementById('buy-staff-name');
+      if (e.target.value){ bsn.value = e.target.value; bsn.hidden = true; }
+      else { bsn.hidden = false; bsn.value = ''; bsn.focus(); }
+      return;
+    }
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-file'){ await tfPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-item'){ var tfu = document.getElementById('tf-unit'); if (tfu) tfu.textContent = (e.target.selectedOptions[0] && e.target.selectedOptions[0].getAttribute('data-unit')) || ''; return; }
