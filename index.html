@@ -2924,7 +2924,7 @@
       html += '<div class="grid2"><div><label>날짜</label><input class="in" type="date" id="buy-date" value="' + esc(o.bought_on || todayStr()) + '"></div><div><label>어느 매장에서?</label><select class="in" id="buy-branch">' + buyBranchOptions(defBranch) + '</select></div></div>';
       html += '<div><label>결제 방식</label><select class="in" id="buy-method">' + buyMethodOptions(method) + '</select></div>';
       html += '<div class="grid2"><div><label>정가 합계(원)</label><input class="in" type="number" inputmode="numeric" id="buy-list" value="' + (list != null ? list : '') + '" placeholder="5500"></div><div><label>할인(원)</label><input class="in" type="number" inputmode="numeric" id="buy-disc" value="' + (disc != null ? disc : '') + '" placeholder="자동"></div></div>';
-      html += '<div class="grid2"><div><label>낸 금액(원)</label><input class="in" type="number" inputmode="numeric" id="buy-paid" value="' + (paid != null ? paid : '') + '" placeholder="자동"></div><div><label>산 것</label><input class="in" id="buy-items" value="' + esc(o.items || '') + '" placeholder="예: 버터프레첼 1개"></div></div>';
+      html += '<div><label>낸 금액(원)</label><input class="in" type="number" inputmode="numeric" id="buy-paid" value="' + (paid != null ? paid : '') + '" placeholder="자동"></div>';
       html += '<div class="note danger hidden" id="buy-warn"></div>';
       html += '<div><label>메모 (선택)</label><input class="in" id="buy-memo" placeholder="예: 가족 선물"></div>';
       html += '<div class="muted">결제 방식이나 정가를 바꾸면 할인·낸 금액이 자동으로 다시 계산돼요. 한 영수증에 전날빵(50%)·당일빵(20·30%)처럼 <b>할인율이 섞여 있으면</b>, 결제 방식은 있는 대로 고르고 <b>할인(원) 칸에 영수증에 적힌 할인금액 합계를 직접</b> 넣으면 낸 금액이 자동으로 맞춰져요.</div>';
