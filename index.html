@@ -960,7 +960,7 @@
       '<button class="btn primary" data-act="tf-save">보냈다고 기록</button></div>';
     html += '<div class="card section"><div class="sec-h">최근 이동</div>';
     if (!list.length) html += '<div class="empty">아직 없어요</div>';
-    list.forEach(function(t){ var it = itemById(t.item_id) || {}; html += '<div class="hist"><span>' + md(t.created_at) + '</span><span class="sp">' + esc(branchName(t.from_branch)) + ' → ' + esc(branchName(t.to_branch)) + ' · ' + esc(it.name) + ' ' + fmtQ(num(t.qty)) + esc(it.unit || '') + (t.memo ? ' · ' + esc(t.memo) : '') + '</span>' + (t.photo_path ? '<button class="btn sm" data-act="tf-photo" data-path="' + esc(t.photo_path) + '">사진</button>' : '') + (t.received_at ? '<span class="badge ok">받음 ' + fmtQ(num(t.received_qty)) + '</span>' : '<span class="badge warn">가는 중</span>') + '</div>'; });
+    list.forEach(function(t){ var it = itemById(t.item_id) || {}; html += '<div class="hist"><span>' + md(t.created_at) + '</span><span class="sp">' + esc(branchName(t.from_branch)) + ' → ' + esc(branchName(t.to_branch)) + ' · ' + esc(it.name) + ' ' + fmtQ(num(t.qty)) + esc(it.unit || '') + (t.memo ? ' · ' + esc(t.memo) : '') + '</span>' + (t.photo_path ? '<button class="btn sm" data-act="tf-photo" data-path="' + esc(t.photo_path) + '">사진</button>' : '') + (t.received_at ? '<span class="badge ok">받음 ' + fmtQ(num(t.received_qty)) + '</span>' : '<span class="badge warn">가는 중</span><button class="btn sm danger" data-act="tf-del" data-id="' + esc(t.id) + '">취소</button>') + '</div>'; });
     html += '</div>';
     app.innerHTML = html;
   };
@@ -3663,6 +3663,7 @@
         case 'recv-bad': { var q = num(document.getElementById('rq-' + id).value); if (q == null){ toast('실제 수량을 넣어 주세요'); break; } await receive(el.getAttribute('data-kind'), id, q, true); break; }
         case 'tf-save': await transferSave(); break;
         case 'tf-retake': tfState.photo = null; render(); break;
+        case 'tf-del': if (window.confirm('이 이동 기록을 취소할까요?')){ await db.remove('ops_transfers', { id: id }); toast('취소했어요'); render(); } break;
         case 'tf-photo': { var tu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(tu, '_blank'); break; }
         case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
         case 'item-add': await itemAdd(); break;
