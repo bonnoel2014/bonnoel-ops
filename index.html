@@ -2831,6 +2831,7 @@
     { id: 'card', name: '카드', rate: 20 },
     { id: 'seoulpay', name: '서울페이', rate: 20 },
     { id: 'onnuri', name: '온누리상품권', rate: 20 },
+    { id: 'stale50', name: '할인빵(전날) 50%', rate: 50 },
     { id: 'other', name: '기타 (할인 없음)', rate: 0 }
   ];
   function buyMethod(id){ return BUY_METHODS.filter(function(m){ return m.id === id; })[0] || null; }
@@ -2893,7 +2894,7 @@
     var html = topbar('직원 구매', true, whoChip());
     html += '<div class="form">';
     if (!st.photo){
-      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 · 카카오페이 <b>30%</b><br>카드 · 서울페이 · 온누리 · 현금영수증 끊은 현금 <b>20%</b></div>';
+      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 · 카카오페이 <b>30%</b><br>카드 · 서울페이 · 온누리 · 현금영수증 끊은 현금 <b>20%</b><br>전날 남은 할인빵 <b>50%</b></div>';
       html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="buy-file" class="hidden"></label>';
       html += '<div class="muted">계산한 영수증 사진을 올리면 날짜·정가·할인·낸 금액을 자동으로 읽어요. 틀리면 고치고 저장하면 돼요. 사진이 있으면 증빙으로 남아요. 영수증 한 장에 한 번.</div>';
       html += '<div class="muted">화면 캡처(스크린샷)를 복사해 뒀으면 파일로 안 저장해도 돼요. 이 화면에서 <b>Ctrl+V</b> 눌러서 바로 붙여넣기 하세요.</div>';
@@ -2926,7 +2927,7 @@
       html += '<div class="grid2"><div><label>낸 금액(원)</label><input class="in" type="number" inputmode="numeric" id="buy-paid" value="' + (paid != null ? paid : '') + '" placeholder="자동"></div><div><label>산 것</label><input class="in" id="buy-items" value="' + esc(o.items || '') + '" placeholder="예: 버터프레첼 1개"></div></div>';
       html += '<div class="note danger hidden" id="buy-warn"></div>';
       html += '<div><label>메모 (선택)</label><input class="in" id="buy-memo" placeholder="예: 가족 선물"></div>';
-      html += '<div class="muted">결제 방식이나 정가를 바꾸면 할인·낸 금액이 자동으로 다시 계산돼요.</div>';
+      html += '<div class="muted">결제 방식이나 정가를 바꾸면 할인·낸 금액이 자동으로 다시 계산돼요. 한 영수증에 전날빵(50%)·당일빵(20·30%)처럼 <b>할인율이 섞여 있으면</b>, 결제 방식은 있는 대로 고르고 <b>할인(원) 칸에 영수증에 적힌 할인금액 합계를 직접</b> 넣으면 낸 금액이 자동으로 맞춰져요.</div>';
     }
     html += '</div>';
     var ym = monthOf(todayStr());
