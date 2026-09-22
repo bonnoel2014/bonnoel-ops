@@ -475,7 +475,7 @@
           if (t.from_branch === b && last && t.created_at > last.checked_at && est != null) est -= num(t.qty) || 0;
         });
         if (est != null && est < 0) est = 0;   // 보낸 게 종이 재고보다 많으면 0으로 봄
-        var shortage = (est != null && x.target > 0 && !it.unlimited) ? Math.max(0, x.target - est - pending) : 0;
+        var shortage = (est != null && x.target > 0 && !it.unlimited && !(last && last.unlimited)) ? Math.max(0, x.target - est - pending) : 0;
         m[it.id] = { item: it, target: x.target, last: last, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
       });
       out[b] = m;
@@ -726,7 +726,7 @@
     var m = st.byBranch[b];
     var list = itemsForBranch(b);
     var html = topbar('비품 체크 · ' + branchName(b), true) + branchTabs(b, false);
-    html += '<div class="muted" style="margin:4px 4px 10px">지금 매장에 있는 수량을 넣어 주세요. 안 센 건 비워 두면 돼요. 소수점(0.5)도 돼요.</div>';
+    html += '<div class="muted" style="margin:4px 4px 10px">지금 매장에 있는 수량을 넣어 주세요. 안 센 건 비워 두면 돼요. 소수점(0.5)도 돼요. 세기 너무 많으면 α(충분함)를 체크해요.</div>';
     html += '<div style="margin:0 4px 10px"><a href="#/checkhist/' + esc(b) + '" style="text-decoration:underline">📅 지난 기록 보기</a></div>';
     html += actorPicker('chk-staff', '누가 세었어요?');
     var groups = groupByCategory(list);
@@ -739,11 +739,19 @@
       html += '<div class="card section" id="cat-' + esc(g.cat.id || 'none') + '" style="scroll-margin-top:64px"><div class="sec-h">' + esc(g.cat.name) + '</div>';
       g.rows.forEach(function(x){
         var s = m[x.item.id] || {};
-        var todayVal = (s.last && isToday(s.last.checked_at)) ? num(s.last.qty) : null;
-        if (todayVal != null) doneCount++;
-        var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + fmtQ(num(s.last.qty)) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
+        var todayChecked = s.last && isToday(s.last.checked_at);
+        var todayUnlimited = !!(todayChecked && s.last.unlimited);
+        var todayVal = (todayChecked && !s.last.unlimited) ? num(s.last.qty) : null;
+        if (todayVal != null || todayUnlimited) doneCount++;
+        var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + (s.last.unlimited ? '충분(α)' : fmtQ(num(s.last.qty))) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
+        var hasAlt = x.item.count_unit && x.item.count_per_unit;
         html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><div class="iname"><div class="t">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + '</div><div class="s">' + sub + (x.item.note ? ' · ' + esc(x.item.note) : '') + '</div></div>' +
-                '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + ' placeholder="-"><span class="unit">' + esc(x.item.unit) + '</span></div>';
+                '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
+                (hasAlt ? '<input class="in ct-alt" type="number" step="1" min="0" placeholder="' + esc(x.item.count_unit) + '" data-item="' + esc(x.item.id) + '" data-factor="' + x.item.count_per_unit + '" style="width:52px;padding:8px 4px;text-align:center" title="' + esc(x.item.count_per_unit + x.item.count_unit + ' = ' + x.item.unit + ' 1') + '">' : '') +
+                '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + (todayUnlimited ? ' disabled' : '') + ' placeholder="-">' +
+                '<span class="unit">' + esc(x.item.unit) + '</span>' +
+                '<label class="muted" style="display:flex;align-items:center;gap:2px;font-size:12px;cursor:pointer" title="세기 어려울 만큼 충분함"><input type="checkbox" class="qty-unlimited" data-item="' + esc(x.item.id) + '" data-orig="' + (todayUnlimited ? '1' : '') + '"' + (todayUnlimited ? ' checked' : '') + '>α</label>' +
+                '</div></div>';
       });
       html += '</div>';
     });
@@ -752,15 +760,29 @@
     app.innerHTML = html;
     app._checkTotal = list.length;
   };
+  function checkUpdateCount(){
+    var c = document.getElementById('cnt'); if (!c) return;
+    var n = app.querySelectorAll('.qty.filled').length + app.querySelectorAll('.qty-unlimited:checked').length;
+    c.textContent = '(' + n + '/' + (app._checkTotal || 0) + ')';
+  }
   async function saveCheck(b){
     var chkSel = document.getElementById('chk-staff');
     var staffId = (isOwner() && chkSel && chkSel.value) || session.staffId;
     var rows = [];
     app.querySelectorAll('.qty').forEach(function(inp){
+      var itemId = inp.getAttribute('data-item');
+      var cb = app.querySelector('.qty-unlimited[data-item="' + itemId + '"]');
+      var unlimited = cb ? cb.checked : false;
+      var origUnlimited = cb ? cb.getAttribute('data-orig') === '1' : false;
+      if (unlimited){
+        if (origUnlimited) return;   // 오늘 이미 α(충분)로 기록됨
+        rows.push({ branch_id: b, item_id: itemId, qty: 0, unlimited: true, staff_id: staffId, checked_at: new Date().toISOString() });
+        return;
+      }
       var v = num(inp.value); if (v == null || inp.value === '') return;
-      var orig = inp.getAttribute('data-orig'); var origNum = orig ? num(orig) : null;
+      var orig = inp.getAttribute('data-orig'); var origNum = (orig && !origUnlimited) ? num(orig) : null;
       if (origNum != null && v === origNum) return;   // 오늘 이미 이 값으로 기록됨 · 다시 안 넣어도 돼요
-      rows.push({ branch_id: b, item_id: inp.getAttribute('data-item'), qty: v, staff_id: staffId, checked_at: new Date().toISOString() });
+      rows.push({ branch_id: b, item_id: itemId, qty: v, unlimited: false, staff_id: staffId, checked_at: new Date().toISOString() });
     });
     if (!rows.length){ toast('새로 넣거나 바뀐 수량이 없어요'); return; }
     await db.insert('ops_stock_checks', rows);
@@ -792,7 +814,7 @@
       g.rows.forEach(function(x){
         var r = byItem[x.item.id];
         if (r) any = true;
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + (r ? fmtQ(num(r.qty)) + ' ' + esc(x.item.unit) + ' · ' + esc(staffName(r.staff_id)) + ' · ' + md(r.checked_at) : '<span class="muted">기록 없음</span>') + '</div></div></div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(x.item.name) + '</div><div class="s">' + (r ? (r.unlimited ? '충분(α)' : fmtQ(num(r.qty)) + ' ' + esc(x.item.unit)) + ' · ' + esc(staffName(r.staff_id)) + ' · ' + md(r.checked_at) : '<span class="muted">기록 없음</span>') + '</div></div></div>';
       });
       html += '</div>';
     });
@@ -964,7 +986,7 @@
       html += '<div class="card section" id="cat-' + esc(g.cat.id || 'none') + '" style="scroll-margin-top:64px"><div class="sec-h">' + esc(g.cat.name) + '<span class="sp"></span>' + (isOwner() ? '<button class="btn sm" data-act="cat-rename" data-id="' + esc(g.cat.id || '') + '">이름</button>' : '') + '</div>';
       g.rows.forEach(function(x){
         var ib = map[x.item.id]; var on = ib ? ib.active !== false : false; var t = ib ? num(ib.target_qty) : 0;
-        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + ' · <u>고치기</u></div><div class="s" data-act="item-edit-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.unit) + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div><div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-toggle-unlimited" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.unlimited ? 'α 해제' : 'α 무제한으로') + '</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
+        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + ' · <u>고치기</u></div><div class="s" data-act="item-edit-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.unit) + (x.item.count_unit ? ' (' + esc(x.item.count_per_unit + x.item.count_unit) + '=' + esc(x.item.unit) + ' 1)' : '') + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div><div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-toggle-unlimited" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.unlimited ? 'α 해제' : 'α 무제한으로') + '</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
       });
       html += '</div>';
     });
@@ -1042,7 +1064,16 @@
     var it = itemById(id); if (!it) return;
     var unit = window.prompt('단위 (예: 묶음, 개, box)', it.unit); if (unit === null) return;
     if (!unit.trim()){ toast('단위를 입력해 주세요'); return; }
-    await db.update('ops_items', { id: id }, { unit: unit.trim() });
+    var altDefault = it.count_unit ? (it.count_unit + ',' + (it.count_per_unit || '')) : '';
+    var alt = window.prompt('세기 쉬운 다른 단위가 있나요? "단위,갯수" 형식으로 (예: 박스,2 → 박스 2개 = ' + unit.trim() + ' 1개). 없으면 비워 두세요', altDefault);
+    var countUnit = null, countPerUnit = null;
+    if (alt !== null && alt.trim()){
+      var parts = alt.split(',');
+      countUnit = (parts[0] || '').trim() || null;
+      countPerUnit = num(parts[1]) || null;
+      if (!countUnit || !countPerUnit || countPerUnit <= 0){ toast('형식이 맞지 않아 세는 단위는 저장하지 않았어요 (예: 박스,2)'); countUnit = null; countPerUnit = null; }
+    }
+    await db.update('ops_items', { id: id }, { unit: unit.trim(), count_unit: countUnit, count_per_unit: countPerUnit });
     toast('고쳤어요'); render();
   }
   async function catAdd(){ var name = window.prompt('새 분류 이름'); if (!name || !name.trim()) return; await db.insert('ops_categories', { name: name.trim(), sort_order: base.categories.length + 1 }); toast('추가했어요'); render(); }
@@ -3786,6 +3817,15 @@
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-file'){ await tfPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-item'){ var tfu = document.getElementById('tf-unit'); if (tfu) tfu.textContent = (e.target.selectedOptions[0] && e.target.selectedOptions[0].getAttribute('data-unit')) || ''; return; }
+    if (e.target.classList.contains('qty-unlimited')){
+      var uItemId = e.target.getAttribute('data-item');
+      var uQtyInp = app.querySelector('.qty[data-item="' + uItemId + '"]');
+      var uAltInp = app.querySelector('.ct-alt[data-item="' + uItemId + '"]');
+      if (uQtyInp){ uQtyInp.disabled = e.target.checked; if (e.target.checked){ uQtyInp.value = ''; uQtyInp.classList.remove('filled'); } }
+      if (uAltInp){ uAltInp.disabled = e.target.checked; if (e.target.checked) uAltInp.value = ''; }
+      checkUpdateCount();
+      return;
+    }
     if (e.target.classList.contains('hc-manual-file')){ await hcAdminPhotoPicked(e.target.getAttribute('data-staff'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('subsidy-checklist-file')){ await subsidyChecklistFilePicked(e.target.getAttribute('data-case'), +e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'sc-log-file'){ await subsidyLogFilePicked(e.target.files && e.target.files[0]); return; }
@@ -3820,9 +3860,19 @@
     if (e.target.id === 'ch-date'){ checkHistState.date = e.target.value || todayStr(); render(); return; }
     if (/^buy-(list|disc|paid)$/.test(e.target.id || '')){ buyRecalc(buyIdsForm(), e.target.id); return; }
     var bim = /^b[lcp]-(.+)$/.exec(e.target.id || ''); if (bim){ buyRecalc(buyIdsRow(bim[1]), e.target.id); return; }
+    if (e.target.classList.contains('ct-alt')){
+      var altItemId = e.target.getAttribute('data-item'), factor = num(e.target.getAttribute('data-factor')) || 1;
+      var qtyInp = app.querySelector('.qty[data-item="' + altItemId + '"]');
+      if (qtyInp){
+        var altV = num(e.target.value);
+        qtyInp.value = (altV == null || e.target.value === '') ? '' : String(Math.round((altV / factor) * 100) / 100);
+        qtyInp.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return;
+    }
     if (current.route !== 'check' || !e.target.classList.contains('qty')) return;
     e.target.classList.toggle('filled', e.target.value !== '');
-    var c = document.getElementById('cnt'); if (c) c.textContent = '(' + app.querySelectorAll('.qty.filled').length + '/' + (app._checkTotal || 0) + ')';
+    checkUpdateCount();
   });
 
   // ===== 시작 =====
