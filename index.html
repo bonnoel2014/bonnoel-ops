@@ -874,8 +874,9 @@
     app.innerHTML = html;
     app._stock = st;
   };
-  function itemOptions(selectedId){
-    return groupByCategory(base.items.filter(function(i){ return i.active !== false; }).map(function(i){ return { item: i }; })).map(function(g){ return '<optgroup label="' + esc(g.cat.name) + '">' + g.rows.map(function(x){ return '<option value="' + esc(x.item.id) + '" data-unit="' + esc(x.item.unit) + '"' + (x.item.id === selectedId ? ' selected' : '') + '>' + esc(x.item.name) + ' (' + esc(x.item.unit) + ')</option>'; }).join('') + '</optgroup>'; }).join('');
+  function itemOptions(selectedId, q){
+    q = (q || '').trim().toLowerCase();
+    return groupByCategory(base.items.filter(function(i){ return i.active !== false && (!q || i.name.toLowerCase().indexOf(q) >= 0); }).map(function(i){ return { item: i }; })).map(function(g){ return '<optgroup label="' + esc(g.cat.name) + '">' + g.rows.map(function(x){ return '<option value="' + esc(x.item.id) + '" data-unit="' + esc(x.item.unit) + '"' + (x.item.id === selectedId ? ' selected' : '') + '>' + esc(x.item.name) + ' (' + esc(x.item.unit) + ')</option>'; }).join('') + '</optgroup>'; }).join('');
   }
   async function orderSave(b, itemId, qty, days, memo){
     if (qty == null || qty <= 0){ toast('수량을 넣어 주세요'); return; }
@@ -958,7 +959,7 @@
     var html = topbar('점간 이동', true);
     html += '<div class="form">' +
       '<div class="grid2"><div><label>보내는 매장</label><select class="in" id="tf-from">' + opts.replace('value="' + esc(session.branchId) + '"', 'value="' + esc(session.branchId) + '" selected') + '</select></div><div><label>받는 매장</label><select class="in" id="tf-to">' + opts + '</select></div></div>' +
-      '<div><label>품목</label><div style="position:relative;margin-bottom:6px"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none">🔍</span><input class="in" id="tf-item-search" placeholder="품목 검색" style="padding-left:34px"></div><select class="in" id="tf-item">' + itemOptions() + '</select></div>' +
+      '<div><label>품목</label><div style="position:relative;margin-bottom:6px"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none">🔍</span><input class="in" id="tf-item-search" placeholder="품목 검색" style="padding-left:34px"></div><select class="in" id="tf-item">' + itemOptions() + '</select><div style="text-align:right;margin-top:4px"><span class="muted" data-act="tf-item-add" style="cursor:pointer;text-decoration:underline">+ 목록에 없는 품목 추가</span></div></div>' +
       '<div class="grid2"><div><label>수량</label><div style="display:flex;align-items:center;gap:8px"><input class="in" id="tf-qty" type="number" step="0.5" min="0" style="flex:1"><span class="unit" id="tf-unit">' + esc(defaultUnit) + '</span></div></div><div><label>메모 (어디 뒀는지 등)</label><input class="in" id="tf-memo" placeholder="러스크쪽 서랍"></div></div>' +
       '<div><label>사진 (선택, 화면 캡처는 Ctrl+V로 붙여넣기도 돼요)</label>' + (tfState.photo ?
         '<div><img src="' + tfState.photo.dataUrl + '" alt="사진" style="width:100%;max-height:220px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)"><div style="text-align:center"><span class="muted" data-act="tf-retake" style="cursor:pointer;text-decoration:underline">다른 사진으로</span></div></div>'
@@ -984,6 +985,24 @@
     if (!file) return;
     try { tfState.photo = await resizeImage(file, 1600); } catch(e){ toast(e.message || '사진을 열 수 없어요'); return; }
     render();
+  }
+  async function tfItemAdd(){
+    var name = window.prompt('새 품목 이름'); if (!name || !name.trim()) return;
+    var opts = base.categories.map(function(c, i){ return (i + 1) + '. ' + c.name; }).join('\n');
+    var input = window.prompt('분류를 골라 주세요 (번호)\n' + opts, '1');
+    var idx = parseInt(input, 10);
+    if (!idx || idx < 1 || idx > base.categories.length){ toast('분류 번호를 정확히 입력해 주세요'); return; }
+    var unit = window.prompt('단위 (예: 묶음, 개, box)', '묶음'); if (!unit || !unit.trim()){ toast('단위를 입력해 주세요'); return; }
+    var cat = base.categories[idx - 1];
+    var maxSort = 0; base.items.forEach(function(i){ if (i.category_id === cat.id) maxSort = Math.max(maxSort, i.sort_order || 0); });
+    var ins = await db.insert('ops_items', { category_id: cat.id, name: name.trim(), unit: unit.trim(), sort_order: maxSort + 1, active: true });
+    var it = ins[0];
+    await db.upsert('ops_item_branch', base.branches.map(function(b){ return { item_id: it.id, branch_id: b.id, target_qty: 0, active: true }; }), 'item_id,branch_id');
+    await loadBase();
+    var sel = document.getElementById('tf-item'); if (sel) sel.innerHTML = itemOptions(it.id);
+    var u = document.getElementById('tf-unit'); if (u) u.textContent = it.unit;
+    var se = document.getElementById('tf-item-search'); if (se) se.value = '';
+    toast('추가했어요');
   }
   async function transferSave(){
     var from = document.getElementById('tf-from').value, to = document.getElementById('tf-to').value, item = document.getElementById('tf-item').value, qty = num(document.getElementById('tf-qty').value), memo = document.getElementById('tf-memo').value.trim();
@@ -3681,6 +3700,7 @@
         case 'tf-retake': tfState.photo = null; render(); break;
         case 'tf-del': if (window.confirm('이 이동 기록을 취소할까요?')){ await db.remove('ops_transfers', { id: id }); toast('취소했어요'); render(); } break;
         case 'tf-sort': tfState.sort = id; render(); break;
+        case 'tf-item-add': await tfItemAdd(); break;
         case 'order-cancel': { var reason = window.prompt('취소 사유 (품절·대체 등, 없으면 비워 두기)', ''); if (reason === null) break; var baseMemo = el.getAttribute('data-memo') || ''; var newMemo = reason ? (baseMemo ? baseMemo + ' · ' + reason : reason) : baseMemo; await db.update('ops_orders', { id: id }, { status: 'cancelled', memo: newMemo || null }); toast('취소했어요'); render(); break; }
         case 'tf-photo': { var tu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(tu, '_blank'); break; }
         case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
@@ -3895,10 +3915,12 @@
     if (e.target.id === 'item-search'){ itemSearchFilter(e.target.value); return; }
     if (e.target.id === 'chk-search'){ checkSearchFilter(e.target.value); return; }
     if (e.target.id === 'tf-item-search'){
-      var tfq = e.target.value.trim().toLowerCase();
       var tfSel = document.getElementById('tf-item');
-      if (tfSel) Array.prototype.forEach.call(tfSel.querySelectorAll('option'), function(o){ o.hidden = !!tfq && o.textContent.toLowerCase().indexOf(tfq) < 0; });
-      if (tfSel) Array.prototype.forEach.call(tfSel.querySelectorAll('optgroup'), function(g){ g.hidden = !Array.prototype.some.call(g.querySelectorAll('option'), function(o){ return !o.hidden; }); });
+      if (tfSel){
+        tfSel.innerHTML = itemOptions(null, e.target.value);
+        var tfu2 = document.getElementById('tf-unit'), first = tfSel.querySelector('option');
+        if (tfu2) tfu2.textContent = first ? (first.getAttribute('data-unit') || '') : '';
+      }
       return;
     }
     if (e.target.id === 'ch-date'){ checkHistState.date = e.target.value || todayStr(); render(); return; }
