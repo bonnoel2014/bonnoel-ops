@@ -792,24 +792,46 @@
   }
 
   // ===== 화면: 지난 기록 보기 =====
-  var checkHistState = { date: null };
+  var checkHistState = { date: null, ym: null, showAllDates: false };
+  function checkCalGrid(ym, d, dateCounts){
+    var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1;
+    var firstDow = new Date(y, m, 1).getDay();
+    var days = monthDays(ym);
+    var cells = []; for (var i = 0; i < firstDow; i++) cells.push(null);
+    days.forEach(function(dk){ cells.push(dk); });
+    var today = todayStr();
+    var wd = ['일', '월', '화', '수', '목', '금', '토'];
+    var html = '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="ch-month" data-id="' + esc(addMonths(ym, -1)) + '">‹</button><b>' + esc(ym.replace('-', '년 ')) + '월</b><button class="btn sm" data-act="ch-month" data-id="' + esc(addMonths(ym, 1)) + '">›</button></div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:12px;color:var(--ink-soft);margin-bottom:4px">' + wd.map(function(w){ return '<div>' + w + '</div>'; }).join('') + '</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">' + cells.map(function(dk){
+      if (!dk) return '<div></div>';
+      var cnt = dateCounts[dk] || 0, isFuture = dk > today, isSel = dk === d;
+      var style = 'padding:8px 0;border-radius:8px;text-align:center;font-size:13px;' + (cnt > 0 ? 'background:var(--accent-soft);color:var(--accent);font-weight:600' : 'color:var(--ink-soft)') + (isSel ? ';outline:2px solid var(--accent);outline-offset:-2px' : '') + (isFuture ? ';opacity:.35' : ';cursor:pointer');
+      return '<div' + (isFuture ? '' : ' data-act="ch-jump" data-id="' + esc(dk) + '"') + ' style="' + style + '">' + (+dk.slice(8, 10)) + '</div>';
+    }).join('') + '</div>';
+    return html;
+  }
   routes.checkhist = async function(params){
     await loadBase();
     var b = pickBranch(params, false);
     if (!checkHistState.date) checkHistState.date = todayStr();
     var d = checkHistState.date;
+    if (!checkHistState.ym) checkHistState.ym = d.slice(0, 7);
+    var ym = checkHistState.ym;
     var dayStart = new Date(d + 'T00:00:00').toISOString();
     var dayEnd = new Date(addDays(d, 1) + 'T00:00:00').toISOString();
     var rows = (await db.select('ops_stock_checks', { eq: { branch_id: b }, gte: { checked_at: dayStart }, order: { col: 'checked_at', asc: false } })).filter(function(r){ return r.checked_at < dayEnd; });
     var byItem = {};
     rows.forEach(function(r){ if (!byItem[r.item_id]) byItem[r.item_id] = r; });
-    var recentRows = await db.select('ops_stock_checks', { eq: { branch_id: b }, gte: { checked_at: daysAgo(90) }, order: { col: 'checked_at', asc: false } });
+    var recentRows = await db.select('ops_stock_checks', { eq: { branch_id: b }, gte: { checked_at: daysAgo(120) }, order: { col: 'checked_at', asc: false } });
     var dateCounts = {}, dateOrder = [];
     recentRows.forEach(function(r){ var dk = localDateKey(r.checked_at); if (!dateCounts[dk]){ dateCounts[dk] = 0; dateOrder.push(dk); } dateCounts[dk]++; });
     var html = topbar('지난 기록 보기 · ' + branchName(b), true) + branchTabs(b, false);
-    html += '<div class="muted" style="margin:4px 4px 10px">기록이 있는 날짜만 아래에서 바로 고를 수 있어요.</div>';
-    if (dateOrder.length) html += '<div class="tabs" style="flex-wrap:wrap;overflow:visible;margin:0 4px 10px">' + dateOrder.map(function(dk){ return '<span class="tab' + (dk === d ? ' on' : '') + '" data-act="ch-jump" data-id="' + esc(dk) + '" style="cursor:pointer">' + esc(md(dk + 'T00:00:00')) + ' (' + dateCounts[dk] + ')</span>'; }).join('') + '</div>';
-    html += '<div style="margin:0 4px 10px"><input type="date" class="in" id="ch-date" value="' + esc(d) + '" max="' + esc(todayStr()) + '" style="width:auto"></div>';
+    html += '<div class="muted" style="margin:4px 4px 10px">기록이 있는 날짜만 골라서 봐요.</div>';
+    var shownDates = checkHistState.showAllDates ? dateOrder : dateOrder.slice(0, 3);
+    if (shownDates.length) html += '<div class="tabs" style="flex-wrap:wrap;overflow:visible;margin:0 4px 10px">' + shownDates.map(function(dk){ return '<span class="tab' + (dk === d ? ' on' : '') + '" data-act="ch-jump" data-id="' + esc(dk) + '" style="cursor:pointer">' + esc(md(dk + 'T00:00:00')) + ' (' + dateCounts[dk] + ')</span>'; }).join('') + '</div>';
+    if (dateOrder.length > 3) html += '<div style="margin:0 4px 10px"><span class="muted" data-act="ch-toggle-all" style="cursor:pointer;text-decoration:underline">' + (checkHistState.showAllDates ? '접기' : '날짜 더보기 (' + (dateOrder.length - 3) + '개 더)') + '</span></div>';
+    html += '<div class="card" style="padding:10px 14px;margin:0 4px 10px">' + checkCalGrid(ym, d, dateCounts) + '</div>';
     var list = itemsForBranch(b);
     var groups = groupByCategory(list);
     var any = false;
@@ -3713,7 +3735,9 @@
         case 'tf-del': if (window.confirm('이 이동 기록을 취소할까요?')){ await db.remove('ops_transfers', { id: id }); toast('취소했어요'); render(); } break;
         case 'tf-sort': tfState.sort = id; render(); break;
         case 'tf-item-add': await tfItemAdd(); break;
-        case 'ch-jump': checkHistState.date = id; render(); break;
+        case 'ch-jump': checkHistState.date = id; checkHistState.ym = id.slice(0, 7); render(); break;
+        case 'ch-month': checkHistState.ym = id; render(); break;
+        case 'ch-toggle-all': checkHistState.showAllDates = !checkHistState.showAllDates; render(); break;
         case 'item-note': await itemNoteEdit(id); break;
         case 'order-cancel': { var reason = window.prompt('취소 사유 (품절·대체 등, 없으면 비워 두기)', ''); if (reason === null) break; var baseMemo = el.getAttribute('data-memo') || ''; var newMemo = reason ? (baseMemo ? baseMemo + ' · ' + reason : reason) : baseMemo; await db.update('ops_orders', { id: id }, { status: 'cancelled', memo: newMemo || null }); toast('취소했어요'); render(); break; }
         case 'tf-photo': { var tu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(tu, '_blank'); break; }
@@ -3937,7 +3961,6 @@
       }
       return;
     }
-    if (e.target.id === 'ch-date'){ checkHistState.date = e.target.value || todayStr(); render(); return; }
     if (/^buy-(list|disc|paid)$/.test(e.target.id || '')){ buyRecalc(buyIdsForm(), e.target.id); return; }
     var bim = /^b[lcp]-(.+)$/.exec(e.target.id || ''); if (bim){ buyRecalc(buyIdsRow(bim[1]), e.target.id); return; }
     if (e.target.classList.contains('ct-alt')){
