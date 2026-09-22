@@ -2837,6 +2837,26 @@
   function buyMethod(id){ return BUY_METHODS.filter(function(m){ return m.id === id; })[0] || null; }
   function buyMethodName(id){ var m = buyMethod(id); return m ? m.name : (id || '?'); }
   function buyMethodOptions(sel){ return BUY_METHODS.map(function(m){ return '<option value="' + m.id + '"' + (m.id === sel ? ' selected' : '') + '>' + esc(m.name + ' (' + m.rate + '%)') + '</option>'; }).join(''); }
+  // 한 영수증에 할인율이 섞여 있을 때(전날빵 50%+당일빵 30% 등) 줄을 나눠 넣고 합치는 계산기
+  function buySplitRowHtml(list, methodId){
+    return '<div class="inline buy-split-row" style="margin-top:6px;gap:6px"><input class="in" type="number" inputmode="numeric" placeholder="정가" style="flex:1" value="' + (list || '') + '"><select class="in" style="flex:1.3">' + buyMethodOptions(methodId || 'transfer') + '</select><span class="muted" data-act="buy-split-del" style="cursor:pointer;padding:0 6px">✕</span></div>';
+  }
+  function buySplitApply(){
+    var rows = document.querySelectorAll('#buy-split-rows .buy-split-row');
+    var listSum = 0, discSum = 0, any = false;
+    rows.forEach(function(r){
+      var v = num(r.querySelector('input').value); var m = buyMethod(r.querySelector('select').value);
+      if (v == null || v <= 0 || !m) return;
+      any = true; listSum += v; discSum += Math.round(v * m.rate / 100);
+    });
+    if (!any){ toast('줄마다 정가를 넣어 주세요'); return; }
+    document.getElementById('buy-list').value = listSum;
+    document.getElementById('buy-disc').value = discSum;
+    document.getElementById('buy-paid').value = listSum - discSum;
+    buyRecalc(buyIdsForm(), null);
+    document.getElementById('buy-split-box').classList.add('hidden');
+    toast('정가 ' + won(listSum) + '원 · 할인 ' + won(discSum) + '원으로 채웠어요');
+  }
   function buyBranchOptions(sel){ return base.branches.map(function(b){ return '<option value="' + esc(b.id) + '"' + (sel === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join(''); }
   var buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
   async function buyPhotoPicked(file){
@@ -2923,11 +2943,17 @@
       }
       html += '<div class="grid2"><div><label>날짜</label><input class="in" type="date" id="buy-date" value="' + esc(o.bought_on || todayStr()) + '"></div><div><label>어느 매장에서?</label><select class="in" id="buy-branch">' + buyBranchOptions(defBranch) + '</select></div></div>';
       html += '<div><label>결제 방식</label><select class="in" id="buy-method">' + buyMethodOptions(method) + '</select></div>';
+      html += '<div style="text-align:right;margin:4px 0 -2px"><span class="muted" data-act="buy-split-toggle" style="cursor:pointer;text-decoration:underline;font-size:12px">할인율이 섞여 있으면 여기서 나눠 넣기</span></div>';
+      html += '<div class="hidden" id="buy-split-box" style="border:1px dashed var(--line-strong);border-radius:8px;padding:10px;margin-top:6px">' +
+        '<div class="muted" style="margin-bottom:2px">전날빵 50%, 당일빵 20·30%처럼 섞여 있으면 항목마다 정가·결제 방식을 넣고 "합쳐서 넣기"를 누르세요. 위 정가·할인·낸 금액에 자동으로 채워져요.</div>' +
+        '<div id="buy-split-rows">' + buySplitRowHtml(null, 'transfer') + buySplitRowHtml(null, 'transfer') + '</div>' +
+        '<div class="inline" style="margin-top:6px"><button type="button" class="btn sm" data-act="buy-split-add">+ 줄 추가</button><span style="flex:1"></span><button type="button" class="btn sm primary" data-act="buy-split-apply">합쳐서 넣기</button></div>' +
+        '</div>';
       html += '<div class="grid2"><div><label>정가 합계(원)</label><input class="in" type="number" inputmode="numeric" id="buy-list" value="' + (list != null ? list : '') + '" placeholder="5500"></div><div><label>할인(원)</label><input class="in" type="number" inputmode="numeric" id="buy-disc" value="' + (disc != null ? disc : '') + '" placeholder="자동"></div></div>';
       html += '<div><label>낸 금액(원)</label><input class="in" type="number" inputmode="numeric" id="buy-paid" value="' + (paid != null ? paid : '') + '" placeholder="자동"></div>';
       html += '<div class="note danger hidden" id="buy-warn"></div>';
       html += '<div><label>메모 (선택)</label><input class="in" id="buy-memo" placeholder="예: 가족 선물"></div>';
-      html += '<div class="muted">결제 방식이나 정가를 바꾸면 할인·낸 금액이 자동으로 다시 계산돼요. 한 영수증에 전날빵(50%)·당일빵(20·30%)처럼 <b>할인율이 섞여 있으면</b>, 결제 방식은 있는 대로 고르고 <b>할인(원) 칸에 영수증에 적힌 할인금액 합계를 직접</b> 넣으면 낸 금액이 자동으로 맞춰져요.</div>';
+      html += '<div class="muted">결제 방식이나 정가를 바꾸면 할인·낸 금액이 자동으로 다시 계산돼요.</div>';
     }
     html += '</div>';
     var ym = monthOf(todayStr());
@@ -3677,6 +3703,10 @@
         case 'exp-csv': downloadCsv(); break;
         // 직원 구매
         case 'buy-retake': buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
+        case 'buy-split-toggle': document.getElementById('buy-split-box').classList.toggle('hidden'); break;
+        case 'buy-split-add': document.getElementById('buy-split-rows').insertAdjacentHTML('beforeend', buySplitRowHtml(null, 'transfer')); break;
+        case 'buy-split-del': el.closest('.buy-split-row').remove(); break;
+        case 'buy-split-apply': buySplitApply(); break;
         case 'buy-nophoto': buyState = { photo: { blob: null, dataUrl: null, mime: null }, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
         case 'buy-save': el.disabled = true; try { await buySave(); } finally { el.disabled = false; } break;
         case 'buy-toggle': document.getElementById('bx-' + id).classList.toggle('hidden'); break;
