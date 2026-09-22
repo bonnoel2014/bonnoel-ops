@@ -870,7 +870,7 @@
       for (var k in m){ var s = m[k]; if (s.target <= 0) noTarget++; else if (s.est == null) noCheck++; if (s.shortage > 0) rows.push(s); else if (s.pending > 0){ if (s.item.note) noteRows.push(s); else pendingRows.push(s); } }
       if (!rows.length && !pendingRows.length && !noteRows.length) return;
       any = true;
-      html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + '<span class="sp"></span>' + (rows.length ? '<button class="btn sm" data-act="copy" data-branch="' + esc(b) + '">카톡용 복사</button>' : '<span class="badge ok">부족 없음</span>') + '</div>';
+      html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + '<span class="sp"></span>' + (rows.length ? '<button class="btn sm" data-act="copy" data-branch="' + esc(b) + '">카톡용 복사</button>' : '<span class="badge ok">부족 없음</span>') + ((pendingRows.length || noteRows.length) ? '<button class="btn sm" data-act="copy-resolved" data-branch="' + esc(b) + '">처리 결과 복사</button>' : '') + '</div>';
       rows.forEach(function(s){
         var otherBranches = base.branches.filter(function(x){ return x.id !== b; });
         html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크' + (s.item.note ? ' · ' + esc(s.item.note) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>' + (s.item.note ? '메모 고치기' : '+ 메모(대체품·품절 등)') + '</u></span></div>' : '') + '</div>' +
@@ -929,6 +929,22 @@
     var m = st.byBranch[b]; var lines = [];
     for (var k in m){ var s = m[k]; if (s.shortage > 0) lines.push(s.item.name + ' ' + fmtQ(s.shortage) + s.item.unit + ' (재고 ' + fmtQ(s.est) + ')'); }
     var text = '<' + branchName(b) + ' 비품요청>\n' + lines.join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function(){ toast('복사했어요. 카톡에 붙여넣으세요'); }, function(){ window.prompt('복사해서 쓰세요', text); });
+    else window.prompt('복사해서 쓰세요', text);
+  }
+  function copyResolved(b){
+    var st = app._stock; if (!st) return;
+    var m = st.byBranch[b]; var lines = [];
+    for (var k in m){
+      var s = m[k];
+      if (s.item.note){ lines.push(s.item.name + ': ' + s.item.note); continue; }
+      if (s.pending > 0){
+        var parts = s.pendingList.map(function(p){ return p.kind === 'order' ? '주문 ' + fmtQ(p.qty) + s.item.unit + (p.eta ? ' (' + md(p.eta) + ' 도착 예정)' : '') : branchName(p.from) + '에서 이동 ' + fmtQ(p.qty) + s.item.unit; });
+        lines.push(s.item.name + ': ' + parts.join(', '));
+      }
+    }
+    if (!lines.length){ toast('처리한 항목이 없어요'); return; }
+    var text = '<' + branchName(b) + ' 비품요청 처리 결과>\n' + lines.join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function(){ toast('복사했어요. 카톡에 붙여넣으세요'); }, function(){ window.prompt('복사해서 쓰세요', text); });
     else window.prompt('복사해서 쓰세요', text);
   }
@@ -3731,6 +3747,7 @@
         case 'tf-quick-save': { var to1 = el.getAttribute('data-to'), ti1 = el.getAttribute('data-item'); await transferQuickSave(to1, ti1, document.getElementById('tb-' + to1 + '-' + ti1).value, num(document.getElementById('tq-' + to1 + '-' + ti1).value)); break; }
         case 'manual-order': await orderSave(document.getElementById('mo-branch').value, document.getElementById('mo-item').value, num(document.getElementById('mo-qty').value), num(document.getElementById('mo-days').value) || 0); break;
         case 'copy': copyShort(el.getAttribute('data-branch')); break;
+        case 'copy-resolved': copyResolved(el.getAttribute('data-branch')); break;
         case 'resolve': await db.update('ops_orders', { id: id }, { resolved: true }); toast('처리함으로 표시'); render(); break;
         case 'recv-ok': await receive(el.getAttribute('data-kind'), id, num(el.getAttribute('data-qty')), false); break;
         case 'recv-open': document.getElementById('rx-' + id).classList.toggle('hidden'); break;
