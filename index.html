@@ -948,7 +948,7 @@
   }
 
   // ===== 화면: 점간 이동 =====
-  var tfState = { photo: null };
+  var tfState = { photo: null, sort: 'recent' };
   routes.transfer = async function(){
     await loadBase();
     var list = await db.select('ops_transfers', { gte: { created_at: daysAgo(60) }, order: { col: 'created_at', asc: false }, limit: 30 });
@@ -964,9 +964,19 @@
         '<div><img src="' + tfState.photo.dataUrl + '" alt="사진" style="width:100%;max-height:220px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)"><div style="text-align:center"><span class="muted" data-act="tf-retake" style="cursor:pointer;text-decoration:underline">다른 사진으로</span></div></div>'
         : '<label class="btn sm" style="display:inline-block">📷 사진 첨부<input type="file" accept="image/*" id="tf-file" class="hidden"></label>') + '</div>' +
       '<button class="btn primary" data-act="tf-save">보냈다고 기록</button></div>';
-    html += '<div class="card section"><div class="sec-h">최근 이동</div>';
+    html += '<div class="card section"><div class="sec-h">최근 이동<span class="sp"></span><span class="tab' + (tfState.sort === 'recent' ? ' on' : '') + '" data-act="tf-sort" data-id="recent" style="cursor:pointer">최신순</span><span class="tab' + (tfState.sort === 'branch' ? ' on' : '') + '" data-act="tf-sort" data-id="branch" style="cursor:pointer">보내는 매장별</span></div>';
     if (!list.length) html += '<div class="empty">아직 없어요</div>';
-    list.forEach(function(t){ var it = itemById(t.item_id) || {}; html += '<div class="hist"><span>' + md(t.created_at) + '</span><span class="sp">' + esc(branchName(t.from_branch)) + ' → ' + esc(branchName(t.to_branch)) + ' · ' + esc(it.name) + ' ' + fmtQ(num(t.qty)) + esc(it.unit || '') + (t.memo ? ' · ' + esc(t.memo) : '') + '</span>' + (t.photo_path ? '<button class="btn sm" data-act="tf-photo" data-path="' + esc(t.photo_path) + '">사진</button>' : '') + (t.received_at ? '<span class="badge ok">받음 ' + fmtQ(num(t.received_qty)) + '</span>' : '<span class="badge warn">가는 중</span><button class="btn sm danger" data-act="tf-del" data-id="' + esc(t.id) + '">취소</button>') + '</div>'; });
+    function tfRow(t){ var it = itemById(t.item_id) || {}; return '<div class="hist"><span>' + md(t.created_at) + '</span><span class="sp">' + esc(branchName(t.from_branch)) + ' → ' + esc(branchName(t.to_branch)) + ' · ' + esc(it.name) + ' ' + fmtQ(num(t.qty)) + esc(it.unit || '') + (t.memo ? ' · ' + esc(t.memo) : '') + '</span>' + (t.photo_path ? '<button class="btn sm" data-act="tf-photo" data-path="' + esc(t.photo_path) + '">사진</button>' : '') + (t.received_at ? '<span class="badge ok">받음 ' + fmtQ(num(t.received_qty)) + '</span>' : '<span class="badge warn">가는 중</span><button class="btn sm danger" data-act="tf-del" data-id="' + esc(t.id) + '">취소</button>') + '</div>'; }
+    if (tfState.sort === 'branch'){
+      base.branches.forEach(function(br){
+        var own = list.filter(function(t){ return t.from_branch === br.id; });
+        if (!own.length) return;
+        html += '<div class="sec-h" style="background:var(--surface-sunken)">' + esc(br.name) + ' →</div>';
+        own.forEach(function(t){ html += tfRow(t); });
+      });
+    } else {
+      list.forEach(function(t){ html += tfRow(t); });
+    }
     html += '</div>';
     app.innerHTML = html;
   };
@@ -3670,6 +3680,7 @@
         case 'tf-save': await transferSave(); break;
         case 'tf-retake': tfState.photo = null; render(); break;
         case 'tf-del': if (window.confirm('이 이동 기록을 취소할까요?')){ await db.remove('ops_transfers', { id: id }); toast('취소했어요'); render(); } break;
+        case 'tf-sort': tfState.sort = id; render(); break;
         case 'order-cancel': { var reason = window.prompt('취소 사유 (품절·대체 등, 없으면 비워 두기)', ''); if (reason === null) break; var baseMemo = el.getAttribute('data-memo') || ''; var newMemo = reason ? (baseMemo ? baseMemo + ' · ' + reason : reason) : baseMemo; await db.update('ops_orders', { id: id }, { status: 'cancelled', memo: newMemo || null }); toast('취소했어요'); render(); break; }
         case 'tf-photo': { var tu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(tu, '_blank'); break; }
         case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
