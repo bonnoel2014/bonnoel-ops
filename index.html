@@ -1334,9 +1334,9 @@
       if (canEdit){
         var bkS = r.brk ? r.brk.split('~')[0] : '', bkE = r.brk ? r.brk.split('~')[1] : '';
         html += '<div class="expand hidden" id="msx-' + esc(r.staffId) + '"><div class="form">' +
-          '<div class="grid2"><div><label>시작</label><input class="in" type="time" id="ms-start" step="1800" value="' + esc(r.start) + '"></div><div><label>끝</label><input class="in" type="time" id="ms-end" step="1800" value="' + esc(r.end) + '"></div></div>' +
-          '<div class="grid2"><div><label>휴게 시작 (없으면 비움)</label><input class="in" type="time" id="ms-bs" step="1800" value="' + esc(bkS) + '"></div><div><label>휴게 끝</label><input class="in" type="time" id="ms-be" step="1800" value="' + esc(bkE) + '"></div></div>' +
-          '<div><label>메모 (예: 실제 출근은 7:20, 없으면 비움)</label><input class="in" id="ms-note" value="' + esc(r.note || '') + '"></div>' +
+          '<div class="grid2"><div><label>시작</label><input class="in" type="time" id="ms-start-' + esc(r.staffId) + '" step="1800" value="' + esc(r.start) + '"></div><div><label>끝</label><input class="in" type="time" id="ms-end-' + esc(r.staffId) + '" step="1800" value="' + esc(r.end) + '"></div></div>' +
+          '<div class="grid2"><div><label>휴게 시작 (없으면 비움)</label><input class="in" type="time" id="ms-bs-' + esc(r.staffId) + '" step="1800" value="' + esc(bkS) + '"></div><div><label>휴게 끝</label><input class="in" type="time" id="ms-be-' + esc(r.staffId) + '" step="1800" value="' + esc(bkE) + '"></div></div>' +
+          '<div><label>메모 (예: 실제 출근은 7:20, 없으면 비움)</label><input class="in" id="ms-note-' + esc(r.staffId) + '" value="' + esc(r.note || '') + '"></div>' +
           '<div class="muted">' + (isSelf ? '' : esc(r.name) + '님 몫으로 ') + esc(fmtDateK(day)) + ' 이 날만 바뀌어요. 평소 요일 시간은 그대로 유지돼요. 아예 못 나오면 "휴무 신청"을 써 주세요.</div>' +
           '<button class="btn sm primary" data-act="myshift-save" data-branch="' + esc(b) + '" data-date="' + esc(day) + '" data-weekday="' + wdOf(day) + '" data-staff="' + esc(r.staffId) + '">저장</button>' +
           '</div></div>';
@@ -1422,7 +1422,9 @@
     }
     if (isOwner()){
       var pickPeople = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || (!s.branch_id && s.role !== 'owner') || pool.some(function(p){ return p.staff_id === s.id; })); });
-      html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px">이 자리, 누구로 할까요?</div><div class="inline" style="flex-wrap:wrap;gap:6px">' +
+      html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px" id="chip-panel-title">이 자리, 누구로 할까요?</div>' +
+        '<div class="hidden" id="chip-endtime-wrap" style="margin-bottom:8px"><label class="muted">몇 시까지</label><input class="in" type="time" id="chip-endtime" step="1800" style="width:auto"></div>' +
+        '<div class="inline" style="flex-wrap:wrap;gap:6px">' +
         pickPeople.map(function(s){ return '<button class="btn sm" data-act="chip-assign" data-staff="' + esc(s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
         '<button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
     }
@@ -1445,9 +1447,9 @@
   async function myShiftSave(branchId, date, weekday, staffId){
     staffId = staffId || session.staffId;
     if (staffId !== session.staffId && !isOwner()){ toast('내 시간만 바꿀 수 있어요'); return; }
-    var st = document.getElementById('ms-start').value, en = document.getElementById('ms-end').value;
-    var bs = document.getElementById('ms-bs').value || null, be = document.getElementById('ms-be').value || null;
-    var nt = (document.getElementById('ms-note').value || '').trim() || null;
+    var st = document.getElementById('ms-start-' + staffId).value, en = document.getElementById('ms-end-' + staffId).value;
+    var bs = document.getElementById('ms-bs-' + staffId).value || null, be = document.getElementById('ms-be-' + staffId).value || null;
+    var nt = (document.getElementById('ms-note-' + staffId).value || '').trim() || null;
     if (!st || !en || toMin(st) >= toMin(en)){ toast('시작·끝 시간을 확인해 주세요'); return; }
     if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
     var week = weekStart(date);
@@ -1473,14 +1475,13 @@
     toast(staffName(staffId) + ' 근무를 추가했어요. 이번 주 근무표에 반영됐어요'); render();
   }
   // 시간표의 빈 칸을 눌러서 바로 사람 넣기 (일단 4시간짜리로 넣고, 시간은 나중에 "바꾸기"로 조정)
-  async function chipAddShift(branchId, date, weekday, startTime, staffId){
+  async function chipAddShift(branchId, date, weekday, startTime, staffId, endTime){
     var week = weekStart(date);
-    var endMin = Math.min(23 * 60 + 30, toMin(startTime) + 240);
-    var endTime = fromMin(endMin);
+    endTime = endTime || fromMin(Math.min(23 * 60 + 30, toMin(startTime) + 240));
     await ensureWeeklyPool(branchId, week);
     await db.update('ops_shift_patterns', { branch_id: branchId, week_start: week, staff_id: staffId, weekday: weekday, active: true }, { active: false });
     await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: startTime, end_time: endTime, active: true, week_start: week });
-    toast(staffName(staffId) + ' ' + startTime + '~' + endTime + '로 넣었어요. 끝나는 시간은 "바꾸기"에서 조정하세요'); render();
+    toast(staffName(staffId) + ' ' + startTime + '~' + endTime + '로 넣었어요'); render();
   }
 
   // --- 휴무 신청 (근무자) ---
@@ -3795,13 +3796,32 @@
         case 'myshift-save': el.disabled = true; try { await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday'), el.getAttribute('data-staff')); } finally { el.disabled = false; } break;
         case 'addshift-toggle': document.getElementById('asx-' + id).classList.toggle('hidden'); break;
         case 'addshift-save': el.disabled = true; try { await addShift(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday')); } finally { el.disabled = false; } break;
-        case 'chip-pick': { var cp = document.getElementById('chip-panel'); cp.dataset.mode = 'reassign'; cp.dataset.pattern = el.getAttribute('data-pattern'); cp.classList.remove('hidden'); cp.scrollIntoView({ behavior: 'smooth', block: 'center' }); break; }
-        case 'chip-pick-empty': { var cpe = document.getElementById('chip-panel'); cpe.dataset.mode = 'add'; cpe.dataset.branch = el.getAttribute('data-branch'); cpe.dataset.date = el.getAttribute('data-date'); cpe.dataset.weekday = el.getAttribute('data-weekday'); cpe.dataset.start = el.getAttribute('data-start'); cpe.classList.remove('hidden'); cpe.scrollIntoView({ behavior: 'smooth', block: 'center' }); break; }
+        case 'chip-pick': {
+          var cp = document.getElementById('chip-panel');
+          cp.dataset.mode = 'reassign'; cp.dataset.pattern = el.getAttribute('data-pattern');
+          document.getElementById('chip-panel-title').textContent = '이 근무, 누구로 바꿀까요?';
+          document.getElementById('chip-endtime-wrap').classList.add('hidden');
+          cp.classList.remove('hidden'); cp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          break;
+        }
+        case 'chip-pick-empty': {
+          var cpe = document.getElementById('chip-panel');
+          cpe.dataset.mode = 'add'; cpe.dataset.branch = el.getAttribute('data-branch'); cpe.dataset.date = el.getAttribute('data-date'); cpe.dataset.weekday = el.getAttribute('data-weekday'); cpe.dataset.start = el.getAttribute('data-start');
+          document.getElementById('chip-panel-title').textContent = el.getAttribute('data-start') + '부터 누구를 넣을까요?';
+          document.getElementById('chip-endtime-wrap').classList.remove('hidden');
+          document.getElementById('chip-endtime').value = fromMin(Math.min(23 * 60 + 30, toMin(el.getAttribute('data-start')) + 240));
+          cpe.classList.remove('hidden'); cpe.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          break;
+        }
         case 'chip-assign': {
           var cp2 = document.getElementById('chip-panel');
           el.disabled = true;
           try {
-            if (cp2.dataset.mode === 'add'){ await chipAddShift(cp2.dataset.branch, cp2.dataset.date, +cp2.dataset.weekday, cp2.dataset.start, el.getAttribute('data-staff')); }
+            if (cp2.dataset.mode === 'add'){
+              var endVal = document.getElementById('chip-endtime').value;
+              if (!endVal || toMin(endVal) <= toMin(cp2.dataset.start)){ toast('끝나는 시간을 확인해 주세요'); break; }
+              await chipAddShift(cp2.dataset.branch, cp2.dataset.date, +cp2.dataset.weekday, cp2.dataset.start, el.getAttribute('data-staff'), endVal);
+            }
             else { var pid = cp2.dataset.pattern; if (!pid){ break; } await db.update('ops_shift_patterns', { id: pid }, { staff_id: el.getAttribute('data-staff') }); toast('바꿨어요'); render(); }
           } finally { el.disabled = false; }
           break;
