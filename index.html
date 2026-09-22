@@ -845,9 +845,16 @@
       any = true;
       html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + '<span class="sp"></span>' + (rows.length ? '<button class="btn sm" data-act="copy" data-branch="' + esc(b) + '">카톡용 복사</button>' : '<span class="badge ok">부족 없음</span>') + '</div>';
       rows.forEach(function(s){
+        var otherBranches = base.branches.filter(function(x){ return x.id !== b; });
         html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크</div></div>' +
-                '<span class="badge danger">' + fmtQ(s.shortage) + ' ' + esc(s.item.unit) + ' 부족</span>' + (isManager() ? '<button class="btn sm primary" data-act="order-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '" data-qty="' + s.shortage + '">주문함</button>' : '') + '</div>' +
-                '<div class="expand hidden" id="ex-' + esc(b) + '-' + esc(s.item.id) + '"><div class="inline"><label>수량</label><input class="qty" type="number" step="0.5" min="0" value="' + s.shortage + '" id="oq-' + esc(b) + '-' + esc(s.item.id) + '"><label>며칠 걸려요?</label><input class="qty" type="number" step="1" min="0" value="7" id="od-' + esc(b) + '-' + esc(s.item.id) + '"><button class="btn sm primary" data-act="order-save" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">확인</button></div></div>';
+                '<span class="badge danger">' + fmtQ(s.shortage) + ' ' + esc(s.item.unit) + ' 부족</span>' + (isManager() ?
+                '<div class="inline" style="gap:4px;flex-wrap:wrap">' +
+                  '<button class="btn sm primary" data-act="order-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">발주</button>' +
+                  '<button class="btn sm" data-act="order-online" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '" data-qty="' + s.shortage + '">온라인 구매</button>' +
+                  '<button class="btn sm" data-act="tf-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">매장 이동</button>' +
+                '</div>' : '') + '</div>' +
+                '<div class="expand hidden" id="ex-' + esc(b) + '-' + esc(s.item.id) + '"><div class="inline"><label>수량</label><input class="qty" type="number" step="0.5" min="0" value="' + s.shortage + '" id="oq-' + esc(b) + '-' + esc(s.item.id) + '"><label>며칠 걸려요?</label><input class="qty" type="number" step="1" min="0" value="7" id="od-' + esc(b) + '-' + esc(s.item.id) + '"><button class="btn sm primary" data-act="order-save" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">확인</button></div></div>' +
+                '<div class="expand hidden" id="tx-' + esc(b) + '-' + esc(s.item.id) + '"><div class="inline"><label>보내는 매장</label><select class="in" id="tb-' + esc(b) + '-' + esc(s.item.id) + '" style="width:auto">' + otherBranches.map(function(ob){ return '<option value="' + esc(ob.id) + '">' + esc(ob.name) + '</option>'; }).join('') + '</select><label>수량</label><input class="qty" type="number" step="0.5" min="0" value="' + s.shortage + '" id="tq-' + esc(b) + '-' + esc(s.item.id) + '"><button class="btn sm primary" data-act="tf-quick-save" data-to="' + esc(b) + '" data-item="' + esc(s.item.id) + '">보내기</button></div></div>';
       });
       pendingRows.forEach(function(s){
         var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
@@ -870,10 +877,18 @@
   function itemOptions(selectedId){
     return groupByCategory(base.items.filter(function(i){ return i.active !== false; }).map(function(i){ return { item: i }; })).map(function(g){ return '<optgroup label="' + esc(g.cat.name) + '">' + g.rows.map(function(x){ return '<option value="' + esc(x.item.id) + '" data-unit="' + esc(x.item.unit) + '"' + (x.item.id === selectedId ? ' selected' : '') + '>' + esc(x.item.name) + ' (' + esc(x.item.unit) + ')</option>'; }).join('') + '</optgroup>'; }).join('');
   }
-  async function orderSave(b, itemId, qty, days){
+  async function orderSave(b, itemId, qty, days, memo){
     if (qty == null || qty <= 0){ toast('수량을 넣어 주세요'); return; }
-    await db.insert('ops_orders', { branch_id: b, item_id: itemId, qty: qty, status: 'ordered', eta_date: addDays(todayStr(), days || 0), ordered_by: session.staffId, ordered_at: new Date().toISOString(), mismatch: false, resolved: false });
-    toast(branchName(b) + ' · ' + (itemById(itemId) || {}).name + ' ' + fmtQ(qty) + ' 주문 기록');
+    await db.insert('ops_orders', { branch_id: b, item_id: itemId, qty: qty, status: 'ordered', eta_date: addDays(todayStr(), days || 0), ordered_by: session.staffId, ordered_at: new Date().toISOString(), mismatch: false, resolved: false, memo: memo || null });
+    toast(branchName(b) + ' · ' + (itemById(itemId) || {}).name + ' ' + fmtQ(qty) + ' 주문 기록' + (memo ? ' (' + memo + ')' : ''));
+    render();
+  }
+  async function transferQuickSave(toBranch, itemId, fromBranch, qty){
+    if (!fromBranch){ toast('보내는 매장을 골라 주세요'); return; }
+    if (fromBranch === toBranch){ toast('보내는 매장과 받는 매장이 같아요'); return; }
+    if (qty == null || qty <= 0){ toast('수량을 넣어 주세요'); return; }
+    await db.insert('ops_transfers', { from_branch: fromBranch, to_branch: toBranch, item_id: itemId, qty: qty, created_by: session.staffId, created_at: new Date().toISOString() });
+    toast(branchName(fromBranch) + ' → ' + branchName(toBranch) + ' · ' + (itemById(itemId) || {}).name + ' ' + fmtQ(qty) + ' 이동 기록');
     render();
   }
   function copyShort(b){
@@ -899,7 +914,7 @@
     if (!pend.length && !pendT.length) html += '<div class="empty">지금 오기로 한 물건이 없어요</div>';
     pend.forEach(function(o){
       var it = itemById(o.item_id) || {};
-      html += '<div class="item"><div class="iname"><div class="t">' + esc(it.name) + ' <b>' + fmtQ(num(o.qty)) + ' ' + esc(it.unit || '') + '</b></div><div class="s">' + md(o.ordered_at) + ' 주문' + (o.eta_date ? ' · ' + md(o.eta_date) + ' 도착 예정' : '') + '</div></div>' +
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(it.name) + ' <b>' + fmtQ(num(o.qty)) + ' ' + esc(it.unit || '') + '</b></div><div class="s">' + md(o.ordered_at) + ' 주문' + (o.eta_date ? ' · ' + md(o.eta_date) + ' 도착 예정' : '') + (o.memo ? ' · ' + esc(o.memo) : '') + '</div></div>' +
               '<button class="btn sm ok" data-act="recv-ok" data-kind="order" data-id="' + esc(o.id) + '" data-qty="' + esc(o.qty) + '">맞음</button><button class="btn sm danger" data-act="recv-open" data-id="' + esc(o.id) + '">틀림</button></div>' +
               '<div class="expand hidden" id="rx-' + esc(o.id) + '"><div class="inline"><label>실제로 온 수량</label><input class="qty" type="number" step="0.5" min="0" id="rq-' + esc(o.id) + '"><button class="btn sm primary" data-act="recv-bad" data-kind="order" data-id="' + esc(o.id) + '">저장</button></div></div>';
     });
@@ -3637,6 +3652,9 @@
         case 'save-check': el.disabled = true; try { await saveCheck(el.getAttribute('data-branch')); } finally { el.disabled = false; } break;
         case 'order-open': { var ex = document.getElementById('ex-' + el.getAttribute('data-branch') + '-' + el.getAttribute('data-item')); ex.classList.toggle('hidden'); break; }
         case 'order-save': { var b1 = el.getAttribute('data-branch'), i1 = el.getAttribute('data-item'); await orderSave(b1, i1, num(document.getElementById('oq-' + b1 + '-' + i1).value), num(document.getElementById('od-' + b1 + '-' + i1).value) || 0); break; }
+        case 'order-online': await orderSave(el.getAttribute('data-branch'), el.getAttribute('data-item'), num(el.getAttribute('data-qty')), 3, '온라인 구매'); break;
+        case 'tf-open': { var tx = document.getElementById('tx-' + el.getAttribute('data-branch') + '-' + el.getAttribute('data-item')); tx.classList.toggle('hidden'); break; }
+        case 'tf-quick-save': { var to1 = el.getAttribute('data-to'), ti1 = el.getAttribute('data-item'); await transferQuickSave(to1, ti1, document.getElementById('tb-' + to1 + '-' + ti1).value, num(document.getElementById('tq-' + to1 + '-' + ti1).value)); break; }
         case 'manual-order': await orderSave(document.getElementById('mo-branch').value, document.getElementById('mo-item').value, num(document.getElementById('mo-qty').value), num(document.getElementById('mo-days').value) || 0); break;
         case 'copy': copyShort(el.getAttribute('data-branch')); break;
         case 'resolve': await db.update('ops_orders', { id: id }, { resolved: true }); toast('처리함으로 표시'); render(); break;
