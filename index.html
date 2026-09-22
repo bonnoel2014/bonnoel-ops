@@ -851,7 +851,7 @@
       html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + '<span class="sp"></span>' + (rows.length ? '<button class="btn sm" data-act="copy" data-branch="' + esc(b) + '">카톡용 복사</button>' : '<span class="badge ok">부족 없음</span>') + '</div>';
       rows.forEach(function(s){
         var otherBranches = base.branches.filter(function(x){ return x.id !== b; });
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크</div></div>' +
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크' + (s.item.note ? ' · ' + esc(s.item.note) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>' + (s.item.note ? '메모 고치기' : '+ 메모(대체품·품절 등)') + '</u></span></div>' : '') + '</div>' +
                 '<span class="badge danger">' + fmtQ(s.shortage) + ' ' + esc(s.item.unit) + ' 부족</span>' + (isManager() ?
                 '<div class="inline" style="gap:4px;flex-wrap:wrap">' +
                   '<button class="btn sm primary" data-act="order-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">발주</button>' +
@@ -863,7 +863,7 @@
       });
       pendingRows.forEach(function(s){
         var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + '</div></div><span class="badge warn">오는 중</span></div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + (s.item.note ? ' · ' + esc(s.item.note) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>' + (s.item.note ? '메모 고치기' : '+ 메모(대체품·품절 등)') + '</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
       });
       html += '</div>';
     });
@@ -1114,6 +1114,13 @@
     var note = window.prompt('메모 (요청처 등, 없으면 비움)', it.note || ''); if (note === null) note = it.note;
     await db.update('ops_items', { id: id }, { name: name.trim(), note: (note || '').trim() || null });
     toast('고쳤어요'); render();
+  }
+  async function itemNoteEdit(id){
+    var it = itemById(id); if (!it) return;
+    var note = window.prompt('메모 (대체 품목, 거래처 품절 안내 등 · 없으면 비워 두기)', it.note || '');
+    if (note === null) return;
+    await db.update('ops_items', { id: id }, { note: note.trim() || null });
+    toast('메모를 저장했어요'); render();
   }
   async function itemEditUnit(id){
     var it = itemById(id); if (!it) return;
@@ -3707,6 +3714,7 @@
         case 'tf-sort': tfState.sort = id; render(); break;
         case 'tf-item-add': await tfItemAdd(); break;
         case 'ch-jump': checkHistState.date = id; render(); break;
+        case 'item-note': await itemNoteEdit(id); break;
         case 'order-cancel': { var reason = window.prompt('취소 사유 (품절·대체 등, 없으면 비워 두기)', ''); if (reason === null) break; var baseMemo = el.getAttribute('data-memo') || ''; var newMemo = reason ? (baseMemo ? baseMemo + ' · ' + reason : reason) : baseMemo; await db.update('ops_orders', { id: id }, { status: 'cancelled', memo: newMemo || null }); toast('취소했어요'); render(); break; }
         case 'tf-photo': { var tu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(tu, '_blank'); break; }
         case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
