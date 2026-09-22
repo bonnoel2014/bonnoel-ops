@@ -934,17 +934,28 @@
   }
   function copyResolved(b){
     var st = app._stock; if (!st) return;
-    var m = st.byBranch[b]; var lines = [];
+    var m = st.byBranch[b];
+    var byBranch = {}, branchOrder = [], orderLines = [], noteLines = [];
     for (var k in m){
       var s = m[k];
-      if (s.item.note){ lines.push(s.item.name + ': ' + s.item.note); continue; }
+      if (s.item.note){ noteLines.push(s.item.name + ': ' + s.item.note); continue; }
       if (s.pending > 0){
-        var parts = s.pendingList.map(function(p){ return p.kind === 'order' ? '주문 ' + fmtQ(p.qty) + s.item.unit + (p.eta ? ' (' + md(p.eta) + ' 도착 예정)' : '') : branchName(p.from) + '에서 이동 ' + fmtQ(p.qty) + s.item.unit; });
-        lines.push(s.item.name + ': ' + parts.join(', '));
+        s.pendingList.forEach(function(p){
+          if (p.kind === 'transfer'){
+            if (!byBranch[p.from]){ byBranch[p.from] = []; branchOrder.push(p.from); }
+            byBranch[p.from].push(s.item.name + ' ' + fmtQ(p.qty) + s.item.unit);
+          } else {
+            orderLines.push(s.item.name + ' ' + fmtQ(p.qty) + s.item.unit + (p.eta ? ' (' + md(p.eta) + ' 도착 예정)' : ''));
+          }
+        });
       }
     }
-    if (!lines.length){ toast('처리한 항목이 없어요'); return; }
-    var text = '<' + branchName(b) + ' 비품요청 처리 결과>\n\n' + lines.join('\n\n');
+    var sections = [];
+    branchOrder.forEach(function(bid){ sections.push(branchName(bid) + ' →\n' + byBranch[bid].join('\n')); });
+    if (orderLines.length) sections.push('주문\n' + orderLines.join('\n'));
+    if (noteLines.length) sections.push('주문 안 한 것\n' + noteLines.join('\n'));
+    if (!sections.length){ toast('처리한 항목이 없어요'); return; }
+    var text = '<' + branchName(b) + ' 비품요청 처리 결과>\n\n' + sections.join('\n\n');
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function(){ toast('복사했어요. 카톡에 붙여넣으세요'); }, function(){ window.prompt('복사해서 쓰세요', text); });
     else window.prompt('복사해서 쓰세요', text);
   }
