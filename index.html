@@ -937,7 +937,7 @@
     var html = topbar('점간 이동', true);
     html += '<div class="form">' +
       '<div class="grid2"><div><label>보내는 매장</label><select class="in" id="tf-from">' + opts.replace('value="' + esc(session.branchId) + '"', 'value="' + esc(session.branchId) + '" selected') + '</select></div><div><label>받는 매장</label><select class="in" id="tf-to">' + opts + '</select></div></div>' +
-      '<div><label>품목</label><select class="in" id="tf-item">' + itemOptions() + '</select></div>' +
+      '<div><label>품목</label><div style="position:relative;margin-bottom:6px"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none">🔍</span><input class="in" id="tf-item-search" placeholder="품목 검색" style="padding-left:34px"></div><select class="in" id="tf-item">' + itemOptions() + '</select></div>' +
       '<div class="grid2"><div><label>수량</label><div style="display:flex;align-items:center;gap:8px"><input class="in" id="tf-qty" type="number" step="0.5" min="0" style="flex:1"><span class="unit" id="tf-unit">' + esc(defaultUnit) + '</span></div></div><div><label>메모 (어디 뒀는지 등)</label><input class="in" id="tf-memo" placeholder="러스크쪽 서랍"></div></div>' +
       '<div><label>사진 (선택, 화면 캡처는 Ctrl+V로 붙여넣기도 돼요)</label>' + (tfState.photo ?
         '<div><img src="' + tfState.photo.dataUrl + '" alt="사진" style="width:100%;max-height:220px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)"><div style="text-align:center"><span class="muted" data-act="tf-retake" style="cursor:pointer;text-decoration:underline">다른 사진으로</span></div></div>'
@@ -3857,6 +3857,13 @@
     if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
     if (e.target.id === 'item-search'){ itemSearchFilter(e.target.value); return; }
     if (e.target.id === 'chk-search'){ checkSearchFilter(e.target.value); return; }
+    if (e.target.id === 'tf-item-search'){
+      var tfq = e.target.value.trim().toLowerCase();
+      var tfSel = document.getElementById('tf-item');
+      if (tfSel) Array.prototype.forEach.call(tfSel.querySelectorAll('option'), function(o){ o.hidden = !!tfq && o.textContent.toLowerCase().indexOf(tfq) < 0; });
+      if (tfSel) Array.prototype.forEach.call(tfSel.querySelectorAll('optgroup'), function(g){ g.hidden = !Array.prototype.some.call(g.querySelectorAll('option'), function(o){ return !o.hidden; }); });
+      return;
+    }
     if (e.target.id === 'ch-date'){ checkHistState.date = e.target.value || todayStr(); render(); return; }
     if (/^buy-(list|disc|paid)$/.test(e.target.id || '')){ buyRecalc(buyIdsForm(), e.target.id); return; }
     var bim = /^b[lcp]-(.+)$/.exec(e.target.id || ''); if (bim){ buyRecalc(buyIdsRow(bim[1]), e.target.id); return; }
