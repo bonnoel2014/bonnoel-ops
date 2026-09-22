@@ -202,6 +202,7 @@
   function addDays(dateStr, n){ var d = new Date(dateStr + 'T00:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
   function md(s){ if(!s) return ''; var d = new Date(s); if (isNaN(d)) return ''; return (d.getMonth()+1) + '/' + d.getDate(); }
   function isToday(s){ if (!s) return false; var d = new Date(s); if (isNaN(d)) return false; var t = new Date(); return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate(); }
+  function localDateKey(s){ var d = new Date(s); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function num(v){ var n = parseFloat(v); return isNaN(n) ? null : n; }
   function fmtQ(n){ if (n == null) return '-'; return (Math.round(n * 100) / 100).toString(); }
   function daysAgo(n){ var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); }
@@ -802,8 +803,12 @@
     var rows = (await db.select('ops_stock_checks', { eq: { branch_id: b }, gte: { checked_at: dayStart }, order: { col: 'checked_at', asc: false } })).filter(function(r){ return r.checked_at < dayEnd; });
     var byItem = {};
     rows.forEach(function(r){ if (!byItem[r.item_id]) byItem[r.item_id] = r; });
+    var recentRows = await db.select('ops_stock_checks', { eq: { branch_id: b }, gte: { checked_at: daysAgo(90) }, order: { col: 'checked_at', asc: false } });
+    var dateCounts = {}, dateOrder = [];
+    recentRows.forEach(function(r){ var dk = localDateKey(r.checked_at); if (!dateCounts[dk]){ dateCounts[dk] = 0; dateOrder.push(dk); } dateCounts[dk]++; });
     var html = topbar('지난 기록 보기 · ' + branchName(b), true) + branchTabs(b, false);
-    html += '<div class="muted" style="margin:4px 4px 10px">날짜를 골라서 그날 기록한 수량을 봐요.</div>';
+    html += '<div class="muted" style="margin:4px 4px 10px">기록이 있는 날짜만 아래에서 바로 고를 수 있어요.</div>';
+    if (dateOrder.length) html += '<div class="tabs" style="flex-wrap:wrap;overflow:visible;margin:0 4px 10px">' + dateOrder.map(function(dk){ return '<span class="tab' + (dk === d ? ' on' : '') + '" data-act="ch-jump" data-id="' + esc(dk) + '" style="cursor:pointer">' + esc(md(dk + 'T00:00:00')) + ' (' + dateCounts[dk] + ')</span>'; }).join('') + '</div>';
     html += '<div style="margin:0 4px 10px"><input type="date" class="in" id="ch-date" value="' + esc(d) + '" max="' + esc(todayStr()) + '" style="width:auto"></div>';
     var list = itemsForBranch(b);
     var groups = groupByCategory(list);
@@ -3701,6 +3706,7 @@
         case 'tf-del': if (window.confirm('이 이동 기록을 취소할까요?')){ await db.remove('ops_transfers', { id: id }); toast('취소했어요'); render(); } break;
         case 'tf-sort': tfState.sort = id; render(); break;
         case 'tf-item-add': await tfItemAdd(); break;
+        case 'ch-jump': checkHistState.date = id; render(); break;
         case 'order-cancel': { var reason = window.prompt('취소 사유 (품절·대체 등, 없으면 비워 두기)', ''); if (reason === null) break; var baseMemo = el.getAttribute('data-memo') || ''; var newMemo = reason ? (baseMemo ? baseMemo + ' · ' + reason : reason) : baseMemo; await db.update('ops_orders', { id: id }, { status: 'cancelled', memo: newMemo || null }); toast('취소했어요'); render(); break; }
         case 'tf-photo': { var tu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(tu, '_blank'); break; }
         case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
