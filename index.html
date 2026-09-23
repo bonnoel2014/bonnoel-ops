@@ -3105,7 +3105,7 @@
     var subByStaff = {}; all.forEach(function(r){ if (isSubRow(r)) (subByStaff[r.staff_id] = subByStaff[r.staff_id] || []).push(r); });
     var hmapDocs = {}; try { hmapDocs = healthMap(await loadHealth()); } catch(e){ console.warn('보건증 표 없음', e); }
     var html = topbar('근로계약서 & 입사서류', true) + branchTabs(sel, true);
-    html += '<div class="muted" style="margin:4px 4px 10px">① 직원을 골라 <b>준비</b>(계약 조건 입력) → ② 신입이 매장폰 <a href="#/sign" style="text-decoration:underline">서류 서명</a>에서 이름·비밀번호로 들어와 읽고 서명 → ③ PDF가 직원 메일과 사장님 메일로 자동 발송돼요. 이어서 등본·통장사본·보건증도 제출해요. 아래 <b>계·등·통·보</b> 표시는 각각 계약서·등본·통장사본·보건증이고, 초록은 다 됐다는 뜻이에요. 주민등록번호는 받지 않아요(별도 서면).</div>';
+    html += '<div class="muted" style="margin:4px 4px 10px">① 직원을 골라 <b>준비</b>(계약 조건 입력) → ② 신입이 매장폰 <a href="#/sign" style="text-decoration:underline">서류 서명</a>에서 이름·비밀번호로 들어와 읽고 서명 → ③ PDF가 직원 메일과 사장님 메일로 자동 발송돼요. 이어서 등본·통장사본·보건증도 제출해요. 아래 <b>계·등·통·보</b> 표시는 각각 계약서·등본·통장사본·보건증이고, 초록은 다 됐다는 뜻이에요. 주민등록번호는 서명할 때 직접 입력(등본 낼 사람은 비워도 됨).</div>';
     if (isOwner() && !settings.seal) html += '<div class="note danger" style="margin:0 4px 12px">아직 대표님 서명(직인) 이미지를 등록하지 않았어요. 지금 서명되는 계약서는 사용자 서명란이 빈 채로 나가요. 맨 아래 <b>설정(사장님)</b>에서 등록해 주세요. 이미 서명·발송된 서류는 직인이 안 찍혀 있으니, 등록 후 [새로 준비]로 다시 만들어야 해요.</div>';
     ids.forEach(function(b){
       var people = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || (!s.branch_id && b === ids[0])); });
@@ -3188,7 +3188,7 @@
       var days = c.days;
       if (!days){ days = {}; try { var pats = await db.select('ops_shift_patterns', { eq: { staff_id: s.id } }); pats.forEach(function(p){ if (p.active === false || p.week_start) return; var brk = p.break_start && p.break_end ? toMin(p.break_end) - toMin(p.break_start) : 0; days[p.weekday] = { s: p.start_time.slice(0, 5), e: p.end_time.slice(0, 5), brk: brk >= 45 ? 60 : brk > 0 ? 30 : 0 }; }); } catch(e){} }
       var start = c.start || todayStr();
-      prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || '', wageNoEnd: c.wageEnd ? false : true, payDay: c.payDay || 10, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor), residentBlank: !!c.residentBlank };
+      prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || '', wageNoEnd: c.wageEnd ? false : true, payDay: c.payDay || 10, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor) };
       prepState.uniform = uniformFromArray(old && old.uniform);
     }
     prepKeep = false;
@@ -3201,7 +3201,6 @@
     html += '<div class="grid2"><div><label>시급 (원)</label><input class="in" id="pp-wage" type="number" step="10" value="' + esc(f.wage) + '"></div><div><label>임금계약 종료일</label><input class="in" id="pp-wageend" type="date" value="' + esc(f.wageEnd) + '"' + (f.wageNoEnd ? ' disabled' : '') + '><label style="margin-top:4px"><input type="checkbox" id="pp-wagenoend"' + (f.wageNoEnd ? ' checked' : '') + '> 기간 정함 없음</label></div></div>';
     html += '<div class="grid2"><div><label>급여일 (익월 ○일, 오후 11시경 입금)</label><input class="in" id="pp-payday" type="number" min="1" max="31" value="' + esc(f.payDay) + '"></div><div><label>식대 (월, 원)</label><input class="in" id="pp-meal" type="number" step="10000" value="' + esc(f.meal) + '"></div></div>';
     html += '<div><label><input type="checkbox" id="pp-prob"' + (f.probation ? ' checked' : '') + '> 수습기간 3개월 적용</label> &nbsp; <label><input type="checkbox" id="pp-minor"' + (f.minor ? ' checked' : '') + '> 만 18세 미만 (친권자 동의서 추가)</label></div>';
-    html += '<div><label><input type="checkbox" id="pp-residentblank"' + (f.residentBlank ? ' checked' : '') + '> 등본 없음 · 주민등록번호 칸 비워서 계약서에 직접 쓰게 하기</label><div class="muted" style="margin-top:2px">체크하면 계약서를 뽑아 그 직원이 그 자리에 손으로 써요. 앱에는 번호를 저장하지 않아요.</div></div>';
     html += '<div><label>요일별 근무시간 · 휴게 (비우면 휴무)</label><table class="slip-t" style="margin:0"><tr><th style="width:44px">요일</th><th>시작</th><th>끝</th><th>휴게</th></tr>';
     [1, 2, 3, 4, 5, 6, 0].forEach(function(i){ var d = f.days[i] || {}; html += '<tr><td class="c"><b>' + WD[i] + '</b></td><td><select class="in pp-ds" data-d="' + i + '" style="padding:6px">' + halfHourOptions(d.s || '') + '</select></td><td><select class="in pp-de" data-d="' + i + '" style="padding:6px">' + halfHourOptions(d.e || '') + '</select></td><td><select class="in pp-db" data-d="' + i + '" style="padding:6px"><option value="0"' + (!d.brk ? ' selected' : '') + '>없음</option><option value="30"' + (d.brk === 30 ? ' selected' : '') + '>30분</option><option value="60"' + (d.brk === 60 ? ' selected' : '') + '>60분</option></select></td></tr>'; });
     html += '</table></div>';
@@ -3220,7 +3219,7 @@
     var f = prepState.f, g = function(id){ return document.getElementById(id); };
     if (!g('pp-branch')) return;
     f.branchId = g('pp-branch').value; f.duty = g('pp-duty').value.trim(); f.start = g('pp-start').value; f.noEnd = g('pp-noend').checked; f.end = f.noEnd ? '' : g('pp-end').value;
-    f.wage = num(g('pp-wage').value); f.wageNoEnd = g('pp-wagenoend').checked; f.wageEnd = f.wageNoEnd ? '' : g('pp-wageend').value; f.payDay = num(g('pp-payday').value); f.meal = num(g('pp-meal').value); f.probation = g('pp-prob').checked; f.minor = g('pp-minor').checked; f.residentBlank = g('pp-residentblank').checked;
+    f.wage = num(g('pp-wage').value); f.wageNoEnd = g('pp-wagenoend').checked; f.wageEnd = f.wageNoEnd ? '' : g('pp-wageend').value; f.payDay = num(g('pp-payday').value); f.meal = num(g('pp-meal').value); f.probation = g('pp-prob').checked; f.minor = g('pp-minor').checked;
     var days = {}; app.querySelectorAll('.pp-ds').forEach(function(el){ var i = el.getAttribute('data-d'); var s = el.value, e = app.querySelector('.pp-de[data-d="' + i + '"]').value, brk = +app.querySelector('.pp-db[data-d="' + i + '"]').value; if (s && e) days[i] = { s: s, e: e, brk: brk }; }); f.days = days;
     ['apron', 'karate_short', 'karate_long', 'chef'].forEach(function(k){ var el = app.querySelector('.pp-uq[data-key="' + k + '"]'); if (el) prepState.uniform[k].qty = num(el.value) || 1; });
   }
@@ -3233,7 +3232,7 @@
     if (!f.wage || f.wage < 10320){ if (!window.confirm('시급이 2026년 최저임금(10,320원)보다 낮아요. 그래도 저장할까요?')) return; }
     if (!Object.keys(f.days).length){ if (!window.confirm('근무시간이 비어 있어요. 계약서 근무시간 표가 빈칸으로 나가요. 계속할까요?')) return; }
     var bn = branchName(f.branchId), addr = (BND().company.sites.filter(function(x){ return bn.indexOf(x[0]) === 0; })[0] || [])[1] || '';
-    var c = { branchId: f.branchId, branchName: bn, branchAddr: addr, start: f.start, end: f.noEnd ? '' : f.end, probation: f.probation, duty: f.duty, wage: f.wage, wageEnd: f.wageEnd, payDay: f.payDay, meal: f.meal, days: f.days, preparedBy: session.name, residentBlank: f.residentBlank };
+    var c = { branchId: f.branchId, branchName: bn, branchAddr: addr, start: f.start, end: f.noEnd ? '' : f.end, probation: f.probation, duty: f.duty, wage: f.wage, wageEnd: f.wageEnd, payDay: f.payDay, meal: f.meal, days: f.days, preparedBy: session.name };
     var data = { c: c, uniform: uniformToArray(prepState.uniform), minor: f.minor, staff: { name: s.name }, checks: {} };
     var batchId = prepState.batchId || uuid4();
     var keys = BND().list.filter(function(d){ return !d.minorOnly || f.minor; });
@@ -3391,7 +3390,6 @@
   var signState = { branchId: null, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [], residentNumber: '' };
   function signReset(){ signState = { branchId: signState.branchId, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [], residentNumber: '' }; }
   // 주민등록번호: 앱 기록(ops_documents.data)에는 절대 안 남기고, 근로계약서 PDF를 그릴 때만 잠깐 끼워 넣는다.
-  function needsResident(st){ var r = st.docs[0]; return !!(r && r.data && r.data.c && r.data.c.residentBlank); }
   function fmtResidentTyping(el){ var d = el.value.replace(/\D/g, '').slice(0, 13); var out = d.slice(0, 6); if (d.length > 6) out += '-' + d.slice(6, 13); if (el.value !== out) el.value = out; }
   function validResident(v){ return /^\d{6}-\d{7}$/.test(v || ''); }
   // 입사 시 제출 서류 3가지 (등본·통장사본은 서류 표에 sub_* 로, 보건증은 8차 보건증 표로)
@@ -3509,7 +3507,7 @@
       html += '<div class="form"><div class="grid2"><div><label>생년월일 (숫자 8자리)</label><input class="in birth" id="si-birth" inputmode="numeric" maxlength="10" placeholder="예: 19830115" value="' + esc(inf.birth || '') + '"></div><div><label>연락처</label><input class="in" id="si-phone" type="tel" inputmode="tel" placeholder="010-0000-0000" value="' + esc(inf.phone || '') + '"></div></div>';
       html += '<div><label>주소</label><input class="in" id="si-address" placeholder="도로명 주소" value="' + esc(inf.address || '') + '"></div>';
       html += '<div><label>이메일 (서류를 받을 주소)</label><input class="in" id="si-email" type="email" inputmode="email" autocapitalize="off" placeholder="example@gmail.com" value="' + esc(inf.email || '') + '"></div>';
-      html += '<div><label>이메일 한 번 더</label><input class="in" id="si-email2" type="email" inputmode="email" autocapitalize="off" value="' + esc(inf.email2 || '') + '"></div>' + (needsResident(st) ? '<div><label>주민등록번호</label><input class="in resident" id="si-resident" inputmode="numeric" maxlength="14" placeholder="예: 900101-1234567" value="' + esc(st.residentNumber || '') + '"></div>' : '') + '</div>';
+      html += '<div><label>이메일 한 번 더</label><input class="in" id="si-email2" type="email" inputmode="email" autocapitalize="off" value="' + esc(inf.email2 || '') + '"></div>' + '<div><label>주민등록번호</label><input class="in resident" id="si-resident" inputmode="numeric" maxlength="14" placeholder="예: 900101-1234567" value="' + esc(st.residentNumber || '') + '"></div>' + '</div>';
       html += '<div id="si-guardian" class="' + (minor ? '' : 'hidden') + '"><div class="group-title">친권자(후견인) 정보 (만 18세 미만)</div><div class="form"><div class="grid2"><div><label>성명</label><input class="in" id="sg-name" value="' + esc(g.name || '') + '"></div><div><label>관계</label><input class="in" id="sg-relation" placeholder="예: 부, 모" value="' + esc(g.relation || '') + '"></div></div><div class="grid2"><div><label>생년월일 (숫자 8자리)</label><input class="in birth" id="sg-birth" inputmode="numeric" maxlength="10" placeholder="예: 19800101" value="' + esc(g.birth || '') + '"></div><div><label>연락처</label><input class="in" id="sg-phone" type="tel" value="' + esc(g.phone || '') + '"></div></div><div><label>주소</label><input class="in" id="sg-address" value="' + esc(g.address || '') + '"></div></div></div>';
       html += '<div class="stickybar"><div class="inner"><button class="btn" data-act="sign-back">취소</button><button class="btn primary block" data-act="sign-info-next">다음 (서류 읽기)</button></div></div>';
       app.innerHTML = html;
@@ -3589,9 +3587,9 @@
     if (!inf.address){ toast('주소를 넣어 주세요'); return; }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inf.email)){ toast('이메일 주소를 확인해 주세요'); return; }
     if (inf.email !== inf.email2){ toast('이메일 두 개가 서로 달라요'); return; }
-    if (needsResident(st)){
+    {
       var rn = g('si-resident').trim();
-      if (!validResident(rn)){ toast('주민등록번호를 13자리로 넣어 주세요 (예: 900101-1234567)'); return; }
+      if (rn && !validResident(rn)){ toast('주민등록번호를 13자리로 넣어 주세요 (예: 900101-1234567), 등본으로 낼 거면 비워 두세요'); return; }
       st.residentNumber = rn;
     }
     st.info = inf;
@@ -4464,6 +4462,8 @@
     await db.insert('ops_subsidy_logs', { case_id: caseId, content: text || null, file_path: path, created_by: session.staffId, created_at: nowIso() });
     subsidyLogFile = null;
     toast('기록했어요'); render();
+  }
+
   // ===== 선결제: 손님이 미리 충전해 두고 4매장에서 같이 쓰는 잔액 (supabase-migration-prepay.sql, 기획/선결제_설계.md) =====
   // 돈 장부라서 표를 직접 안 건드리고 prepay_* DB 함수로만 — 매장 코드(6자리)/사장님 코드를 서버가 확인
   // 코드는 이 화면 메모리에만 들고 있음 (새로고침·잠그기 하면 다시 입력)
@@ -4874,14 +4874,14 @@
     return err('모르는 기능: ' + fn);
   }
 
-  }
-
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
     var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
     try {
       switch (act){
         case 'back': history.length > 1 ? history.back() : nav('#/home'); break;
+        case 'logout': if (window.confirm('다른 이름으로 들어갈까요?')){ saveSession(null); nav('#/login'); } break;
+        case 'owner-quick': await ownerQuick(); break;
         case 'pp-init': el.disabled = true; try { await ppInit(); } finally { el.disabled = false; } break;
         case 'pp-login': el.disabled = true; try { await ppLogin(); } finally { el.disabled = false; } break;
         case 'pp-lock': prepaySt.code = null; prepaySt.role = null; prepaySt.found = null; prepaySt.q = ''; toast('잠갔어요'); render(); break;
@@ -4896,8 +4896,6 @@
         case 'pp-import': el.disabled = true; try { await ppImport(); } finally { el.disabled = false; } break;
         case 'pp-set-code': await ppSetCode(id); break;
         case 'pp-set-bonus': await ppSetBonus(); break;
-        case 'logout': if (window.confirm('다른 이름으로 들어갈까요?')){ saveSession(null); nav('#/login'); } break;
-        case 'owner-quick': await ownerQuick(); break;
         case 'soon': e.preventDefault(); toast('다음 단계에서 만들어요'); break;
         case 'pick-branch': loginState.branchId = id; render(); break;
         case 'pick-branch-reset': loginState.branchId = null; render(); break;
@@ -5181,9 +5179,9 @@
     if (e.target.classList.contains('hc-manual-file')){ await hcAdminPhotoPicked(e.target.getAttribute('data-staff'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('subsidy-checklist-file')){ await subsidyChecklistFilePicked(e.target.getAttribute('data-case'), +e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'sc-log-file'){ await subsidyLogFilePicked(e.target.files && e.target.files[0]); return; }
-    if (e.target.id === 'pp-imp'){ prepaySt.importText = e.target.value; prepaySt.importRows = e.target.value.trim() ? ppParseImport(e.target.value) : null; render(); return; }   // 붙여넣기만 해도 미리보기
     if (e.target.classList.contains('sub-file')){ subReadSkips(); await subPicked(e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('sub-file-later')){ await subLaterPicked(e.target.getAttribute('data-batch'), e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'pp-imp'){ prepaySt.importText = e.target.value; prepaySt.importRows = e.target.value.trim() ? ppParseImport(e.target.value) : null; render(); return; }   // 붙여넣기만 해도 미리보기
     if (e.target.id === 'rs-import'){ rsState.importText = e.target.value; if (e.target.value.trim()) rsImportPreview(); return; }   // 붙여넣기만 해도 바로 읽어 보기
     if (e.target.id === 'buy-method'){ buyRecalc(buyIdsForm(), e.target.id); return; }
     { var bmm = /^bm-(.+)$/.exec(e.target.id || ''); if (bmm){ buyRecalc(buyIdsRow(bmm[1]), e.target.id); return; } }
@@ -5211,10 +5209,10 @@
   });
   app.addEventListener('input', function(e){
     if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
-    if (e.target.id === 'pp-paid'){ ppChargePreview(); return; }
-    if (e.target.id === 'pp-cf'){ var ppk = e.target.value.trim(), ppkd = ppDigits(ppk); app.querySelectorAll('.pp-cust').forEach(function(r){ var k = r.getAttribute('data-k') || ''; r.classList.toggle('hidden', !!ppk && k.indexOf(ppk) < 0 && !(ppkd.length >= 3 && ppDigits(k).indexOf(ppkd) >= 0)); }); return; }
     if (e.target.classList.contains('resident')){ fmtResidentTyping(e.target); return; }
     if (e.target.id === 'item-search'){ itemSearchFilter(e.target.value); return; }
+    if (e.target.id === 'pp-paid'){ ppChargePreview(); return; }
+    if (e.target.id === 'pp-cf'){ var ppk = e.target.value.trim(), ppkd = ppDigits(ppk); app.querySelectorAll('.pp-cust').forEach(function(r){ var k = r.getAttribute('data-k') || ''; r.classList.toggle('hidden', !!ppk && k.indexOf(ppk) < 0 && !(ppkd.length >= 3 && ppDigits(k).indexOf(ppkd) >= 0)); }); return; }
     if (e.target.id === 'chk-search'){ checkSearchFilter(e.target.value); return; }
     if (e.target.id === 'tf-item-search'){
       var tfSel = document.getElementById('tf-item');
