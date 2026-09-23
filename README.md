@@ -4,6 +4,7 @@
 
 **앱 주소: https://sungpil-1225.github.io/bonnoel-ops/** (GitHub Pages. main에 push하면 1분 안에 자동 반영) 홈 화면 하나에 아이콘별로 도구가 붙습니다.
 
+- 13차(완성): **유니폼 반납**(사장님·매니저: 퇴사자가 유니폼을 반납할 때 확인·서명받기. 입사 때 지급한 품목·수량이 자동으로 뜨고, 실제 돌려받은 수량만 고쳐서 반납일·서명 받으면 "유니폼 반납확인서" PDF가 만들어져 저장됨) — 새 테이블 없이 기존 `ops_documents`·`documents` 저장소 재사용. 양식은 [`docs-templates.js`](docs-templates.js)의 `uniform_return`.
 - 12차(완성): **출퇴근 근무표 기준 + 추가 근무 승인** — 출근을 누르면 그 날 근무표 시간대로 인정(지각은 1분 단위 자동 차감, 일찍 퇴근은 표시만). 조기 출근·연장은 직원이 [추가 근무 올리기]에서 사유와 함께 직접 올리고(앱이 먼저 권하지 않음, 5분 단위) 사장님이 **추가 근무 승인**에서 수락해야 인정. 실제 누른 시각은 증거로 보관, 근무 조회에 "확인해 볼 날"(실제가 30분 이상 긴데 안 올린 날) 표시. 급여 초안도 이 기준을 따름. 테이블은 [`supabase-migration-extras.sql`](supabase-migration-extras.sql) (SQL Editor에서 Run 한 번). 설계: [기획/출퇴근_근무표기준_설계.md](기획/출퇴근_근무표기준_설계.md)
 - 11차(완성): **명세서 이메일 발송** — 급여 초안 → 명세서 화면에 [이메일로 보내기] 버튼. 급여 설정에서 등록한 직원 이메일로 명세서를 보내고, 발송 시각·실패 이유를 기록해 재시도할 수 있어요. `send-document`와 같은 Gmail 비밀값을 그대로 재사용(새 설정 없음) — 테이블은 [`supabase-migration-payslip-email.sql`](supabase-migration-payslip-email.sql), 메일 함수는 [`supabase/functions/send-payslip/index.ts`](supabase/functions/send-payslip/index.ts). 아래 "명세서 발송 설정".
 - 10차(완성): **청년지원금**(사장님만: 청년일자리도약장려금 참여 직원 등록 → 채용일 기준 5단계(참여자등록·6개월·9개월·12개월·2년차) 신청 건이 자동 생성 → 단계별 필요서류 체크리스트에 파일 올리기, 상태(대기중/제출함/수정요청/접수완료/입금완료) 관리, 기관 회신·메모를 진행 기록에 계속 쌓아서 "지금 뭘 기다리는지" 한눈에 확인, 입금액·입금일 기록) — 테이블은 [`supabase-migration-subsidy.sql`](supabase-migration-subsidy.sql). 아래 "청년지원금 설정". 설계: [기획/청년지원금관리_설계.md](기획/청년지원금관리_설계.md)

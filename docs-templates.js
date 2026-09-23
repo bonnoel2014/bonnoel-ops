@@ -279,7 +279,25 @@
       '</div>';
   }
 
-  var R = { contract: contract, privacy: privacy, pledge: pledge, cctv: cctv, uniform: uniform, guardian: guardian };
+  // ---------- 유니폼 반납확인서 (퇴사 시. 입사 서류 6종에는 안 들어가고 따로 만듦) ----------
+  function uniformReturn(ctx){
+    var s = ctx.staff || {}, ch = ctx.checks || {}, items = (ctx.uniform || []).filter(function(x){ return x && x.item && num2(x.qty) > 0; });
+    var rows = items.length ? items.map(function(x, i){ return '<tr><td class="c">' + (i + 1) + '</td><td>' + esc(x.item) + '</td><td class="c">' + esc(x.size || '-') + '</td><td class="c">' + esc(x.qty || 1) + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="c muted">반납 물품 없음</td></tr>';
+    return '<div class="page">' +
+      '<h1>유니폼 반납확인서</h1>' +
+      '<table><tr><th style="width:18%">성명</th><td>' + v(s.name) + '</td><th style="width:18%">근무지</th><td>' + v(ctx.c && ctx.c.branchName) + '</td></tr>' +
+      '<tr><th>연락처</th><td>' + v(s.phone) + '</td><th>반납일</th><td>' + (ctx.returnDate ? kd(ctx.returnDate) : kd(ctx.signedAt)) + '</td></tr></table>' +
+      '<table><tr><th style="width:10%">번호</th><th>품목</th><th style="width:16%">사이즈</th><th style="width:14%">수량</th></tr>' + rows + '</table>' +
+      '<div class="box small"><p>1. 위 물품은 근무 중 지급받아 사용한 ' + COMPANY.name + ' 소유 물품입니다.</p>' +
+      '<p>2. 근무 종료(퇴사)에 따라 위 물품을 반납하였음을 확인합니다. ' + box(ch.returned !== false) + '</p></div>' +
+      '<div class="date">' + kd(ctx.signedAt) + '</div>' +
+      '<div class="signrow kp"><span>확인자 : ' + COMPANY.name + ' ' + v(ctx.c && ctx.c.confirmedBy, 60) + ' ' + seal(ctx) + '</span>' + sig(ctx.sig, s.name, '반납자 :') + '</div>' +
+      foot(ctx, '유니폼 반납확인서') +
+      '</div>';
+  }
+  function num2(n){ n = Number(n); return isNaN(n) ? 0 : n; }
+
+  var R = { contract: contract, privacy: privacy, pledge: pledge, cctv: cctv, uniform: uniform, guardian: guardian, uniform_return: uniformReturn };
   window.BN_DOCS = {
     version: VERSION, company: COMPANY, list: LIST, css: CSS, age: age,
     byKey: function(k){ return LIST.filter(function(d){ return d.key === k; })[0]; },
