@@ -77,8 +77,8 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 1. **테이블·저장소 만들기**: Supabase 대시보드 → SQL Editor → New query → [`supabase-migration-docs.sql`](supabase-migration-docs.sql) 전체 붙여넣기 → Run. (서류 표 `ops_documents`와 `documents` 저장소가 생김. 여러 번 실행해도 안전)
 2. **메일 함수 올리기**: Edge Functions → Deploy a new function → **Via Editor** → 이름 `send-document` → [`supabase/functions/send-document/index.ts`](supabase/functions/send-document/index.ts) 내용을 전부 붙여넣기 → Deploy → 함수 상세에서 **Verify JWT** 끄기.
 3. **비밀값 넣기**: Edge Functions → Secrets → `GMAIL_USER` = bonnoel.news@gmail.com, `GMAIL_APP_PASSWORD` = 그 계정의 앱 비밀번호 16자리(카드뉴스 발송에 쓰는 것과 같은 값), `OWNER_EMAIL` = bonnoel2014@naver.com. (선택) `APP_KEY` = index.html의 `sb_publishable_…` 값.
-4. **앱 설정**: 홈 → 입사 서류 → 아래 "설정(사장님)"에서 사본 메일 확인, 직인 이미지(투명 PNG)가 있으면 등록.
-5. **써 보기**: 입사 서류 → 직원 [준비] → 조건 확인 후 저장 → 매장폰에서 홈 → **서류 서명**(또는 주소 뒤에 `#/sign`) → 이름·비밀번호 → 정보 입력 → 서류 읽고 체크·서명 → 완료 화면에 "○○로 보냈어요"가 뜨면 성공. 실패하면 "입사 서류"에서 상태가 "발송 실패"로 남고 [재발송]으로 다시 보낼 수 있어요.
+4. **앱 설정**: 홈 → 근로계약서 & 입사서류 → 아래 "설정(사장님)"에서 사본 메일 확인, 직인 이미지(투명 PNG)가 있으면 등록.
+5. **써 보기**: 근로계약서 & 입사서류 → 직원 [준비] → 조건 확인 후 저장 → 매장폰에서 홈 → **서류 서명**(또는 주소 뒤에 `#/sign`) → 이름·비밀번호 → 정보 입력 → 서류 읽고 체크·서명 → 완료 화면에 "○○로 보냈어요"가 뜨면 성공. 실패하면 "근로계약서 & 입사서류"에서 상태가 "발송 실패"로 남고 [재발송]으로 다시 보낼 수 있어요.
 
 지메일 SMTP가 서버에서 막히면(발송 실패에 연결 오류가 뜨면) Secrets에 `MAIL_PROVIDER`=resend, `RESEND_API_KEY`, `MAIL_FROM`(인증한 도메인 주소)을 넣어 Resend로 바꿀 수 있어요.
 
