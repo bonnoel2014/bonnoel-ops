@@ -47,10 +47,12 @@
   .homelink:hover{ color:var(--primary-dark); }
 
   .eyebrow{ font-family:var(--font-latin); letter-spacing:.22em; text-transform:uppercase; color:var(--primary-dark); font-size:.8rem; font-weight:600; }
+  .badge{ display:inline-block; border-radius:9999px; padding:.3rem .85rem; font-size:.78rem; font-weight:600; background:var(--accent); color:var(--accent-fg); }
 
   main{ padding-bottom:5rem; }
   .hero{ padding:3rem 0 1.5rem; }
-  h1{ margin:.6rem 0 0; font-size:2.4rem; line-height:1.2; font-weight:700; }
+  .hero .eyebrow{ margin-top:.9rem; }
+  h1{ margin:.6rem 0 0; font-size:2.4rem; line-height:1.15; font-weight:700; }
   h1 em{ font-style:normal; color:var(--primary-dark); }
   .lead{ margin:1rem 0 0; max-width:34rem; color:var(--muted-fg); line-height:1.7; }
 
@@ -98,12 +100,19 @@
   .muted{ color:var(--muted-fg); font-size:.85rem; }
 
   footer{ margin-top:5rem; border-top:1px solid var(--line); background:var(--secondary); }
-  footer .container-x{ padding-block:2.5rem; }
+  .foot-grid{ padding-block:2.5rem; display:grid; gap:2rem; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); }
   footer .brand{ font-family:var(--font-serif); font-size:1.3rem; font-weight:700; }
   footer .brand span{ font-family:var(--font-latin); font-weight:400; color:var(--muted-fg); }
   footer p{ margin:.6rem 0 0; font-size:.85rem; color:var(--muted-fg); line-height:1.6; }
   footer a.tel{ display:inline-block; margin-top:.6rem; font-size:.85rem; }
   footer a.tel:hover{ color:var(--primary-dark); }
+  .foot-label{ margin-bottom:.7rem; }
+  .foot-list{ list-style:none; margin:0; padding:0; display:grid; gap:.5rem; font-size:.85rem; color:var(--muted-fg); }
+  .foot-list b{ color:var(--fg); font-weight:600; }
+  .foot-list a{ color:var(--muted-fg); }
+  .foot-list a:hover{ color:var(--primary-dark); }
+  .foot-bottom{ border-top:1px solid var(--line); }
+  .foot-bottom-row{ padding-block:1rem; font-size:.75rem; color:var(--muted-fg); display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem; }
 
   @media (max-width:420px){ h1{ font-size:2rem; } }
 </style>
@@ -118,6 +127,7 @@
 
 <main class="container-x">
   <section class="hero">
+    <span class="badge">앱 설치 없이 · 번호로 바로 사용</span>
     <p class="eyebrow">Prepay</p>
     <h1>미리 채워 두고,<br><em>네 곳</em> 어디서나 편하게.</h1>
     <p class="lead">본노엘 선결제는 매장에서 미리 충전해 두고 계산할 때 휴대폰 번호로 쓰는 방식이에요. 앱 설치는 필요 없어요.</p>
@@ -165,10 +175,37 @@
 </main>
 
 <footer>
-  <div class="container-x">
-    <p class="brand">본노엘 <span>Bon Noël</span></p>
-    <p>"메리 크리스마스"라는 뜻의 이름으로,<br>어머니를 위해 시작된 따뜻한 빵 이야기.</p>
-    <a class="tel" href="tel:01020691471">010-2069-1471</a>
+  <div class="container-x foot-grid">
+    <div>
+      <p class="brand">본노엘 <span>Bon Noël</span></p>
+      <p>"메리 크리스마스"라는 뜻의 이름으로,<br>어머니를 위해 시작된 따뜻한 빵 이야기.</p>
+      <a class="tel" href="tel:01020691471">010-2069-1471</a>
+    </div>
+    <div>
+      <p class="eyebrow foot-label">Stores</p>
+      <ul class="foot-list">
+        <li><b>성수점</b> · 07:30–23:30</li>
+        <li><b>답십리점</b> · 09:00–21:30</li>
+        <li><b>중계 은행사거리점</b> · 08:15–22:10</li>
+        <li><b>왕십리점</b> · 24시간 · 무인</li>
+      </ul>
+    </div>
+    <div>
+      <p class="eyebrow foot-label">Links</p>
+      <ul class="foot-list">
+        <li><a href="https://www.bonnoel.com">홈페이지 ↗</a></li>
+        <li><a href="https://www.bonnoel.com/menu">메뉴 & 택배 주문 ↗</a></li>
+        <li><a href="https://smartstore.naver.com/bonnoel1004" target="_blank" rel="noopener">네이버 스마트스토어 ↗</a></li>
+        <li><a href="https://blog.naver.com/bonnoel2014" target="_blank" rel="noopener">블로그 ↗</a></li>
+        <li><a href="https://www.instagram.com/bonnoel2020/" target="_blank" rel="noopener">인스타그램 ↗</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot-bottom">
+    <div class="container-x foot-bottom-row">
+      <span>© 2026 본노엘 Bon Noël. All rights reserved.</span>
+      <span>성수 · 답십리 · 중계 · 왕십리 직영</span>
+    </div>
   </div>
 </footer>
 
