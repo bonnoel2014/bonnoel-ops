@@ -3379,8 +3379,12 @@
   }
 
   // --- 서류 서명 (매장폰 키오스크, 로그인 없이) ---
-  var signState = { branchId: null, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [] };
-  function signReset(){ signState = { branchId: signState.branchId, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [] }; }
+  var signState = { branchId: null, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [], residentNumber: '' };
+  function signReset(){ signState = { branchId: signState.branchId, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [], residentNumber: '' }; }
+  // 주민등록번호: 앱 기록(ops_documents.data)에는 절대 안 남기고, 근로계약서 PDF를 그릴 때만 잠깐 끼워 넣는다.
+  function needsResident(st){ var r = st.docs[0]; return !!(r && r.data && r.data.c && r.data.c.residentBlank); }
+  function fmtResidentTyping(el){ var d = el.value.replace(/\D/g, '').slice(0, 13); var out = d.slice(0, 6); if (d.length > 6) out += '-' + d.slice(6, 13); if (el.value !== out) el.value = out; }
+  function validResident(v){ return /^\d{6}-\d{7}$/.test(v || ''); }
   // 입사 시 제출 서류 3가지 (등본·통장사본은 서류 표에 sub_* 로, 보건증은 8차 보건증 표로)
   var SUB_KINDS = [
     { key: 'sub_resident', kind: 'resident', title: '주민등록등본', hint: '주민센터·정부24에서 뗀 등본. 사진 또는 PDF', accept: 'image/*,application/pdf' },
@@ -3496,7 +3500,7 @@
       html += '<div class="form"><div class="grid2"><div><label>생년월일 (숫자 8자리)</label><input class="in birth" id="si-birth" inputmode="numeric" maxlength="10" placeholder="예: 19830115" value="' + esc(inf.birth || '') + '"></div><div><label>연락처</label><input class="in" id="si-phone" type="tel" inputmode="tel" placeholder="010-0000-0000" value="' + esc(inf.phone || '') + '"></div></div>';
       html += '<div><label>주소</label><input class="in" id="si-address" placeholder="도로명 주소" value="' + esc(inf.address || '') + '"></div>';
       html += '<div><label>이메일 (서류를 받을 주소)</label><input class="in" id="si-email" type="email" inputmode="email" autocapitalize="off" placeholder="example@gmail.com" value="' + esc(inf.email || '') + '"></div>';
-      html += '<div><label>이메일 한 번 더</label><input class="in" id="si-email2" type="email" inputmode="email" autocapitalize="off" value="' + esc(inf.email2 || '') + '"></div></div>';
+      html += '<div><label>이메일 한 번 더</label><input class="in" id="si-email2" type="email" inputmode="email" autocapitalize="off" value="' + esc(inf.email2 || '') + '"></div>' + (needsResident(st) ? '<div><label>주민등록번호</label><input class="in resident" id="si-resident" inputmode="numeric" maxlength="14" placeholder="예: 900101-1234567" value="' + esc(st.residentNumber || '') + '"></div><div class="muted" style="margin-top:-4px">등본을 못 내서 계약서에 직접 적는 거예요. 이 번호는 근로계약서 PDF에만 들어가고, 앱 다른 화면에는 저장되지 않아요.</div>' : '') + '</div>';
       html += '<div id="si-guardian" class="' + (minor ? '' : 'hidden') + '"><div class="group-title">친권자(후견인) 정보 (만 18세 미만)</div><div class="form"><div class="grid2"><div><label>성명</label><input class="in" id="sg-name" value="' + esc(g.name || '') + '"></div><div><label>관계</label><input class="in" id="sg-relation" placeholder="예: 부, 모" value="' + esc(g.relation || '') + '"></div></div><div class="grid2"><div><label>생년월일 (숫자 8자리)</label><input class="in birth" id="sg-birth" inputmode="numeric" maxlength="10" placeholder="예: 19800101" value="' + esc(g.birth || '') + '"></div><div><label>연락처</label><input class="in" id="sg-phone" type="tel" value="' + esc(g.phone || '') + '"></div></div><div><label>주소</label><input class="in" id="sg-address" value="' + esc(g.address || '') + '"></div></div></div>';
       html += '<div class="stickybar"><div class="inner"><button class="btn" data-act="sign-back">취소</button><button class="btn primary block" data-act="sign-info-next">다음 (서류 읽기)</button></div></div>';
       app.innerHTML = html;
@@ -3513,7 +3517,8 @@
     if (st.step === 'doc'){
       var row = st.docs[st.idx], def = BND().byKey(row.doc_key), isG = !!def.guardianSign;
       var settings = await loadDocsSettings().catch(function(){ return {}; });
-      var data = Object.assign({}, row.data, { staff: Object.assign({ name: s.name }, st.info), guardian: st.guardian });
+      var previewStaff = Object.assign({ name: s.name }, st.info); if (row.doc_key === 'contract' && st.residentNumber) previewStaff.residentNumber = st.residentNumber; // 화면 미리보기 전용, data엔 안 남음
+      var data = Object.assign({}, row.data, { staff: previewStaff, guardian: st.guardian });
       var ctx = docCtx(Object.assign({}, row, { data: data }), { sig: st.sig, gsig: st.gsig, seal: settings.seal, signedAt: todayStr(), signedTime: hm(nowIso()), checks: st.checks[row.doc_key] || {} });
       html += steps(st.idx + 2) + '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + (st.idx + 1) + '/' + st.docs.length + ' · ' + esc(row.doc_title) + '</b><span class="muted">' + esc(s.name) + '</span></div>';
       html += '<div class="muted" style="margin:0 4px 8px">끝까지 읽은 뒤 아래 항목에 체크하고 서명해 주세요.</div>';
@@ -3575,6 +3580,11 @@
     if (!inf.address){ toast('주소를 넣어 주세요'); return; }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inf.email)){ toast('이메일 주소를 확인해 주세요'); return; }
     if (inf.email !== inf.email2){ toast('이메일 두 개가 서로 달라요'); return; }
+    if (needsResident(st)){
+      var rn = g('si-resident').trim();
+      if (!validResident(rn)){ toast('주민등록번호를 13자리로 넣어 주세요 (예: 900101-1234567)'); return; }
+      st.residentNumber = rn;
+    }
     st.info = inf;
     if (isMinor()){
       st.guardian = { name: g('sg-name').trim(), relation: g('sg-relation').trim(), birth: normBirth(g('sg-birth')) || '', phone: g('sg-phone').trim(), address: g('sg-address').trim() };
@@ -3620,7 +3630,8 @@
         var row = st.docs[i];
         setSignProgress('PDF 만드는 중 (' + (i + 1) + '/' + st.docs.length + ') · ' + row.doc_title);
         var data = Object.assign({}, row.data, { staff: Object.assign({ name: s.name }, st.info), guardian: st.guardian, checks: st.checks[row.doc_key] || {}, guardian_signed: !!st.gsig, minor: (row.data && row.data.minor) || isMinor() });
-        var ctx = docCtx(Object.assign({}, row, { data: data, signed_at: null }), { sig: st.sig, gsig: st.gsig, seal: settings.seal, signedAt: signedAt, signedTime: signedTime, checks: st.checks[row.doc_key] || {} });
+        var pdfStaff = data.staff; if (row.doc_key === 'contract' && st.residentNumber) pdfStaff = Object.assign({}, data.staff, { residentNumber: st.residentNumber }); // PDF를 그릴 때만 끼워 넣고, data(저장분)엔 안 넣음
+        var ctx = docCtx(Object.assign({}, row, { data: Object.assign({}, data, { staff: pdfStaff }), signed_at: null }), { sig: st.sig, gsig: st.gsig, seal: settings.seal, signedAt: signedAt, signedTime: signedTime, checks: st.checks[row.doc_key] || {} });
         var blob = await docPdf(row.doc_key, ctx);
         var path = dir + row.doc_key + '_' + ts + '.pdf';
         await db.upload(DOCS_BUCKET, path, blob, 'application/pdf');
@@ -4764,6 +4775,7 @@
   });
   app.addEventListener('input', function(e){
     if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
+    if (e.target.classList.contains('resident')){ fmtResidentTyping(e.target); return; }
     if (e.target.id === 'item-search'){ itemSearchFilter(e.target.value); return; }
     if (e.target.id === 'chk-search'){ checkSearchFilter(e.target.value); return; }
     if (e.target.id === 'tf-item-search'){
