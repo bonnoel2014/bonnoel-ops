@@ -1223,9 +1223,9 @@
   var staffUI = { showInactive: {} };
   function staffRow(s){
     var canRole = isOwner() && s.id !== session.staffId;
-    return '<div class="item' + (s.active === false ? ' disabled' : '') + '"><div class="iname"><div class="t">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + (s.active === false ? ' <span class="badge muted">퇴사</span>' : '') + '</div><div class="s">' + (s.branch_id ? esc(branchName(s.branch_id)) : '전체') + ' · ' + (s.pin ? '비밀번호 있음' : '비밀번호 아직') + '</div></div>' +
+    return '<div class="item' + (s.active === false ? ' disabled' : '') + '"><div class="iname"><div class="t">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + (s.active === false ? ' <span class="badge muted">퇴사</span>' : '') + '</div><div class="s">' + (s.branch_id ? esc(branchName(s.branch_id)) : '전체') + ' · ' + (isOwner() ? (s.pin ? '비번 ' + esc(s.pin) : '비밀번호 아직') : (s.pin ? '비밀번호 있음' : '비밀번호 아직')) + '</div></div>' +
       (canRole ? '<select class="in" style="width:auto;padding:6px" data-act="role" data-id="' + esc(s.id) + '"><option value="staff"' + (s.role === 'staff' || !s.role ? ' selected' : '') + '>근무자</option><option value="manager"' + (s.role === 'manager' ? ' selected' : '') + '>매니저</option><option value="owner"' + (s.role === 'owner' ? ' selected' : '') + '>사장</option></select>' : '') +
-      (s.pin && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">비번 초기화</button>' : '') +
+      (s.pin && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">1225로 초기화</button>' : '') +
       (s.id !== session.staffId && (isOwner() || s.role === 'staff') ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : '') + '</div>';
   }
   routes.staff = async function(params){
@@ -1298,6 +1298,12 @@
       }
       out.push(row);
     });
+    sch.requests.filter(function(x){ return !x.staff_id && x.branch_id === branchId && x.date === dateStr && ['covering', 'confirmed'].indexOf(x.status) >= 0; }).forEach(function(q){
+      var row = { staffId: null, name: '새 자리', start: q.start_time, end: q.end_time, brk: '', kind: 'normal', req: q, patternId: null, weekStart: null, note: null };
+      if (q.status === 'confirmed'){ if (q.sub_staff_id){ row.kind = 'sub'; row.subName = staffName(q.sub_staff_id); } else return; } // 원래 근무자가 없던 자리는 "1인 근무"가 없음
+      else row.kind = shiftPassed(dateStr, q.start_time) ? 'work' : 'covering';
+      out.push(row);
+    });
     out.sort(function(a, b){ return toMin(a.start) - toMin(b.start) || a.name.localeCompare(b.name); });
     return out;
   }
@@ -1309,7 +1315,7 @@
     if (row.kind === 'requested') return '<span class="badge muted">휴무 신청 중</span>';
     return '';
   }
-  function reqLine(q){ return esc(fmtDateK(q.date)) + ' ' + esc(tRange(q.start_time, q.end_time)) + ' · ' + esc(staffName(q.staff_id)); }
+  function reqLine(q){ return esc(fmtDateK(q.date)) + ' ' + esc(tRange(q.start_time, q.end_time)) + ' · ' + (q.staff_id ? esc(staffName(q.staff_id)) : '<span class="badge muted">새 자리(추가 대타)</span>'); }
 
   // --- 근무표 ---
   routes.schedule = async function(params){
@@ -1610,6 +1616,13 @@
     var ids = sel === 'all' ? base.branches.map(function(x){ return x.id; }) : [sel];
     var sch = await loadSchedule(ids, addDays(todayStr(), -30), addDays(todayStr(), 90));
     var html = topbar('대타 관리', true) + branchTabs(sel, true);
+    html += '<div class="group-title" data-act="opensub-toggle" style="cursor:pointer">+ 대타 직접 구하기 (기존 근무자 자리가 아니어도)</div><div class="card hidden" id="opensub-box"><div class="form">' +
+      (sel === 'all' ? '<div><label>매장</label><select class="in" id="os-branch">' + base.branches.map(function(x){ return '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>'; }).join('') + '</select></div>' : '') +
+      '<div><label>날짜</label><input class="in" type="date" id="os-date" value="' + addDays(todayStr(), 1) + '" min="' + todayStr() + '"></div>' +
+      '<div class="grid2"><div><label>시작</label><input class="in" type="time" id="os-start" step="1800" value="09:00"></div><div><label>끝</label><input class="in" type="time" id="os-end" step="1800" value="18:00"></div></div>' +
+      '<div><label>사유 (예: 행사 준비, 일손 부족)</label><input class="in" id="os-reason"></div>' +
+      '<div class="muted">기존 근무자의 휴무·대타가 아니라, 필요해서 새로 만드는 자리예요. 올리면 바로 "대타 구하는 중"에 떠서 지원받을 수 있어요.</div>' +
+      '<button class="btn sm primary" data-act="opensub-add" data-branch="' + esc(sel === 'all' ? '' : sel) + '">올리기</button></div></div>';
     var pending = sch.requests.filter(function(q){ return q.status === 'requested'; });
     var covering = sch.requests.filter(function(q){ return q.status === 'covering' && q.date >= todayStr(); });
     var confirmed = sch.requests.filter(function(q){ return q.status === 'confirmed' && q.date >= todayStr(); });
@@ -1628,7 +1641,7 @@
         var branchPeople = base.staff.filter(function(s){ return s.active !== false && s.id !== q.staff_id; }).sort(function(x, y){ return (x.branch_id === q.branch_id ? 0 : 1) - (y.branch_id === q.branch_id ? 0 : 1); });
         html += '<div class="expand"><div class="inline">';
         offers.forEach(function(o){ html += '<button class="btn sm primary" data-act="req-confirm" data-id="' + esc(q.id) + '" data-staff="' + esc(o.staff_id) + '">' + esc(staffName(o.staff_id)) + '(으)로 확정</button>'; });
-        html += '<button class="btn sm" data-act="req-confirm" data-id="' + esc(q.id) + '" data-staff="">1인 근무로 휴무 확정</button><button class="btn sm" data-act="req-reject" data-id="' + esc(q.id) + '">취소(출근)</button></div>' +
+        html += (q.staff_id ? '<button class="btn sm" data-act="req-confirm" data-id="' + esc(q.id) + '" data-staff="">1인 근무로 휴무 확정</button>' : '') + '<button class="btn sm" data-act="req-reject" data-id="' + esc(q.id) + '" data-adhoc="' + (q.staff_id ? '' : '1') + '">' + (q.staff_id ? '취소(출근)' : '자리 취소') + '</button></div>' +
           '<div class="inline" style="margin-top:6px"><select class="in" id="mc-' + esc(q.id) + '" style="flex:1"><option value="">대타 직접 지정 (알바랑 얘기해서 정했으면)</option>' + branchPeople.map(function(s){ return '<option value="' + esc(s.id) + '">' + esc(s.name) + (s.branch_id !== q.branch_id ? ' (' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + ')' : '') + '</option>'; }).join('') + '</select><button class="btn sm primary" data-act="req-confirm-pick" data-id="' + esc(q.id) + '">확정</button></div>' +
           '<div class="inline" style="margin-top:6px"><input class="in" id="mcn-' + esc(q.id) + '" placeholder="또는 이름 직접 입력 (명단에 없는 다른 지점 사람 등)" style="flex:1"><button class="btn sm primary" data-act="req-confirm-name" data-id="' + esc(q.id) + '" data-branch="' + esc(q.branch_id) + '">확정</button></div></div>';
       }
@@ -1637,13 +1650,13 @@
     html += '<div class="card section"><div class="sec-h">확정된 것<span class="sp"></span>' + confirmed.length + '</div>';
     if (!confirmed.length) html += '<div class="empty">없어요</div>';
     confirmed.forEach(function(q){
-      var titleName = q.sub_staff_id ? esc(staffName(q.staff_id)) + ' → ' + esc(staffName(q.sub_staff_id)) : esc(staffName(q.staff_id));
+      var titleName = q.staff_id ? (q.sub_staff_id ? esc(staffName(q.staff_id)) + ' → ' + esc(staffName(q.sub_staff_id)) : esc(staffName(q.staff_id))) : ('새 자리 → ' + (q.sub_staff_id ? esc(staffName(q.sub_staff_id)) : '(안 정해짐)'));
       html += '<div class="item"><div class="iname"><div class="t">' + esc(branchName(q.branch_id)) + ' · ' + esc(fmtDateK(q.date)) + ' ' + esc(tRange(q.start_time, q.end_time)) + ' · ' + titleName + '</div><div class="s">' + (q.sub_staff_id ? '대타' : '1인 근무 휴무') + ' · ' + esc(staffName(q.confirmed_by)) + ' 컨펌 ' + md(q.confirmed_at) + '</div></div><button class="btn sm" data-act="req-reopen" data-id="' + esc(q.id) + '">풀기</button></div>';
     });
     html += '</div>';
     if (past.length){
       html += '<div class="card section"><div class="sec-h">지난 기록 (30일)</div>';
-      past.forEach(function(q){ html += '<div class="hist"><span>' + esc(fmtDateK(q.date)) + '</span><span class="sp">' + esc(staffName(q.staff_id)) + ' ' + esc(tRange(q.start_time, q.end_time)) + '</span><span>' + (q.status === 'confirmed' ? (q.sub_staff_id ? '대타 ' + esc(staffName(q.sub_staff_id)) : '1인 근무') : q.status === 'covering' ? '출근(못 구함)' : esc(STATUS_K[q.status])) + '</span></div>'; });
+      past.forEach(function(q){ html += '<div class="hist"><span>' + esc(fmtDateK(q.date)) + '</span><span class="sp">' + (q.staff_id ? esc(staffName(q.staff_id)) : '새 자리') + ' ' + esc(tRange(q.start_time, q.end_time)) + '</span><span>' + (q.status === 'confirmed' ? (q.sub_staff_id ? '대타 ' + esc(staffName(q.sub_staff_id)) : '1인 근무') : q.status === 'covering' ? '출근(못 구함)' : esc(STATUS_K[q.status])) + '</span></div>'; });
       html += '</div>';
     }
     app.innerHTML = html;
@@ -1667,6 +1680,19 @@
       staffId = ins[0].id;
     }
     await reqConfirm(id, staffId);
+  }
+  // 매니저·사장님이 (기존 근무자 없이) 새 대타 자리를 직접 올림 — staff_id 없이 covering 상태로 바로 생성
+  async function opensubAdd(branchDefault){
+    var b = document.getElementById('os-branch') ? document.getElementById('os-branch').value : branchDefault;
+    var date = document.getElementById('os-date').value, s = document.getElementById('os-start').value, e = document.getElementById('os-end').value;
+    var reason = (document.getElementById('os-reason').value || '').trim();
+    if (!b){ toast('매장을 골라 주세요'); return; }
+    if (!date || !s || !e){ toast('날짜·시작·끝 시간을 넣어 주세요'); return; }
+    if (toMin(e) <= toMin(s)){ toast('끝 시간이 시작보다 늦어야 해요'); return; }
+    try {
+      await db.insert('ops_leave_requests', { staff_id: null, branch_id: b, date: date, start_time: s, end_time: e, reason: reason || null, status: 'covering', created_by: session.staffId });
+    } catch(err){ toast('저장 실패: 사장님이 SQL(supabase-migration-opensub.sql)을 실행해야 해요'); return; }
+    toast('올렸어요. "대타 구하는 중"에 떠요'); render();
   }
 
   // --- 근무 패턴 설정 ---
@@ -2041,7 +2067,7 @@
         if (pendDocIds[s.id]) html += '<div class="note" style="text-align:left;margin:0 0 14px">입사 서류(근로계약서 등)를 아직 안 썼어요. 출근은 되지만 오늘 안에 <a href="#/sign" style="text-decoration:underline;font-weight:600">서류 서명</a>을 꼭 해 주세요.</div>';
         if (open) html += '<div class="muted" style="margin-bottom:10px">' + (open.sched_start ? '오늘 근무 ' + hm5(open.sched_start) + '~' + hm5(open.sched_end) : open.no_schedule ? '오늘 근무표에 없는 출근이에요' : '출근 ' + hm(open.clock_in) + ' (' + fmtH(minutesBetween(open.clock_in, nowIso())) + ' 지남)') + '</div><button class="btn primary" data-act="clock-out" data-id="' + esc(open.id) + '" style="font-size:22px;padding:18px 40px">퇴근하기</button>';
         else html += '<button class="btn primary" data-act="clock-in" style="font-size:22px;padding:18px 40px;background:var(--ok);border-color:var(--ok)">출근하기</button>';
-        html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div><div style="margin-top:36px"><span class="muted" data-act="extra-open" style="cursor:pointer;font-size:13px;text-decoration:underline">추가 근무 올리기</span></div></div>';
+        html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div><div style="margin-top:36px"><span class="muted" data-act="extra-open" style="cursor:pointer;font-size:13px;text-decoration:underline">추가 근무 올리기</span></div><div style="margin-top:10px"><span class="muted" data-act="pin-change" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:13px;text-decoration:underline">비밀번호 바꾸기 (다른 사람이 대신 못 찍게)</span></div></div>';
         if (await schedReady()){
           try {
             var mFrom = addMonths(monthOf(today), -1) + '-01', mRecs = await db.select('ops_attendance', { eq: { staff_id: s.id, branch_id: b }, gte: { work_date: mFrom } });
@@ -2062,6 +2088,17 @@
     if (!s.pin){ var p2 = (document.getElementById('pin2') || {}).value || ''; if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; } await db.update('manual_staff', { id: s.id }, { pin: p1 }); s.pin = p1; }
     else if (s.pin !== p1){ toast('비밀번호가 틀려요'); return; }
     clockState.ok = true; render();
+  }
+  async function pinChange(staffId){
+    var s = base.staff.filter(function(x){ return x.id === staffId; })[0]; if (!s) return;
+    var cur = window.prompt('지금 비밀번호 4자리', ''); if (cur === null) return;
+    if (cur !== (s.pin || '')){ toast('지금 비밀번호가 달라요'); return; }
+    var p1 = window.prompt('새로 쓸 비밀번호 4자리 (다른 사람은 모르게)', ''); if (p1 === null) return;
+    if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
+    var p2 = window.prompt('한 번 더', ''); if (p2 === null) return;
+    if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; }
+    await db.update('manual_staff', { id: staffId }, { pin: p1 }); s.pin = p1;
+    toast('비밀번호를 바꿨어요. 잊지 마세요!');
   }
   async function clockIn(){
     var s = clockState.staffId, b = clockState.branchId;
@@ -3401,6 +3438,7 @@
     { id: 'seoulpay', name: '서울페이', rate: 20 },
     { id: 'onnuri', name: '온누리상품권', rate: 20 },
     { id: 'stale50', name: '할인빵(전날) 50%', rate: 50 },
+    { id: 'farewell', name: '퇴사빵', rate: 0 },
     { id: 'other', name: '기타 (할인 없음)', rate: 0 }
   ];
   function buyMethod(id){ return BUY_METHODS.filter(function(m){ return m.id === id; })[0] || null; }
@@ -4214,7 +4252,7 @@
         case 'cat-jump': { var ce = document.getElementById('cat-' + id); if (ce) ce.scrollIntoView({ behavior: 'smooth' }); break; }
         case 'cat-add': await catAdd(); break;
         case 'cat-rename': await catRename(id); break;
-        case 'pin-reset': if (window.confirm('비밀번호를 지울까요? 다음에 들어올 때 새로 정하게 돼요.')){ await db.update('manual_staff', { id: id }, { pin: null }); toast('초기화했어요'); render(); } break;
+        case 'pin-reset': if (window.confirm('비밀번호를 1225로 되돌릴까요?')){ await db.update('manual_staff', { id: id }, { pin: '1225' }); toast('1225로 초기화했어요'); render(); } break;
         case 'staff-toggle': { var on = el.getAttribute('data-on') === '1'; await db.update('manual_staff', { id: id }, { active: on }); render(); break; }
         case 'staff-add': { var nm = document.getElementById('ns-name').value.trim(); if (!nm){ toast('이름을 넣어 주세요'); break; } await db.insert('manual_staff', { name: nm, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast('추가했어요'); render(); break; }
         case 'staff-inactive-toggle': { var sb = el.getAttribute('data-branch'); staffUI.showInactive[sb] = !staffUI.showInactive[sb]; render(); break; }
@@ -4274,7 +4312,9 @@
         case 'offer-cancel': await db.remove('ops_sub_offers', { id: id }); toast('지원을 취소했어요'); render(); break;
         case 'solo-ok': await db.update('ops_leave_requests', { id: id }, { solo_ok_by: (isOwner() && el.getAttribute('data-staff')) || session.staffId }); toast('"혼자 가능"으로 표시했어요'); render(); break;
         case 'req-accept': await db.update('ops_leave_requests', { id: id }, { status: 'covering', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('수락. 같은 매장에 "대타 구하는 중"으로 떠요'); render(); break;
-        case 'req-reject': if (window.confirm('거절(출근)으로 할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'rejected', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('거절했어요'); render(); } break;
+        case 'req-reject': { var adhoc = el.getAttribute('data-adhoc') === '1'; if (window.confirm(adhoc ? '이 자리를 취소할까요?' : '거절(출근)으로 할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'rejected', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast(adhoc ? '자리를 취소했어요' : '거절했어요'); render(); } } break;
+        case 'opensub-toggle': document.getElementById('opensub-box').classList.toggle('hidden'); break;
+        case 'opensub-add': await opensubAdd(el.getAttribute('data-branch')); break;
         case 'req-confirm': await reqConfirm(id, el.getAttribute('data-staff')); break;
         case 'req-confirm-pick': { var mcSel = document.getElementById('mc-' + id); if (!mcSel.value){ toast('사람을 골라 주세요'); break; } el.disabled = true; try { await reqConfirm(id, mcSel.value); } finally { el.disabled = false; } break; }
         case 'req-confirm-name': el.disabled = true; try { await reqConfirmByName(id, el.getAttribute('data-branch')); } finally { el.disabled = false; } break;
@@ -4307,6 +4347,7 @@
         case 'fill-ok': await fillDecide(id, 'approved'); break;
         case 'fill-no': if (window.confirm('거절할까요? 거절하면 이 근무는 인정되지 않아요.')) await fillDecide(id, 'rejected'); break;
         case 'clock-pin': await clockPin(); break;
+        case 'pin-change': await pinChange(id); break;
         case 'clock-in': el.disabled = true; await clockIn(); break;
         case 'clock-out': el.disabled = true; await clockOut(id); break;
         case 'hours-month': nav('#/hours/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-ym')); break;
