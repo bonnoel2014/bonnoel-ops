@@ -27,6 +27,15 @@ function b64(bytes: Uint8Array): string {
 function esc(s: unknown): string {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 }
+// denomailer(1.6.0)의 본문 quoted-printable 인코더에 실제 버그가 있다: 74자 줄바꿈이 한글 등 멀티바이트 글자의 escape
+// 시퀀스 한가운데를 자르면서, 그 잘린 조각이 하필 마지막 줄에서 발생하면 글자 일부가 통째로 사라진다(메일 본문에 깨진 글자로 나타남).
+// mimeContent를 직접 만들어 넘기면 denomailer가 자체 인코딩을 하지 않으므로, 이 문제가 없는 base64로 대신 인코딩한다.
+function mimeTextPart(text: string, mimeType: string) {
+  const b = b64(new TextEncoder().encode(text));
+  const lines: string[] = [];
+  for (let i = 0; i < b.length; i += 76) lines.push(b.slice(i, i + 76));
+  return { mimeType: `${mimeType}; charset="utf-8"`, content: lines.join("\r\n"), transferEncoding: "base64" };
+}
 // 메일 제목의 한글을 RFC 2047 base64 조각(각 75자 이하)으로 직접 인코딩한다.
 // denomailer가 한글 제목을 quoted-printable로 바꾸면서 74자마다 줄을 접어 헤더가 깨지기 때문.
 // 앞에 공백 하나를 두면 라이브러리가 "이미 인코딩된 것"으로 다시 감싸지 않고 그대로 보낸다.
@@ -122,7 +131,7 @@ Deno.serve(async (req) => {
       if (!user || !pass) throw new Error("GMAIL_USER / GMAIL_APP_PASSWORD 비밀값이 아직 없어요 (Edge Functions → Secrets)");
       const client = new SMTPClient({ connection: { hostname: "smtp.gmail.com", port: 465, tls: true, auth: { username: user, password: pass } } });
       try {
-        await client.send({ from: `본노엘 <${user}>`, to, cc: cc || undefined, subject: encodeSubject(subject), content: text, html, attachments });
+        await client.send({ from: `본노엘 <${user}>`, to, cc: cc || undefined, subject: encodeSubject(subject), mimeContent: [mimeTextPart(text, "text/plain"), mimeTextPart(html, "text/html")], attachments });
       } finally {
         try { await client.close(); } catch (_) { /* 이미 닫혔으면 무시 */ }
       }
