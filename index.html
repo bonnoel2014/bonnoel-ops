@@ -617,10 +617,8 @@
         var ymNow = monthOf(todayStr()), mr = monthRange(ymNow);
         var exps = (await db.select('ops_expenses', { gte: { spent_on: mr.from } })).filter(function(x){ return x.spent_on <= mr.to && (isOwner() || x.branch_id === session.branchId); });
         var expSum = 0; exps.forEach(function(x){ expSum += num(x.amount) || 0; });
-        var expRecent = (await db.select('ops_expenses', { gte: { spent_on: addDays(todayStr(), -6) } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
-        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #9C27B0"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">💳 카드·급여</div><div class="summary" style="grid-template-columns:1fr 1fr;margin-top:0"><a href="#/expense-sum/' + ymNow + '"><div class="n" style="font-size:20px">' + won(expSum) + '<span style="font-size:13px">원</span></div><div class="l">이번 달 카드 지출' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
-                '<a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n">' + exps.length + '</div><div class="l">영수증 ' + exps.filter(function(x){ return !x.statement_key; }).length + '장 미대조</div></a></div>' +
-                recentDayStrip(expRecent, 'spent_on', function(x){ return num(x.amount) || 0; }, function(d){ return '#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + monthOf(d); }) + '</div>';
+        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #9C27B0"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">💳 카드·급여</div><div class="summary" style="grid-template-columns:1fr 1fr;margin-top:0"><a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n" style="font-size:20px">' + won(expSum) + '<span style="font-size:13px">원</span></div><div class="l">이번 달 카드 지출' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
+                '<a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n">' + exps.length + '</div><div class="l">영수증 ' + exps.filter(function(x){ return !x.statement_key; }).length + '장 미대조</div></a></div></div>';
       } catch(e){ console.warn('카드 지출 테이블 없음', e); }
       try { // 직원 구매 테이블(supabase-migration-staffbuy.sql)이 아직 없어도 홈은 열리게
         var buysToday = (await db.select('ops_staff_purchases', { eq: { bought_on: todayStr() } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
@@ -2357,6 +2355,20 @@
     }
     return html + '</div>';
   }
+  function monthCalendar(ym, hrefFn){
+    var md = monthDays(ym), html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:8px 0;font-size:12px">';
+    var days = ['월', '화', '수', '목', '금', '토', '일'];
+    days.forEach(function(d){ html += '<div style="text-align:center;color:var(--ink-soft);font-weight:600;padding:4px;font-size:11px">' + d + '</div>'; });
+    var firstDay = new Date(ym + '-01').getDay();
+    var startOffset = firstDay === 0 ? 6 : firstDay - 1;
+    for (var i = 0; i < startOffset; i++){ html += '<div></div>'; }
+    md.forEach(function(d){
+      var day = d.substring(8);
+      html += '<a href="' + hrefFn(d) + '" style="text-align:center;padding:6px;border-radius:4px;text-decoration:none;background:var(--surface);color:var(--ink);font-size:12px;display:block" title="' + esc(d) + '">' + day + '</a>';
+    });
+    html += '</div>';
+    return html;
+  }
   function floor10(n){ return Math.floor(n / 10) * 10; }
   function computePay(recsFull, sch, profile, S, ym, flags){
     // recsFull: 이 달 기록 + 달에 걸친 주(첫/끝 주)의 다른 달 날짜 기록도 포함(주휴를 7일 전체로 계산하기 위함, 9/24)
@@ -2670,7 +2682,8 @@
     var cards = r[1], list = r[0].filter(function(x){ return inScope(x, scope); });
     var title = scope === 'all' ? '전체' : branchLabel(scope === 'common' ? null : scope);
     var html = topbar('카드 지출 · ' + title, true) + expTabs(scope, ym);
-    html += monthNav(ym, function(m){ return '#/expense-list/' + scope + '/' + m; });
+    html += '<div class="inline" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div style="flex:1">' + monthNav(ym, function(m){ return '#/expense-list/' + scope + '/' + m; }) + '</div></div>';
+    html += monthCalendar(ym, function(d){ return '#/expense-list/' + scope + '/' + monthOf(d); });
     var sum = 0; list.forEach(function(x){ sum += num(x.amount) || 0; });
     html += '<div class="inline" style="justify-content:space-between;margin-bottom:8px"><b>' + list.length + '건 · ' + won(sum) + '원</b><span class="inline"><a class="btn sm" href="#/expense-sum/' + ym + '">합계표</a><a class="btn sm" href="#/expense-import/all">명세서 대조</a><a class="btn sm primary" href="#/expense">+ 올리기</a></span></div>';
     html += '<div class="card">';
@@ -3685,7 +3698,8 @@
     var list = (await loadPurchases(ym)).filter(function(x){ return scope === 'all' || x.branch_id === scope; });
     var title = scope === 'all' ? '전체' : branchName(scope);
     var html = topbar('직원 구매 · ' + title, true) + buyTabs(scope, ym);
-    html += monthNav(ym, function(m){ return '#/buy-list/' + scope + '/' + m; });
+    html += '<div class="inline" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div style="flex:1">' + monthNav(ym, function(m){ return '#/buy-list/' + scope + '/' + m; }) + '</div></div>';
+    html += monthCalendar(ym, function(d){ return '#/buy-list/' + scope + '/' + monthOf(d); });
     html += '<div class="tabs" style="margin-top:8px"><span class="tab' + (buyListView === 'day' ? ' on' : '') + '" data-act="buy-list-view" data-view="day">이 달 (일별)</span><span class="tab' + (buyListView === 'month' ? ' on' : '') + '" data-act="buy-list-view" data-view="month">월별 보기</span></div>';
     var s = buySums(list);
     html += '<div class="summary" style="grid-template-columns:repeat(4,1fr);margin-top:0"><a href="#/buy"><div class="n" style="font-size:20px">' + s.n + '</div><div class="l">건</div></a><a href="#/buy"><div class="n" style="font-size:18px">' + won(s.list) + '</div><div class="l">정가 합계</div></a><a href="#/buy"><div class="n danger" style="font-size:18px">' + won(s.disc) + '</div><div class="l">할인 합계</div></a><a href="#/buy"><div class="n" style="font-size:18px">' + won(s.paid) + '</div><div class="l">낸 금액 합계</div></a></div>';
