@@ -637,11 +637,15 @@
         }
       } catch(e){ console.warn('청년지원금 표 없음', e); }
     }
+    // 묶음 안에 보이는 줄이 하나도 없으면(권한 때문에 다 숨겨지면) 제목만 남지 않게 통째로 안 그림
+    // → 묶음 제목은 들고 있다가 첫 줄이 생길 때 같이 붙인다
+    var grpPend = null;
     function row(href, tileBg, icon, title, sub, disabled){
-      return '<a class="row' + (disabled ? ' disabled' : '') + '" href="' + href + '"' + (disabled ? ' data-act="soon"' : '') + (href.indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + tileBg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">' + (disabled ? '<span class="badge muted">준비 중</span>' : '›') + '</div></a>';
+      var head = grpPend || ''; grpPend = null;
+      return head + '<a class="row' + (disabled ? ' disabled' : '') + '" href="' + href + '"' + (disabled ? ' data-act="soon"' : '') + (href.indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + tileBg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">' + (disabled ? '<span class="badge muted">준비 중</span>' : '›') + '</div></a>';
     }
-    function grp(title){ return '<div class="tg"><div class="group-title" data-act="tg" style="cursor:pointer">▼ ' + title + '</div><div class="card">'; }
-    function tge(){ return '</div></div>'; }
+    function grp(title){ grpPend = '<div class="tg"><div class="group-title" data-act="tg" style="cursor:pointer">▼ ' + title + '</div><div class="card">'; return ''; }
+    function tge(){ if (grpPend){ grpPend = null; return ''; } return '</div></div>'; }
     html += grp('출퇴근 관리');
     html += row('#/clock', 'tile-green', '⏱', '출퇴근', '매장폰에서 이름·비밀번호로 출근·퇴근');
     if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 실제 근무시간 (급여 근거)');
@@ -672,7 +676,7 @@
     html += grp('서류·보건증');
     if (isManager()) html += row('#/docs-admin', 'tile-purple', '📝', '입사 서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부');
     if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
-    html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
+    if (isOwner()) html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
     html += row('#/health', 'tile-red', '🩺', '보건증', '내 보건증 만료일 · 새 보건증 사진 올리기');
     if (isManager()) html += row('#/health-admin', 'tile-red', '🩺', '보건증 관리', '만료 임박 빨간 표시 · 제출 확인(완료)');
     if (isManager()) html += row('#/roster-sync', 'tile-purple', '📋', '명부 동기화', '근무자 현황 시트 붙여넣기 한 번으로 신입·퇴사·보건증 정리');
@@ -682,12 +686,12 @@
     if (isOwner()) html += row('#/subsidy', 'tile-blue', '🧑‍💼', '청년지원금', '참여자 등록·6/9/12개월·2년차 신청 현황·서류·입금 (사장님만)');
     if (isOwner()) html += row(LINKS.hiringAdmin, 'tile-blue', '🗂️', '지원자 관리', '지원서 확인 · 면접 제안 문자 · 엑셀 (사장님 이메일 로그인)');
     if (isManager()) html += row(LINKS.hiring, 'tile-yellow', '📮', '지원서 링크', '지원자에게 보내는 주소 · 열어서 공유');
-    html += row(LINKS.hiringWelcome, 'tile-green', '🎉', '입사 안내', '합격자 준비물·복장 안내');
+    if (isOwner()) html += row(LINKS.hiringWelcome, 'tile-green', '🎉', '입사 안내', '합격자 준비물·복장 안내');
     if (isOwner()) html += row(LINKS.bakerAdmin, 'tile-purple', '🥐', '베이커 채용 관리', '정직원 후보자 · 면접 제안 문자(지점 안내) · 엑셀 (사장님 이메일 로그인)');
     html += tge();
     html += grp('자료');
-    html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
-    html += row(LINKS.logbook, 'tile-gray', '📝', '매니저 로그북', '하루 업무 기록');
+    if (isOwner()) html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
+    if (isOwner()) html += row(LINKS.logbook, 'tile-gray', '📝', '매니저 로그북', '하루 업무 기록');
     html += tge();
     html += '<div class="muted" style="text-align:center;margin-top:20px">' + (DEMO ? '시연 모드 (가짜 데이터)' : '본노엘 베이커리') + '</div>';
     app.innerHTML = html;
@@ -2715,8 +2719,9 @@
     app.innerHTML = html;
   };
 
-  // --- 내 서류 (모두) ---
+  // --- 내 서류 (사장님만) ---
   routes['my-docs'] = async function(){
+    if (!isOwner()){ toast('내 서류는 사장님만 볼 수 있어요'); nav('#/home'); return; }
     await loadBase();
     var rows = await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } });
     var html = topbar('내 서류', true);
@@ -2813,7 +2818,7 @@
     if (f){ h += (f.dataUrl ? '<img src="' + f.dataUrl + '" alt="' + esc(k.title) + '" style="width:100%;max-height:220px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">' : '<div class="note ok">PDF 파일: ' + esc(f.name) + '</div>') + '<div style="text-align:center;margin-top:6px"><label class="muted" style="cursor:pointer;text-decoration:underline">다른 파일로<input type="file" accept="' + k.accept + '" class="hidden sub-file" data-kind="' + k.kind + '"></label></div>'; }
     else h += '<label class="btn primary block" style="padding:14px;font-size:16px">📷 사진 찍기 / 파일 고르기<input type="file" accept="' + k.accept + '" class="hidden sub-file" data-kind="' + k.kind + '"></label>';
     if (k.kind === 'health' && f) h += '<div style="margin-top:8px"><label class="muted">만료일 (보건증에 적힌 유효기간, 숫자 8자리 · 모르면 비워 두기)</label><input class="in birth" id="sub-health-exp" inputmode="numeric" maxlength="10" placeholder="예: 20270315" value="' + esc(healthExp || '') + '"></div>';
-    if (!f) h += '<label class="chk" style="padding:8px 0 0;border:0"><input type="checkbox" class="sub-skip" data-kind="' + k.kind + '"' + (skipped ? ' checked' : '') + '><span>지금 없어요 · 나중에 제출할게요' + (k.kind === 'health' ? ' (앱 "보건증"에서 올릴 수 있어요)' : ' (앱 "내 서류"에서 올릴 수 있어요)') + '</span></label>';
+    if (!f) h += '<label class="chk" style="padding:8px 0 0;border:0"><input type="checkbox" class="sub-skip" data-kind="' + k.kind + '"' + (skipped ? ' checked' : '') + '><span>지금 없어요 · 나중에 제출할게요' + (k.kind === 'health' ? ' (앱 "보건증"에서 올릴 수 있어요)' : ' (나중에 사장님께 전달해 주세요)') + '</span></label>';
     return h + '</div>';
   }
   function isMinor(){ var st = signState; var a = st.info.birth ? BND().age(st.info.birth, todayStr()) : null; return (a != null && a < 18) || st.docs.some(function(r){ return r.data && r.data.minor; }); }
@@ -2895,7 +2900,7 @@
     if (st.step === 'done'){
       var r = st.result || {};
       html += '<div class="pin-wrap">';
-      if (r.ok) html += '<div style="font-size:40px">✅</div><div style="font-size:20px;font-weight:600;margin:8px 0">서명이 끝났어요</div><div class="muted">서류 ' + st.docs.length + '장을 <b>' + esc(r.to) + '</b>' + (r.cc ? ' (참조: 사장님)' : '') + '로 보냈어요.<br>메일함(스팸함 포함)을 확인해 주세요. 앱 "내 서류"에서도 언제든 볼 수 있어요.</div>' + (st.subs.length ? '<div class="muted" style="margin-top:8px">제출한 서류: ' + esc(st.subs.join(', ')) + '</div>' : '') + (SUB_KINDS.some(function(k){ return st.skip[k.kind]; }) ? '<div class="note" style="text-align:left;margin-top:8px">아직 안 낸 서류: ' + esc(SUB_KINDS.filter(function(k){ return st.skip[k.kind]; }).map(function(k){ return k.title; }).join(', ')) + ' — 준비되면 앱 "내 서류"(보건증은 "보건증")에서 올려 주세요.</div>' : '');
+      if (r.ok) html += '<div style="font-size:40px">✅</div><div style="font-size:20px;font-weight:600;margin:8px 0">서명이 끝났어요</div><div class="muted">서류 ' + st.docs.length + '장을 <b>' + esc(r.to) + '</b>' + (r.cc ? ' (참조: 사장님)' : '') + '로 보냈어요.<br>메일함(스팸함 포함)을 확인해 주세요.</div>' + (st.subs.length ? '<div class="muted" style="margin-top:8px">제출한 서류: ' + esc(st.subs.join(', ')) + '</div>' : '') + (SUB_KINDS.some(function(k){ return st.skip[k.kind]; }) ? '<div class="note" style="text-align:left;margin-top:8px">아직 안 낸 서류: ' + esc(SUB_KINDS.filter(function(k){ return st.skip[k.kind]; }).map(function(k){ return k.title; }).join(', ')) + ' — 보건증은 앱 "보건증"에서 올리고, 나머지는 준비되면 사장님께 전달해 주세요.</div>' : '');
       else if (r.fatal) html += '<div style="font-size:40px">⚠️</div><div style="font-size:20px;font-weight:600;margin:8px 0">저장 중 문제가 생겼어요</div><div class="note danger" style="text-align:left">' + esc(r.error) + '</div><div class="muted" style="margin-top:8px">사장님·매니저에게 알려 주세요. 다시 시도해도 돼요.</div>';
       else html += '<div style="font-size:40px">📄</div><div style="font-size:20px;font-weight:600;margin:8px 0">서명은 저장됐어요</div><div class="note" style="text-align:left">메일 발송은 실패했어요: ' + esc(r.error) + '</div><div class="muted" style="margin-top:8px">사장님·매니저가 "입사 서류"에서 <b>재발송</b>하면 돼요. 서명 기록은 이미 남아 있어요.</div>';
       html += '<div style="margin-top:20px"><button class="btn primary" data-act="sign-restart">처음으로</button></div></div>';
