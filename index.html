@@ -13,43 +13,48 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="본노엘 운영">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
 <style>
   :root{
-    --paper:#faf7f2; --surface:#ffffff; --surface-sunken:#f1ece3;
-    --ink:#2b2420; --ink-soft:#6b6259; --ink-faint:#9a9086;
-    --line:#e5ddd0; --line-strong:#d3c7b4;
-    --accent:#642e2c; --accent-soft:#f0e2e0; --accent-ink:#f7efe4;
-    --danger:#b5432c; --danger-soft:#f6dfd8;
+    /* 본노엘 브랜드 사이트(bonnoel.com)와 같은 색·글꼴 톤 */
+    --paper:#fffdfd; --surface:#ffffff; --surface-sunken:#fbf0f0;
+    --ink:#231717; --ink-soft:#6e5f5e; --ink-faint:#9b8b8a;
+    --line:#eee1e0; --line-strong:#e1c6c7;
+    --accent:#af4c60; --accent-soft:#ffe1e3; --accent-ink:#fffdfd;
+    --danger:#b54a46; --danger-soft:#ffe7e4;
     --ok:#2f7a4f; --ok-soft:#dcefe1;
     --warn:#9a6b12; --warn-soft:#fbeccb;
     --tile-blue:#e3ebfa; --tile-green:#e2f2e6; --tile-orange:#fbe8d8; --tile-purple:#ece4f7; --tile-yellow:#fbf1cf; --tile-gray:#ebe8e3; --tile-red:#f9e1e0;
-    --shadow: 0 1px 2px rgba(43,36,32,0.06), 0 6px 18px -10px rgba(43,36,32,0.22);
-    --radius-s:6px; --radius-m:12px; --radius-l:18px;
+    --shadow: 0 1px 2px rgba(35,23,23,0.06), 0 6px 18px -10px rgba(35,23,23,0.22);
+    --radius-s:10px; --radius-m:14px; --radius-l:22px;
+    --font-sans:"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --font-serif:"Gowun Batang","Cormorant Garamond",ui-serif,Georgia,serif;
+    --font-latin:"Cormorant Garamond","Gowun Batang",ui-serif,Georgia,serif;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --paper:#1c1713; --surface:#252019; --surface-sunken:#2c261e;
-      --ink:#f1ece3; --ink-soft:#b7ada0; --ink-faint:#847a6e;
-      --line:#3a3226; --line-strong:#4a4030;
-      --accent:#d9a39e; --accent-soft:#3b2523; --accent-ink:#2a1412;
-      --danger:#e59078; --danger-soft:#3a241d;
-      --ok:#7bc79a; --ok-soft:#1e2f24;
+      --paper:#110909; --surface:#1b1110; --surface-sunken:#26191a;
+      --ink:#f2e9e8; --ink-soft:#ab9a99; --ink-faint:#7d6d6d;
+      --line:#372a2a; --line-strong:#513c3d;
+      --accent:#e08795; --accent-soft:#3e1e21; --accent-ink:#130808;
+      --danger:#df7f78; --danger-soft:#351c1a;
+      --ok:#75ae81; --ok-soft:#102515;
       --warn:#e0b45a; --warn-soft:#3a2f14;
       --tile-blue:#26304a; --tile-green:#22392a; --tile-orange:#3f2d1e; --tile-purple:#33283f; --tile-yellow:#3d341a; --tile-gray:#332e28; --tile-red:#3f2424;
       color-scheme: dark;
     }
   }
   *{ box-sizing:border-box; }
-  html,body{ margin:0; padding:0; background:var(--paper); color:var(--ink); font-family:"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:16px; line-height:1.5; -webkit-text-size-adjust:100%; }
+  html,body{ margin:0; padding:0; background:var(--paper); color:var(--ink); font-family:var(--font-sans); font-size:16px; line-height:1.5; -webkit-text-size-adjust:100%; }
   a{ color:inherit; text-decoration:none; }
   button{ font:inherit; }
   .wrap{ max-width:560px; margin:0 auto; padding:0 16px 96px; }
   .loading{ padding:60px 0; text-align:center; color:var(--ink-faint); }
 
   .topbar{ display:flex; align-items:center; gap:10px; padding:14px 0 10px; position:sticky; top:0; background:var(--paper); z-index:5; }
-  .topbar h1{ font-size:20px; margin:0; flex:1; font-weight:700; }
+  .topbar h1{ font-family:var(--font-serif); font-size:21px; margin:0; flex:1; font-weight:700; }
   .topbar .back{ border:0; background:transparent; font-size:22px; padding:4px 8px 4px 0; color:var(--ink-soft); cursor:pointer; }
   .who{ font-size:13px; color:var(--ink-soft); background:var(--surface-sunken); border-radius:999px; padding:4px 10px; border:1px solid var(--line); cursor:pointer; white-space:nowrap; }
 
@@ -61,7 +66,7 @@
   .row.disabled{ opacity:.55; }
   .tile{ width:48px; height:48px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px; flex:none; }
   .rt{ flex:1; min-width:0; }
-  .rtitle{ font-weight:600; font-size:17px; }
+  .rtitle{ font-weight:600; font-size:17px; font-family:var(--font-serif); }
   .rsub{ font-size:13px; color:var(--ink-soft); }
   .chev{ color:var(--ink-faint); font-size:20px; }
   .badge{ font-size:12px; padding:2px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-weight:600; white-space:nowrap; }
@@ -98,11 +103,11 @@
   .qty.filled{ background:var(--ok-soft); }
   .unit{ font-size:13px; color:var(--ink-soft); width:34px; }
 
-  .btn{ display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:10px 16px; border-radius:var(--radius-m); border:1px solid var(--line-strong); background:var(--surface); color:var(--ink); font-weight:600; cursor:pointer; font-size:15px; }
+  .btn{ display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:10px 18px; border-radius:999px; border:1px solid var(--line-strong); background:var(--surface); color:var(--ink); font-weight:600; cursor:pointer; font-size:15px; }
   .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
   .btn.danger{ background:var(--danger-soft); color:var(--danger); border-color:transparent; }
   .btn.ok{ background:var(--ok-soft); color:var(--ok); border-color:transparent; }
-  .btn.sm{ padding:6px 10px; font-size:13px; border-radius:8px; }
+  .btn.sm{ padding:6px 12px; font-size:13px; border-radius:999px; }
   .btn.block{ width:100%; }
   .btn:disabled{ opacity:.5; cursor:default; }
   .stickybar{ position:fixed; left:0; right:0; bottom:0; padding:10px 16px calc(10px + env(safe-area-inset-bottom)); background:var(--paper); border-top:1px solid var(--line); z-index:6; }
