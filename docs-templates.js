@@ -99,7 +99,7 @@
       '<table><tr><th rowspan="3" style="width:52px">사용자</th><th>사업체명</th><td>' + COMPANY.name + '</td><th>대표자</th><td>' + COMPANY.ceo + '</td></tr>' +
       '<tr><th>소재지</th><td colspan="3" class="small">' + COMPANY.sites.map(function(x){ return x[0] + ') ' + x[1]; }).join('<br>') + '</td></tr>' +
       '<tr><th>연락처</th><td colspan="3">' + COMPANY.phone + '</td></tr>' +
-      '<tr><th rowspan="3">근로자</th><th>성명</th><td>' + v(s.name) + '</td><th>주민등록번호</th><td class="small muted">별도 서면 제출</td></tr>' +
+      '<tr><th rowspan="3">근로자</th><th>성명</th><td>' + v(s.name) + '</td><th>주민등록번호</th><td>' + (c.residentBlank ? v('', 90) : '<span class="small muted">별도 서면 제출</span>') + '</td></tr>' +
       '<tr><th>연락처</th><td>' + v(s.phone) + '</td><th>입사일</th><td>' + (c.start ? kd(c.start) : v('')) + '</td></tr>' +
       '<tr><th>주소</th><td colspan="3">' + v(s.address, 200) + '</td></tr></table>' +
       foot(ctx, '근로계약서') +

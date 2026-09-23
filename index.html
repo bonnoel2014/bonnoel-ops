@@ -3177,7 +3177,7 @@
       var days = c.days;
       if (!days){ days = {}; try { var pats = await db.select('ops_shift_patterns', { eq: { staff_id: s.id } }); pats.forEach(function(p){ if (p.active === false || p.week_start) return; var brk = p.break_start && p.break_end ? toMin(p.break_end) - toMin(p.break_start) : 0; days[p.weekday] = { s: p.start_time.slice(0, 5), e: p.end_time.slice(0, 5), brk: brk >= 45 ? 60 : brk > 0 ? 30 : 0 }; }); } catch(e){} }
       var start = c.start || todayStr();
-      prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || '', wageNoEnd: c.wageEnd ? false : true, payDay: c.payDay || 10, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor) };
+      prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || '', wageNoEnd: c.wageEnd ? false : true, payDay: c.payDay || 10, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor), residentBlank: !!c.residentBlank };
       prepState.uniform = uniformFromArray(old && old.uniform);
     }
     prepKeep = false;
@@ -3190,6 +3190,7 @@
     html += '<div class="grid2"><div><label>시급 (원)</label><input class="in" id="pp-wage" type="number" step="10" value="' + esc(f.wage) + '"></div><div><label>임금계약 종료일</label><input class="in" id="pp-wageend" type="date" value="' + esc(f.wageEnd) + '"' + (f.wageNoEnd ? ' disabled' : '') + '><label style="margin-top:4px"><input type="checkbox" id="pp-wagenoend"' + (f.wageNoEnd ? ' checked' : '') + '> 기간 정함 없음</label></div></div>';
     html += '<div class="grid2"><div><label>급여일 (익월 ○일, 오후 11시경 입금)</label><input class="in" id="pp-payday" type="number" min="1" max="31" value="' + esc(f.payDay) + '"></div><div><label>식대 (월, 원)</label><input class="in" id="pp-meal" type="number" step="10000" value="' + esc(f.meal) + '"></div></div>';
     html += '<div><label><input type="checkbox" id="pp-prob"' + (f.probation ? ' checked' : '') + '> 수습기간 3개월 적용</label> &nbsp; <label><input type="checkbox" id="pp-minor"' + (f.minor ? ' checked' : '') + '> 만 18세 미만 (친권자 동의서 추가)</label></div>';
+    html += '<div><label><input type="checkbox" id="pp-residentblank"' + (f.residentBlank ? ' checked' : '') + '> 등본 없음 · 주민등록번호 칸 비워서 계약서에 직접 쓰게 하기</label><div class="muted" style="margin-top:2px">체크하면 계약서를 뽑아 그 직원이 그 자리에 손으로 써요. 앱에는 번호를 저장하지 않아요.</div></div>';
     html += '<div><label>요일별 근무시간 · 휴게 (비우면 휴무)</label><table class="slip-t" style="margin:0"><tr><th style="width:44px">요일</th><th>시작</th><th>끝</th><th>휴게</th></tr>';
     [1, 2, 3, 4, 5, 6, 0].forEach(function(i){ var d = f.days[i] || {}; html += '<tr><td class="c"><b>' + WD[i] + '</b></td><td><select class="in pp-ds" data-d="' + i + '" style="padding:6px">' + halfHourOptions(d.s || '') + '</select></td><td><select class="in pp-de" data-d="' + i + '" style="padding:6px">' + halfHourOptions(d.e || '') + '</select></td><td><select class="in pp-db" data-d="' + i + '" style="padding:6px"><option value="0"' + (!d.brk ? ' selected' : '') + '>없음</option><option value="30"' + (d.brk === 30 ? ' selected' : '') + '>30분</option><option value="60"' + (d.brk === 60 ? ' selected' : '') + '>60분</option></select></td></tr>'; });
     html += '</table></div>';
@@ -3210,7 +3211,7 @@
     var f = prepState.f, g = function(id){ return document.getElementById(id); };
     if (!g('pp-branch')) return;
     f.branchId = g('pp-branch').value; f.duty = g('pp-duty').value.trim(); f.start = g('pp-start').value; f.noEnd = g('pp-noend').checked; f.end = f.noEnd ? '' : g('pp-end').value;
-    f.wage = num(g('pp-wage').value); f.wageNoEnd = g('pp-wagenoend').checked; f.wageEnd = f.wageNoEnd ? '' : g('pp-wageend').value; f.payDay = num(g('pp-payday').value); f.meal = num(g('pp-meal').value); f.probation = g('pp-prob').checked; f.minor = g('pp-minor').checked;
+    f.wage = num(g('pp-wage').value); f.wageNoEnd = g('pp-wagenoend').checked; f.wageEnd = f.wageNoEnd ? '' : g('pp-wageend').value; f.payDay = num(g('pp-payday').value); f.meal = num(g('pp-meal').value); f.probation = g('pp-prob').checked; f.minor = g('pp-minor').checked; f.residentBlank = g('pp-residentblank').checked;
     var days = {}; app.querySelectorAll('.pp-ds').forEach(function(el){ var i = el.getAttribute('data-d'); var s = el.value, e = app.querySelector('.pp-de[data-d="' + i + '"]').value, brk = +app.querySelector('.pp-db[data-d="' + i + '"]').value; if (s && e) days[i] = { s: s, e: e, brk: brk }; }); f.days = days;
     ['apron', 'karate', 'chef'].forEach(function(k){ var el = app.querySelector('.pp-uq[data-key="' + k + '"]'); if (el) prepState.uniform[k].qty = num(el.value) || 1; });
   }
@@ -3223,7 +3224,7 @@
     if (!f.wage || f.wage < 10320){ if (!window.confirm('시급이 2026년 최저임금(10,320원)보다 낮아요. 그래도 저장할까요?')) return; }
     if (!Object.keys(f.days).length){ if (!window.confirm('근무시간이 비어 있어요. 계약서 근무시간 표가 빈칸으로 나가요. 계속할까요?')) return; }
     var bn = branchName(f.branchId), addr = (BND().company.sites.filter(function(x){ return bn.indexOf(x[0]) === 0; })[0] || [])[1] || '';
-    var c = { branchId: f.branchId, branchName: bn, branchAddr: addr, start: f.start, end: f.noEnd ? '' : f.end, probation: f.probation, duty: f.duty, wage: f.wage, wageEnd: f.wageEnd, payDay: f.payDay, meal: f.meal, days: f.days, preparedBy: session.name };
+    var c = { branchId: f.branchId, branchName: bn, branchAddr: addr, start: f.start, end: f.noEnd ? '' : f.end, probation: f.probation, duty: f.duty, wage: f.wage, wageEnd: f.wageEnd, payDay: f.payDay, meal: f.meal, days: f.days, preparedBy: session.name, residentBlank: f.residentBlank };
     var data = { c: c, uniform: uniformToArray(prepState.uniform), minor: f.minor, staff: { name: s.name }, checks: {} };
     var batchId = prepState.batchId || uuid4();
     var keys = BND().list.filter(function(d){ return !d.minorOnly || f.minor; });
