@@ -1836,7 +1836,7 @@
     var html = '<div class="card section" style="text-align:left"><div class="sec-h">추가 근무 올리기</div>';
     if (!recs.length) html += '<div class="empty">최근 3일 안에 출근 기록이 없어요</div>';
     else {
-      html += '<div class="form" style="box-shadow:none;padding:0"><label>어느 근무</label><select class="in" id="ex-rec">' + recs.map(function(r){ return '<option value="' + esc(r.id) + '">' + esc(fmtDateK(r.work_date)) + ' ' + esc(branchName(r.branch_id)) + ' · ' + esc(attShow(r)) + '</option>'; }).join('') + '</select>';
+      html += '<div class="form" style="box-shadow:none;margin:0"><label>어느 근무</label><select class="in" id="ex-rec">' + recs.map(function(r){ return '<option value="' + esc(r.id) + '">' + esc(fmtDateK(r.work_date)) + ' ' + esc(branchName(r.branch_id)) + ' · ' + esc(attShow(r)) + '</option>'; }).join('') + '</select>';
       html += '<label>종류</label><select class="in" id="ex-kind">' + Object.keys(EXTRA_KIND).map(function(k){ return '<option value="' + k + '">' + EXTRA_KIND[k] + '</option>'; }).join('') + '</select>';
       html += '<div class="grid2"><div><label>시작</label><input class="in" id="ex-start" type="time"></div><div><label>끝</label><input class="in" id="ex-end" type="time"></div></div>';
       html += '<label>추가 시간 (분, ' + EXTRA_STEP + '분 단위)</label><input class="in" id="ex-min" type="number" min="' + EXTRA_STEP + '" step="' + EXTRA_STEP + '" inputmode="numeric">';
