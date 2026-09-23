@@ -625,12 +625,10 @@
       try { // 직원 구매 테이블(supabase-migration-staffbuy.sql)이 아직 없어도 홈은 열리게
         var buysToday = (await db.select('ops_staff_purchases', { eq: { bought_on: todayStr() } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
         var bs = buySums(buysToday);
-        var buysRecent = (await db.select('ops_staff_purchases', { gte: { bought_on: addDays(todayStr(), -6) } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
         html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #FFC107"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">🥐 직원 구매</div><div class="summary" style="grid-template-columns:1fr 1fr 1fr;margin-top:0"><a href="#/buy-list"><div class="n">' + bs.n + '</div><div class="l">오늘 구매' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
                 '<a href="#/buy-list"><div class="n" style="font-size:18px">' + won(bs.list) + '<span style="font-size:12px">원</span></div><div class="l">판매금액(할인전)</div></a>' +
                 '<a href="#/buy-list"><div class="n" style="font-size:18px">' + won(bs.disc) + '<span style="font-size:12px">원</span></div><div class="l">할인 합계</div></a></div>' +
-                (buysToday.length ? '<a href="#/buy-list" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">' + buysToday.slice(0, 6).map(function(x){ return esc(branchName(x.branch_id)) + ' ' + esc(buyerLabel(x)); }).join(' · ') + (buysToday.length > 6 ? ' 외 ' + (buysToday.length - 6) + '건' : '') + '</a>' : '') +
-                recentDayStrip(buysRecent, 'bought_on', function(x){ return num(x.paid) || 0; }, function(d){ return '#/buy-list/' + (isOwner() ? 'all' : session.branchId) + '/' + monthOf(d); }, { showCount: true }) + '</div>';
+                (buysToday.length ? '<a href="#/buy-list" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">' + buysToday.slice(0, 6).map(function(x){ return esc(branchName(x.branch_id)) + ' ' + esc(buyerLabel(x)); }).join(' · ') + (buysToday.length > 6 ? ' 외 ' + (buysToday.length - 6) + '건' : '') + '</a>' : '') + '</div>';
       } catch(e){ console.warn('직원 구매 테이블 없음', e); }
       try { // 청년지원금 표(supabase-migration-subsidy.sql)가 아직 없어도 홈은 열리게
         if (isOwner()){
@@ -3066,6 +3064,15 @@
   var prepState = null, prepKeep = false;
   // 유니폼: 우리가 쓰는 품목은 이 세 가지뿐이라 자유 입력 대신 버튼으로 고른다. 카라티만 반팔·긴팔 선택, 조리복은 긴팔 고정.
   var UNI_KEYS = [ { key: 'apron', label: '앞치마' }, { key: 'karate', label: '카라티' }, { key: 'chef', label: '조리복 (긴팔)' } ];
+  // 폰(특히 안드로이드)에서 <input type="time" step="1800">은 휠에서 1분 단위까지 다 보여서 30분 단위로 못 막음 → 정시·30분만 있는 select로 대신함.
+  function halfHourOptions(sel){
+    var out = '<option value=""' + (sel ? '' : ' selected') + '>휴무</option>';
+    for (var h = 0; h < 24; h++) for (var m = 0; m < 60; m += 30){
+      var v = pad(h) + ':' + pad(m);
+      out += '<option value="' + v + '"' + (v === sel ? ' selected' : '') + '>' + v + '</option>';
+    }
+    return out;
+  }
   function uniformFromArray(arr){
     var u = { apron: { on: false, qty: 1 }, karate: { on: false, sleeve: 'short', qty: 1 }, chef: { on: false, qty: 1 } };
     (arr || []).forEach(function(x){
@@ -3110,7 +3117,7 @@
     html += '<div class="grid2"><div><label>급여일 (익월 ○일, 오후 11시경 입금)</label><input class="in" id="pp-payday" type="number" min="1" max="31" value="' + esc(f.payDay) + '"></div><div><label>식대 (월, 원)</label><input class="in" id="pp-meal" type="number" step="10000" value="' + esc(f.meal) + '"></div></div>';
     html += '<div><label><input type="checkbox" id="pp-prob"' + (f.probation ? ' checked' : '') + '> 수습기간 3개월 적용</label> &nbsp; <label><input type="checkbox" id="pp-minor"' + (f.minor ? ' checked' : '') + '> 만 18세 미만 (친권자 동의서 추가)</label></div>';
     html += '<div><label>요일별 근무시간 · 휴게 (비우면 휴무)</label><table class="slip-t" style="margin:0"><tr><th style="width:44px">요일</th><th>시작</th><th>끝</th><th>휴게</th></tr>';
-    [1, 2, 3, 4, 5, 6, 0].forEach(function(i){ var d = f.days[i] || {}; html += '<tr><td class="c"><b>' + WD[i] + '</b></td><td><input class="in pp-ds" data-d="' + i + '" type="time" step="1800" value="' + esc(d.s || '') + '" style="padding:6px"></td><td><input class="in pp-de" data-d="' + i + '" type="time" step="1800" value="' + esc(d.e || '') + '" style="padding:6px"></td><td><select class="in pp-db" data-d="' + i + '" style="padding:6px"><option value="0"' + (!d.brk ? ' selected' : '') + '>없음</option><option value="30"' + (d.brk === 30 ? ' selected' : '') + '>30분</option><option value="60"' + (d.brk === 60 ? ' selected' : '') + '>60분</option></select></td></tr>'; });
+    [1, 2, 3, 4, 5, 6, 0].forEach(function(i){ var d = f.days[i] || {}; html += '<tr><td class="c"><b>' + WD[i] + '</b></td><td><select class="in pp-ds" data-d="' + i + '" style="padding:6px">' + halfHourOptions(d.s || '') + '</select></td><td><select class="in pp-de" data-d="' + i + '" style="padding:6px">' + halfHourOptions(d.e || '') + '</select></td><td><select class="in pp-db" data-d="' + i + '" style="padding:6px"><option value="0"' + (!d.brk ? ' selected' : '') + '>없음</option><option value="30"' + (d.brk === 30 ? ' selected' : '') + '>30분</option><option value="60"' + (d.brk === 60 ? ' selected' : '') + '>60분</option></select></td></tr>'; });
     html += '</table></div>';
     html += '<div><label>유니폼 지급</label><div class="inline" style="flex-wrap:wrap;gap:8px;margin:0 0 10px">';
     UNI_KEYS.forEach(function(k){ var on = prepState.uniform[k.key].on; html += '<button class="btn' + (on ? ' primary' : '') + '" data-act="uni-toggle" data-key="' + k.key + '">' + (on ? '✓ ' : '') + esc(k.label) + '</button>'; });
@@ -3669,6 +3676,7 @@
     base.branches.forEach(function(b){ html += t(b.id, b.name); });
     return html + '</div>';
   }
+  var buyListView = 'day';
   routes['buy-list'] = async function(params){
     await loadBase();
     if (!isManager()){ nav('#/buy'); return; }
@@ -3677,11 +3685,13 @@
     var title = scope === 'all' ? '전체' : branchName(scope);
     var html = topbar('직원 구매 · ' + title, true) + buyTabs(scope, ym);
     html += monthNav(ym, function(m){ return '#/buy-list/' + scope + '/' + m; });
+    html += '<div class="tabs" style="margin-top:8px"><span class="tab' + (buyListView === 'day' ? ' on' : '') + '" data-act="buy-list-view" data-view="day">이 달 (일별)</span><span class="tab' + (buyListView === 'month' ? ' on' : '') + '" data-act="buy-list-view" data-view="month">월별 보기</span></div>';
     var s = buySums(list);
     html += '<div class="summary" style="grid-template-columns:repeat(4,1fr);margin-top:0"><a href="#/buy"><div class="n" style="font-size:20px">' + s.n + '</div><div class="l">건</div></a><a href="#/buy"><div class="n" style="font-size:18px">' + won(s.list) + '</div><div class="l">정가 합계</div></a><a href="#/buy"><div class="n danger" style="font-size:18px">' + won(s.disc) + '</div><div class="l">할인 합계</div></a><a href="#/buy"><div class="n" style="font-size:18px">' + won(s.paid) + '</div><div class="l">낸 금액 합계</div></a></div>';
     html += '<div class="inline" style="justify-content:flex-end;margin:8px 0"><button class="btn sm" data-act="buy-csv">엑셀(CSV) 내려받기</button><a class="btn sm primary" href="#/buy">+ 올리기</a></div>';
-    // 날짜별
-    html += '<div class="card section" style="margin-top:4px"><div class="sec-h">날짜별 (마감용)<span class="sp"></span><span class="muted" style="font-weight:400">할인 · 낸 금액</span></div>';
+    // 일별 보기
+    if (buyListView === 'day') {
+      html += '<div class="card section" style="margin-top:4px"><div class="sec-h">날짜별 (마감용)<span class="sp"></span><span class="muted" style="font-weight:400">할인 · 낸 금액</span></div>';
     if (!list.length) html += '<div class="empty">이 달 직원 구매가 없어요.</div>';
     var dates = []; list.forEach(function(x){ if (dates.indexOf(x.bought_on) < 0) dates.push(x.bought_on); });
     dates.forEach(function(d){
@@ -3700,15 +3710,33 @@
           '<div class="inline" style="margin-top:10px">' + (x.photo_path ? '<button class="btn sm" data-act="buy-photo" data-path="' + esc(x.photo_path) + '">📷 사진 보기</button>' : '') + '<button class="btn sm primary" data-act="buy-update" data-id="' + esc(x.id) + '">저장</button><span style="flex:1"></span><button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">삭제</button></div></div>';
       });
     });
-    html += '</div>';
-    // 사람별
-    var byStaff = {};
-    list.forEach(function(x){ var k = x.staff_id || ('n:' + (x.buyer_name || '?')); var v = byStaff[k] = byStaff[k] || { staff_id: x.staff_id, buyer_name: x.buyer_name, rows: [] }; v.rows.push(x); });
-    var people = Object.keys(byStaff).map(function(k){ var v = byStaff[k]; v.sum = buySums(v.rows); return v; }).sort(function(a, b){ return b.sum.paid - a.sum.paid; });
-    html += '<div class="card section"><div class="sec-h">사람별 (이 달)<span class="sp"></span><span class="muted" style="font-weight:400">할인 · 낸 금액</span></div>';
-    if (!people.length) html += '<div class="empty">아직 없어요</div>';
-    people.forEach(function(p){ var st = base.staff.filter(function(x){ return x.id === p.staff_id; })[0]; html += '<div class="item"><div class="iname"><div class="t">' + esc(p.buyer_name || (st ? st.name : '(이름 없음)')) + '</div><div class="s">' + esc(st && st.branch_id ? branchName(st.branch_id) : (st ? '전체' : '등록 안 됨')) + ' · ' + p.sum.n + '건 · 정가 ' + won(p.sum.list) + '원</div></div><span class="badge danger">−' + won(p.sum.disc) + '</span><b style="white-space:nowrap">' + won(p.sum.paid) + '</b></div>'; });
-    html += '</div>';
+      html += '</div>';
+      // 사람별
+      var byStaff = {};
+      list.forEach(function(x){ var k = x.staff_id || ('n:' + (x.buyer_name || '?')); var v = byStaff[k] = byStaff[k] || { staff_id: x.staff_id, buyer_name: x.buyer_name, rows: [] }; v.rows.push(x); });
+      var people = Object.keys(byStaff).map(function(k){ var v = byStaff[k]; v.sum = buySums(v.rows); return v; }).sort(function(a, b){ return b.sum.paid - a.sum.paid; });
+      html += '<div class="card section"><div class="sec-h">사람별 (이 달)<span class="sp"></span><span class="muted" style="font-weight:400">할인 · 낸 금액</span></div>';
+      if (!people.length) html += '<div class="empty">아직 없어요</div>';
+      people.forEach(function(p){ var st = base.staff.filter(function(x){ return x.id === p.staff_id; })[0]; html += '<div class="item"><div class="iname"><div class="t">' + esc(p.buyer_name || (st ? st.name : '(이름 없음)')) + '</div><div class="s">' + esc(st && st.branch_id ? branchName(st.branch_id) : (st ? '전체' : '등록 안 됨')) + ' · ' + p.sum.n + '건 · 정가 ' + won(p.sum.list) + '원</div></div><span class="badge danger">−' + won(p.sum.disc) + '</span><b style="white-space:nowrap">' + won(p.sum.paid) + '</b></div>'; });
+      html += '</div>';
+    } else if (buyListView === 'month') {
+      html += '<div class="card section" style="margin-top:4px"><div class="sec-h">월별 합계<span class="sp"></span><span class="muted" style="font-weight:400">할인 · 낸 금액</span></div>';
+      var monthlyData = {}, allDates = [];
+      list.forEach(function(x){ if (allDates.indexOf(x.bought_on) < 0) allDates.push(x.bought_on); });
+      allDates.forEach(function(d){
+        var m = d.substring(0, 7);
+        if (!monthlyData[m]) monthlyData[m] = [];
+        monthlyData[m].push(d);
+      });
+      var months = Object.keys(monthlyData).sort().reverse();
+      if (!months.length) html += '<div class="empty">이 달 직원 구매가 없어요.</div>';
+      months.forEach(function(m){
+        var monthList = list.filter(function(x){ return x.bought_on.substring(0, 7) === m; });
+        var ms = buySums(monthList);
+        html += '<div class="item" style="background:var(--surface-sunken)"><div class="iname"><div class="t">' + m.substring(0, 4) + '년 ' + m.substring(5, 7) + '월</div><div class="s">' + ms.n + '건 · 정가 ' + won(ms.list) + '원</div></div><span class="badge danger">−' + won(ms.disc) + '</span><b style="white-space:nowrap">' + won(ms.paid) + '</b></div>';
+      });
+      html += '</div>';
+    }
     html += '<div class="muted" style="margin-top:10px">직원 할인: 현금·계좌이체·카카오페이 30%, 카드·서울페이·온누리·현금영수증 20%. 줄을 누르면 고칠 수 있어요. CSV는 이 달 구매가 한 줄씩 다 들어가요.</div>';
     app.innerHTML = html;
     app._csv = [['날짜', '매장', '이름', '결제 방식', '할인율', '정가', '할인', '낸 금액', '산 것', '메모', '사진']].concat(list.slice().sort(function(a, b){ return a.bought_on < b.bought_on ? -1 : 1; }).map(function(x){ return [x.bought_on, branchName(x.branch_id), buyerLabel(x), buyMethodName(x.pay_method), x.discount_rate + '%', x.list_total, x.discount, x.paid, x.items || '', x.memo || '', x.photo_path ? 'Y' : '']; }));
@@ -4464,6 +4492,7 @@
         case 'buy-photo': { var bu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(bu, '_blank'); break; }
         case 'buy-update': await buyUpdate(id); break;
         case 'buy-del': if (window.confirm('이 구매 기록을 지울까요? (사진도 같이 지워져요)')){ var bp = el.getAttribute('data-path'); await db.remove('ops_staff_purchases', { id: id }); if (bp) db.removeFile('receipts', bp).catch(function(){}); toast('지웠어요'); render(); } break;
+        case 'buy-list-view': buyListView = el.getAttribute('data-view'); render(); break;
         case 'buy-csv': downloadCsv(); break;
         case 'stmt-run': el.disabled = true; try { await stmtRun(); } finally { el.disabled = false; } break;
         case 'stmt-add': el.disabled = true; try { await stmtAdd(+el.getAttribute('data-g')); } finally { el.disabled = false; } break;
