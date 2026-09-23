@@ -3407,6 +3407,15 @@
   function buyMethodName(id){ var m = buyMethod(id); return m ? m.name : (id || '?'); }
   function buyMethodOptions(sel){ return BUY_METHODS.map(function(m){ return '<option value="' + m.id + '"' + (m.id === sel ? ' selected' : '') + '>' + esc(m.name + ' (' + m.rate + '%)') + '</option>'; }).join(''); }
   // 한 영수증에 할인율이 섞여 있을 때(전날빵 50%+당일빵 30% 등) 줄을 나눠 넣고 합치는 계산기
+  // 매장 고르면 그 지점 사람만 버튼으로 보여줌(사장님·소속 없는 사람은 항상 포함) — 로그인 화면과 같은 방식
+  function buyStaffGridHtml(branchId, curName){
+    var people = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === branchId || s.role === 'owner' || !s.branch_id); })
+      .sort(function(a, b){ return (a.role === 'owner' ? -1 : b.role === 'owner' ? 1 : 0) || a.name.localeCompare(b.name, 'ko'); });
+    var match = people.filter(function(s){ return s.name === curName; })[0];
+    var html = people.map(function(s){ return '<button type="button" class="btn' + (match && match.id === s.id ? ' primary' : '') + '" data-act="buy-pick-staff" data-name="' + esc(s.name) + '">' + esc(s.name) + (s.id === session.staffId ? ' (본인)' : '') + '</button>'; }).join('');
+    html += '<button type="button" class="btn' + (!match ? ' primary' : '') + '" data-act="buy-pick-staff-custom">✏️ 직접 입력</button>';
+    return html;
+  }
   function buySplitRowHtml(list, methodId){
     return '<div class="inline buy-split-row" style="margin-top:6px;gap:6px"><input class="in" type="number" inputmode="numeric" placeholder="정가" style="flex:1" value="' + (list || '') + '"><select class="in" style="flex:1.3">' + buyMethodOptions(methodId || 'transfer') + '</select><span class="muted" data-act="buy-split-del" style="cursor:pointer;padding:0 6px">✕</span></div>';
   }
@@ -4330,6 +4339,27 @@
         case 'buy-split-add': document.getElementById('buy-split-rows').insertAdjacentHTML('beforeend', buySplitRowHtml(null, 'transfer')); break;
         case 'buy-split-del': el.closest('.buy-split-row').remove(); break;
         case 'buy-split-apply': buySplitApply(); break;
+        case 'buy-pick-branch': {
+          var bId = el.getAttribute('data-id');
+          document.getElementById('buy-branch').value = bId;
+          document.querySelectorAll('#buy-branch-tabs .tab').forEach(function(t){ t.classList.remove('on'); });
+          el.classList.add('on');
+          var grid = document.getElementById('buy-staff-grid');
+          if (grid){ var curName = (document.getElementById('buy-staff-name') || {}).value || ''; grid.innerHTML = buyStaffGridHtml(bId, curName); }
+          break;
+        }
+        case 'buy-pick-staff': {
+          var bsn2 = document.getElementById('buy-staff-name'); bsn2.value = el.getAttribute('data-name'); bsn2.hidden = true;
+          document.querySelectorAll('#buy-staff-grid .btn').forEach(function(b){ b.classList.remove('primary'); });
+          el.classList.add('primary');
+          break;
+        }
+        case 'buy-pick-staff-custom': {
+          document.querySelectorAll('#buy-staff-grid .btn').forEach(function(b){ b.classList.remove('primary'); });
+          el.classList.add('primary');
+          var bsn3 = document.getElementById('buy-staff-name'); bsn3.hidden = false; bsn3.value = ''; bsn3.focus();
+          break;
+        }
         case 'buy-nophoto': buyState = { photo: { blob: null, dataUrl: null, mime: null }, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
         case 'buy-save': el.disabled = true; try { await buySave(); } finally { el.disabled = false; } break;
         case 'buy-toggle': document.getElementById('bx-' + id).classList.toggle('hidden'); break;
@@ -4402,12 +4432,6 @@
     if (e.target.id === 'exp-file'){ await expPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
-    if (e.target.id === 'buy-staff-sel'){
-      var bsn = document.getElementById('buy-staff-name');
-      if (e.target.value){ bsn.value = e.target.value; bsn.hidden = true; }
-      else { bsn.hidden = false; bsn.value = ''; bsn.focus(); }
-      return;
-    }
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-file'){ await tfPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-item'){ var tfu = document.getElementById('tf-unit'); if (tfu) tfu.textContent = (e.target.selectedOptions[0] && e.target.selectedOptions[0].getAttribute('data-unit')) || ''; return; }
