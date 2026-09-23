@@ -36,3 +36,10 @@ create index if not exists ops_attendance_extras_status_idx on ops_attendance_ex
 alter table ops_attendance_extras enable row level security;
 drop policy if exists "anon full access" on ops_attendance_extras;
 create policy "anon full access" on ops_attendance_extras for all using (true) with check (true);
+
+-- 3. 빠진 출퇴근 "근무표대로 채우기" (9/23 추가)
+--    직원 본인이 채우면 requested(사장님 수락 대기, 수락 전엔 인정 0), 매니저·사장님이 채우면 바로 approved
+--    approved면 근무표 시간 전체 인정(지각 차감 없음). 실제 누른 시각이 있으면 clock_in/out에 그대로 남음
+alter table ops_attendance add column if not exists fill_status text;          -- null(보통) / requested / approved / rejected
+alter table ops_attendance add column if not exists filled_by uuid references manual_staff(id) on delete set null;
+alter table ops_attendance add column if not exists filled_at timestamptz;
