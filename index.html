@@ -2355,8 +2355,10 @@
     }
     return html + '</div>';
   }
-  function monthCalendar(ym, hrefFn){
-    var md = monthDays(ym), html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:8px 0;font-size:12px">';
+  function monthCalendar(ym, rows, dateKey, hrefFn){
+    var md = monthDays(ym), daysWithData = {};
+    rows.forEach(function(r){ var d = r[dateKey]; if (d) daysWithData[d] = true; });
+    var html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:8px 0;font-size:12px">';
     var days = ['월', '화', '수', '목', '금', '토', '일'];
     days.forEach(function(d){ html += '<div style="text-align:center;color:var(--ink-soft);font-weight:600;padding:4px;font-size:11px">' + d + '</div>'; });
     var firstDay = new Date(ym + '-01').getDay();
@@ -2364,7 +2366,8 @@
     for (var i = 0; i < startOffset; i++){ html += '<div></div>'; }
     md.forEach(function(d){
       var day = d.substring(8);
-      html += '<a href="' + hrefFn(d) + '" style="text-align:center;padding:6px;border-radius:4px;text-decoration:none;background:var(--surface);color:var(--ink);font-size:12px;display:block" title="' + esc(d) + '">' + day + '</a>';
+      var hasData = daysWithData[d];
+      html += hasData ? '<a href="' + hrefFn(d) + '" style="text-align:center;padding:6px;border-radius:4px;text-decoration:none;background:var(--primary-soft);color:var(--primary);font-weight:600;font-size:12px;display:block" title="' + esc(d) + '">' + day + '</a>' : '<div style="text-align:center;padding:6px;color:var(--ink-softer);font-size:12px">-</div>';
     });
     html += '</div>';
     return html;
@@ -2674,6 +2677,7 @@
   }
 
   // --- 지출 목록 (사장님·매니저) ---
+  var expenseCalendarOpen = true;
   routes['expense-list'] = async function(params){
     await loadBase();
     if (!isManager()){ nav('#/expense'); return; }
@@ -2682,8 +2686,8 @@
     var cards = r[1], list = r[0].filter(function(x){ return inScope(x, scope); });
     var title = scope === 'all' ? '전체' : branchLabel(scope === 'common' ? null : scope);
     var html = topbar('카드 지출 · ' + title, true) + expTabs(scope, ym);
-    html += '<div class="inline" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div style="flex:1">' + monthNav(ym, function(m){ return '#/expense-list/' + scope + '/' + m; }) + '</div></div>';
-    html += monthCalendar(ym, function(d){ return '#/expense-list/' + scope + '/' + monthOf(d); });
+    html += '<div class="inline" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div style="flex:1">' + monthNav(ym, function(m){ return '#/expense-list/' + scope + '/' + m; }) + '</div><button class="btn sm" data-act="expense-cal-toggle" style="margin-left:8px">' + (expenseCalendarOpen ? '닫기' : '펼치기') + '</button></div>';
+    if (expenseCalendarOpen) html += monthCalendar(ym, list, 'spent_on', function(d){ return '#/expense-list/' + scope + '/' + monthOf(d); });
     var sum = 0; list.forEach(function(x){ sum += num(x.amount) || 0; });
     html += '<div class="inline" style="justify-content:space-between;margin-bottom:8px"><b>' + list.length + '건 · ' + won(sum) + '원</b><span class="inline"><a class="btn sm" href="#/expense-sum/' + ym + '">합계표</a><a class="btn sm" href="#/expense-import/all">명세서 대조</a><a class="btn sm primary" href="#/expense">+ 올리기</a></span></div>';
     html += '<div class="card">';
@@ -3690,7 +3694,7 @@
     base.branches.forEach(function(b){ html += t(b.id, b.name); });
     return html + '</div>';
   }
-  var buyListView = 'day';
+  var buyListView = 'day', buyCalendarOpen = true;
   routes['buy-list'] = async function(params){
     await loadBase();
     if (!isManager()){ nav('#/buy'); return; }
@@ -3698,8 +3702,8 @@
     var list = (await loadPurchases(ym)).filter(function(x){ return scope === 'all' || x.branch_id === scope; });
     var title = scope === 'all' ? '전체' : branchName(scope);
     var html = topbar('직원 구매 · ' + title, true) + buyTabs(scope, ym);
-    html += '<div class="inline" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div style="flex:1">' + monthNav(ym, function(m){ return '#/buy-list/' + scope + '/' + m; }) + '</div></div>';
-    html += monthCalendar(ym, function(d){ return '#/buy-list/' + scope + '/' + monthOf(d); });
+    html += '<div class="inline" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div style="flex:1">' + monthNav(ym, function(m){ return '#/buy-list/' + scope + '/' + m; }) + '</div><button class="btn sm" data-act="buy-cal-toggle" style="margin-left:8px">' + (buyCalendarOpen ? '닫기' : '펼치기') + '</button></div>';
+    if (buyCalendarOpen) html += monthCalendar(ym, list, 'bought_on', function(d){ return '#/buy-list/' + scope + '/' + monthOf(d); });
     html += '<div class="tabs" style="margin-top:8px"><span class="tab' + (buyListView === 'day' ? ' on' : '') + '" data-act="buy-list-view" data-view="day">이 달 (일별)</span><span class="tab' + (buyListView === 'month' ? ' on' : '') + '" data-act="buy-list-view" data-view="month">월별 보기</span></div>';
     var s = buySums(list);
     html += '<div class="summary" style="grid-template-columns:repeat(4,1fr);margin-top:0"><a href="#/buy"><div class="n" style="font-size:20px">' + s.n + '</div><div class="l">건</div></a><a href="#/buy"><div class="n" style="font-size:18px">' + won(s.list) + '</div><div class="l">정가 합계</div></a><a href="#/buy"><div class="n danger" style="font-size:18px">' + won(s.disc) + '</div><div class="l">할인 합계</div></a><a href="#/buy"><div class="n" style="font-size:18px">' + won(s.paid) + '</div><div class="l">낸 금액 합계</div></a></div>';
@@ -4507,6 +4511,8 @@
         case 'buy-photo': { var bu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(bu, '_blank'); break; }
         case 'buy-update': await buyUpdate(id); break;
         case 'buy-del': if (window.confirm('이 구매 기록을 지울까요? (사진도 같이 지워져요)')){ var bp = el.getAttribute('data-path'); await db.remove('ops_staff_purchases', { id: id }); if (bp) db.removeFile('receipts', bp).catch(function(){}); toast('지웠어요'); render(); } break;
+        case 'expense-cal-toggle': expenseCalendarOpen = !expenseCalendarOpen; render(); break;
+        case 'buy-cal-toggle': buyCalendarOpen = !buyCalendarOpen; render(); break;
         case 'buy-list-view': buyListView = el.getAttribute('data-view'); render(); break;
         case 'buy-csv': downloadCsv(); break;
         case 'stmt-run': el.disabled = true; try { await stmtRun(); } finally { el.disabled = false; } break;
