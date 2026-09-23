@@ -573,9 +573,6 @@
   routes.home = async function(){
     await loadBase();
     var html = topbar('본노엘 운영', false, whoChip());
-    if (!isOwner()){
-      html += '<div style="text-align:center;padding:8px 12px"><button class="btn primary sm" data-act="owner-quick" style="font-weight:600">👑 사장님 빠른 접근</button></div>';
-    }
     if (isManager()){
       var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
       var st = await loadStock(ids);
@@ -693,7 +690,9 @@
     if (isOwner()) html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
     if (isOwner()) html += row(LINKS.logbook, 'tile-gray', '📝', '매니저 로그북', '하루 업무 기록');
     html += tge();
-    html += '<div class="muted" style="text-align:center;margin-top:20px">' + (DEMO ? '시연 모드 (가짜 데이터)' : '본노엘 베이커리') + '</div>';
+    // 사장님 빠른 접근: 알바 눈에 안 띄게 맨 아래 작은 글씨로 (비밀번호를 알아야 들어가짐)
+    if (!isOwner()) html += '<div style="text-align:center;margin-top:24px"><span class="muted" data-act="owner-quick" style="font-size:12px;text-decoration:underline;cursor:pointer;padding:6px 10px;display:inline-block">사장님 접근</span></div>';
+    html += '<div class="muted" style="text-align:center;margin-top:' + (isOwner() ? '20' : '6') + 'px">' + (DEMO ? '시연 모드 (가짜 데이터)' : '본노엘 베이커리') + '</div>';
     app.innerHTML = html;
   };
 
