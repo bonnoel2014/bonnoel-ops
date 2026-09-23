@@ -3077,7 +3077,7 @@
       var days = c.days;
       if (!days){ days = {}; try { var pats = await db.select('ops_shift_patterns', { eq: { staff_id: s.id } }); pats.forEach(function(p){ if (p.active === false || p.week_start) return; var brk = p.break_start && p.break_end ? toMin(p.break_end) - toMin(p.break_start) : 0; days[p.weekday] = { s: p.start_time.slice(0, 5), e: p.end_time.slice(0, 5), brk: brk >= 45 ? 60 : brk > 0 ? 30 : 0 }; }); } catch(e){} }
       var start = c.start || todayStr();
-      prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || (start.slice(0, 4) + '-12-31'), payDay: c.payDay || 6, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor) };
+      prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || '', wageNoEnd: c.wageEnd ? false : true, payDay: c.payDay || 6, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor) };
       prepState.uniform = (old && old.uniform && old.uniform.length) ? old.uniform : [{ item: '', size: '', qty: 1 }];
     }
     prepKeep = false;
@@ -3087,7 +3087,7 @@
     html += '<div class="form">';
     html += '<div class="grid2"><div><label>주된 근무지</label><select class="in" id="pp-branch">' + base.branches.map(function(b){ return '<option value="' + esc(b.id) + '"' + (b.id === f.branchId ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select></div><div><label>담당업무</label><input class="in" id="pp-duty" value="' + esc(f.duty) + '"></div></div>';
     html += '<div class="grid2"><div><label>계약 시작일(입사일)</label><input class="in" id="pp-start" type="date" value="' + esc(f.start) + '"></div><div><label>계약 종료일</label><input class="in" id="pp-end" type="date" value="' + esc(f.end) + '"' + (f.noEnd ? ' disabled' : '') + '><label style="margin-top:4px"><input type="checkbox" id="pp-noend"' + (f.noEnd ? ' checked' : '') + '> 기간 정함 없음</label></div></div>';
-    html += '<div class="grid2"><div><label>시급 (원)</label><input class="in" id="pp-wage" type="number" step="10" value="' + esc(f.wage) + '"></div><div><label>임금계약 종료일</label><input class="in" id="pp-wageend" type="date" value="' + esc(f.wageEnd) + '"></div></div>';
+    html += '<div class="grid2"><div><label>시급 (원)</label><input class="in" id="pp-wage" type="number" step="10" value="' + esc(f.wage) + '"></div><div><label>임금계약 종료일</label><input class="in" id="pp-wageend" type="date" value="' + esc(f.wageEnd) + '"' + (f.wageNoEnd ? ' disabled' : '') + '><label style="margin-top:4px"><input type="checkbox" id="pp-wagenoend"' + (f.wageNoEnd ? ' checked' : '') + '> 기간 정함 없음</label></div></div>';
     html += '<div class="grid2"><div><label>급여일 (익월 ○일)</label><input class="in" id="pp-payday" type="number" min="1" max="31" value="' + esc(f.payDay) + '"></div><div><label>식대 (월, 원)</label><input class="in" id="pp-meal" type="number" step="10000" value="' + esc(f.meal) + '"></div></div>';
     html += '<div><label><input type="checkbox" id="pp-prob"' + (f.probation ? ' checked' : '') + '> 수습기간 3개월 적용</label> &nbsp; <label><input type="checkbox" id="pp-minor"' + (f.minor ? ' checked' : '') + '> 만 18세 미만 (친권자 동의서 추가)</label></div>';
     html += '<div><label>요일별 근무시간 · 휴게 (비우면 휴무)</label><table class="slip-t" style="margin:0"><tr><th style="width:44px">요일</th><th>시작</th><th>끝</th><th>휴게</th></tr>';
@@ -4483,6 +4483,7 @@
         case 'rs-import-preview': rsImportPreview(); break;
         case 'rs-import-save': el.disabled = true; try { await rsImportSave(); } finally { el.disabled = false; } break;
         case 'rs-refresh': el.disabled = true; try { await rsRefresh(); } finally { el.disabled = false; } break;
+        case 'rs-quit': await rsQuit(id); break;
         // 청년지원금
         case 'subsidy-add-toggle': subsidyState.addOpen = !subsidyState.addOpen; render(); break;
         case 'subsidy-add-save': el.disabled = true; try { await subsidyAddSave(); } finally { el.disabled = false; } break;
