@@ -2421,7 +2421,7 @@
     md.forEach(function(d){
       var day = d.substring(8);
       var hasData = daysWithData[d];
-      html += hasData ? '<a href="' + hrefFn(d) + '" style="text-align:center;padding:6px;border-radius:4px;text-decoration:none;background:var(--primary-soft);color:var(--primary);font-weight:600;font-size:12px;display:block" title="' + esc(d) + '">' + day + '</a>' : '<div style="text-align:center;padding:6px;color:var(--ink-softer);font-size:12px">-</div>';
+      html += hasData ? '<a href="' + hrefFn(d) + '" style="text-align:center;padding:6px;border-radius:4px;text-decoration:none;background:#d32f2f;color:white;font-weight:600;font-size:12px;display:block" title="' + esc(d) + '">' + day + '</a>' : '<div style="text-align:center;padding:6px;color:var(--ink-softer);font-size:12px">-</div>';
     });
     html += '</div>';
     return html;
