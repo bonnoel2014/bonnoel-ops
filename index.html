@@ -2122,7 +2122,7 @@
     recs.forEach(function(x){ (byStaff[x.staff_id] = byStaff[x.staff_id] || []).push(x); });
     var ids = Object.keys(byStaff); Object.keys(planned).forEach(function(k){ if (ids.indexOf(k) < 0) ids.push(k); });
     ids.sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); });
-    html += '<div class="card section"><div class="sec-h">사람별 합계<span class="sp"></span><button class="btn sm" data-act="hours-csv" data-branch="' + esc(b) + '" data-ym="' + ym + '">엑셀(CSV) 내려받기</button></div>';
+    html += '<div class="card section"><div class="sec-h">사람별 합계<span class="sp"></span><button class="btn sm" data-act="hours-xlsx" data-branch="' + esc(b) + '" data-ym="' + ym + '">엑셀 (주휴 포함)</button> <button class="btn sm" data-act="hours-csv" data-branch="' + esc(b) + '" data-ym="' + ym + '">CSV</button></div>';
     if (!ids.length) html += '<div class="empty">이 달 기록이 없어요</div>';
     var csv = [['이름','날짜','근무표','실제 출근','실제 퇴근','실제(분)','휴게(분)','지각(분)','추가 수락(분)','인정(분)','야간(분)','비고']];
     ids.forEach(function(id){
@@ -2151,6 +2151,119 @@
     app.innerHTML = html;
     app._csv = csv; app._csvName = branchName(b) + '_' + ym + '_근무시간.csv';
   };
+  // ===== 월별 근무·주휴 엑셀 (직원별 탭 + 요약) =====
+  // 주는 월~일. 달이 걸친 주의 주휴는 7일 전체 근무시간으로 계산해 그 주 일요일이 속한 달에 넣음
+  // (예: 9/28~10/4 주휴 → 10월). 근무시간 자체는 날짜대로 각 달에.
+  function loadExcelJS(){
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    return new Promise(function(res, rej){ var sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'; sc.onload = function(){ res(window.ExcelJS); }; sc.onerror = function(){ rej(new Error('엑셀 도구를 못 불러왔어요 (인터넷 확인)')); }; document.head.appendChild(sc); });
+  }
+  function juhyuWeek(weekMin, plannedMin, flag){ // 급여 초안(computePay)과 같은 규칙
+    var eligible = flag === 'yes' || (flag !== 'no' && plannedMin >= 900);
+    if (!eligible) return { min: 0, note: flag === 'no' ? '주휴 없음(설정)' : '근무표 주 15시간 미만 → 주휴 없음' };
+    var basis = plannedMin > 0 ? Math.min(plannedMin, weekMin) : weekMin;
+    return { min: Math.round(Math.min(basis, 2400) / 2400 * 480), note: '(근무표 ' + (plannedMin / 60).toFixed(1) + 'h · 실제 인정 ' + (weekMin / 60).toFixed(1) + 'h 중 적은 쪽 기준, 40h=8h)' };
+  }
+  function h2(min){ return Math.round(min / 60 * 100) / 100; }
+  function mdK(d){ return (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)); }
+  async function hoursXlsx(b, ym){
+    toast('엑셀 만드는 중…');
+    var days = monthDays(ym), first = days[0], last = days[days.length - 1], from = weekStart(first), showPay = isOwner();
+    var r = await Promise.all([ db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: from } }), loadSchedule([b], from, last), db.select('ops_pay_profiles').catch(function(){ return []; }), loadPaySettings(), db.select('ops_settings', { eq: { key: 'staff_flags' } }).catch(function(){ return []; }), loadExcelJS() ]);
+    var recs = r[0].filter(function(x){ return x.work_date <= last; }), sch = r[1], S = r[3], FL = r[4][0] ? r[4][0].value : {}, ExcelJS = r[5];
+    await attachExtras(recs, b, from);
+    var profs = {}; r[2].forEach(function(x){ profs[x.staff_id] = x; });
+    // 대상: 이 달(또는 첫 주)에 기록이 있거나 이 달 근무표에 있는 사람
+    var ids = {};
+    recs.forEach(function(x){ ids[x.staff_id] = 1; });
+    days.forEach(function(d){ shiftsOn(sch, b, d).forEach(function(sf){ if (sf.kind === 'off') return; var who = sf.kind === 'sub' ? sf.req.sub_staff_id : sf.staffId; if (who) ids[who] = 1; }); });
+    var people = Object.keys(ids).filter(function(id){ return staffName(id); }).sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); });
+    if (!people.length){ toast('이 달 기록이 없어요'); return; }
+    var weeks = []; for (var ws = from; ws <= last; ws = addDays(ws, 7)) weeks.push(ws);
+    var wb = new ExcelJS.Workbook(); wb.creator = '본노엘 운영';
+    var thin = { style: 'thin', color: { argb: 'FFD9D2C5' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
+    var fill = function(c){ return { type: 'pattern', pattern: 'solid', fgColor: { argb: c } }; };
+    var summary = wb.addWorksheet('요약', { views: [{ state: 'frozen', ySplit: 3 }] });
+    var sumRows = [], used = { '요약': 1 };
+    var ymK = ym.slice(0, 4) + '년 ' + (+ym.slice(5, 7)) + '월';
+    people.forEach(function(id){
+      var name = staffName(id), flag = (FL[id] || {}).juhyu || 'auto';
+      var wage = profs[id] && num(profs[id].hourly_wage) > 0 ? num(profs[id].hourly_wage) : (S.min_wage || 0);
+      var sn = name.replace(/[\[\]:*?\/\\]/g, '').slice(0, 28) || '직원', k = 2; while (used[sn]) sn = name.slice(0, 26) + ' ' + (k++); used[sn] = 1;
+      var ws2 = wb.addWorksheet(sn, { views: [{ state: 'frozen', ySplit: 4 }] });
+      ws2.columns = [{ width: 11 }, { width: 5 }, { width: 13 }, { width: 9 }, { width: 9 }, { width: 8 }, { width: 10 }, { width: 9 }, { width: 11 }, { width: 44 }];
+      ws2.mergeCells('A1:J1'); ws2.getCell('A1').value = name + ' · ' + branchName(b) + ' · ' + ymK + ' 근무·주휴'; ws2.getCell('A1').font = { bold: true, size: 14 };
+      ws2.getCell('A2').value = showPay ? '시급' : ''; ws2.getCell('B2').value = showPay ? wage : ''; if (showPay) ws2.getCell('B2').numFmt = '#,##0';
+      ws2.mergeCells('D2:J2'); ws2.getCell('D2').value = '인정 = 근무표 − 지각 − 휴게 + 수락한 추가 근무 · 주휴 = 근무표 주 15시간 이상, 주 40시간 = 8시간 · 달이 걸친 주는 7일 전체로 계산해 그 주 일요일이 있는 달에 지급'; ws2.getCell('D2').font = { size: 9, color: { argb: 'FF7A7166' } }; ws2.getCell('D2').alignment = { wrapText: true };
+      ws2.getRow(2).height = 26;
+      var head = ws2.getRow(4); head.values = ['날짜', '요일', '근무표', '실제 출근', '실제 퇴근', '휴게(분)', '인정(시간)', '야간(시간)', '추가 근무(시간)', '비고'];
+      head.eachCell(function(c){ c.font = { bold: true }; c.fill = fill('FFF1ECE4'); c.border = border; c.alignment = { horizontal: 'center' }; });
+      var row = 5, tot = { net: 0, night: 0, extra: 0, days: {}, juhyu: 0 };
+      weeks.forEach(function(wsD, wi){
+        var we = addDays(wsD, 6), weekMin = 0, planned = 0;
+        var sec = ws2.getRow(row); ws2.mergeCells('A' + row + ':J' + row);
+        sec.getCell(1).value = (wi + 1) + '주차  ' + mdK(wsD) + '(월) ~ ' + mdK(we) + '(일)' + (wsD < first ? '  · 지난달 날짜 포함(시간은 지난달 급여, 주휴 계산에만 씀)' : '') + (we > last ? '  · 다음 달로 이어지는 주' : '');
+        sec.getCell(1).font = { bold: true }; sec.getCell(1).fill = fill('FFE8E1D5'); row++;
+        for (var i = 0; i < 7; i++){
+          var d = addDays(wsD, i); if (d > last) break;
+          var inM = d >= first, wd = wdOf(d);
+          poolFor(sch, b, d).forEach(function(pt){ if (pt.staff_id === id && pt.weekday === wd) planned += toMin(pt.end_time) - toMin(pt.start_time) - (pt.break_start ? toMin(pt.break_end) - toMin(pt.break_start) : 0); });
+          var mine = recs.filter(function(x){ return x.staff_id === id && x.work_date === d; });
+          var shift = shiftsOn(sch, b, d).filter(function(sf){ return sf.kind !== 'off' && (sf.kind === 'sub' ? sf.req.sub_staff_id === id : sf.staffId === id); })[0];
+          var lines = mine.length ? mine : [null];
+          lines.forEach(function(x){
+            var n = x ? recNet(x, sch) : null, note = [];
+            if (n){ weekMin += n.net; if (inM){ tot.net += n.net; tot.night += n.night; tot.extra += n.extra || 0; if (n.net > 0) tot.days[d] = 1; } }
+            if (x){
+              if (x.no_schedule) note.push('근무표 없는 출근(인정 0, 추가 근무로만)');
+              if (n && n.late) note.push('지각 ' + n.late + '분 뺌');
+              if (n && n.early) note.push('조기 퇴근 ' + n.early + '분');
+              if (x.fill_status === 'requested') note.push('나중에 채움 · 사장님 수락 대기');
+              else if (x.fill_status === 'rejected') note.push('나중에 채움 · 거절');
+              else if (x.fill_status === 'approved') note.push(x.edits && x.edits[0] && x.edits[0].field === '채움' ? '나중에 채움' : '근무표대로 인정');
+              if (!x.clock_out && !x.fill_status) note.push('퇴근 안 누름');
+              (x._extras || []).forEach(function(e){ note.push((EXTRA_KIND[e.kind] || e.kind) + ' ' + e.minutes + '분 ' + (e.status === 'approved' ? '수락' : e.status === 'rejected' ? '거절' : '대기')); });
+              if (!n) note.push('퇴근 기록 없음');
+            } else if (shift && d >= ATT_FILL_SINCE && d <= todayStr()) note.push('기록 없음');
+            if (!inM) note.push('지난달');
+            var sched = x && x.sched_start ? hm5(x.sched_start) + '~' + hm5(x.sched_end) : shift ? hm5(shift.start) + '~' + hm5(shift.end) : '';
+            var filled = x && x.edits && x.edits[0] && x.edits[0].field === '채움';
+            var rw = ws2.getRow(row);
+            rw.values = [d, WD[wd], sched, x && !filled ? hm(x.clock_in) : '', x && !filled && x.clock_out ? hm(x.clock_out) : '', n && n.brk ? n.brk : '', n ? h2(n.net) : '', n && n.night ? h2(n.night) : '', n && n.extra ? h2(n.extra) : '', note.join(' · ')];
+            rw.eachCell({ includeEmpty: true }, function(c, col){ if (col <= 10) c.border = border; });
+            if (wd === 0) rw.getCell(2).font = { color: { argb: 'FFD32F2F' } }; else if (wd === 6) rw.getCell(2).font = { color: { argb: 'FF1976D2' } };
+            if (!inM) rw.eachCell(function(c){ c.font = { color: { argb: 'FF9E9E9E' } }; });
+            if (note.some(function(t){ return /대기|기록 없음|퇴근 안 누름|지각/.test(t); })) rw.getCell(10).font = { color: { argb: 'FFD32F2F' } };
+            row++;
+          });
+        }
+        var wr = ws2.getRow(row); wr.values = ['', '', '', '', '', '주 합계', h2(weekMin), '', '', we > last ? '이 주 나머지는 다음 달 파일에 이어짐' : ''];
+        wr.font = { bold: true }; wr.getCell(7).fill = fill('FFFFF6D6'); row++;
+        var jr = ws2.getRow(row), jh;
+        if (we > last) jr.values = ['', '', '', '', '', '주휴', '', '', '', '다음 달 급여에 포함 (' + mdK(wsD) + '~' + mdK(we) + ' 7일 전체로 계산)'];
+        else { jh = juhyuWeek(weekMin, planned, flag); tot.juhyu += jh.min; jr.values = ['', '', '', '', '', '주휴', h2(jh.min), '', '', (wsD < first ? '이번 달 지급 · ' + mdK(wsD) + '~' + mdK(we) + ' 7일 전체 기준 ' : '이번 달 지급 ') + jh.note]; }
+        jr.font = { bold: true, color: { argb: 'FFB23A48' } }; jr.getCell(10).font = { size: 9, color: { argb: 'FFB23A48' } }; row += 2;
+      });
+      var put = function(label, val, fmt, bold){ var rw = ws2.getRow(row); rw.getCell(6).value = label; rw.getCell(7).value = val; if (fmt) rw.getCell(7).numFmt = fmt; rw.getCell(6).font = { bold: !!bold }; rw.getCell(7).font = { bold: !!bold }; rw.getCell(7).border = border; row++; };
+      ws2.getRow(row).getCell(1).value = ymK + ' 합계'; ws2.getRow(row).getCell(1).font = { bold: true, size: 12 }; row++;
+      put('인정 시간', h2(tot.net)); put('야간', h2(tot.night)); put('추가 근무', h2(tot.extra)); put('주휴', h2(tot.juhyu)); put('인정+주휴', h2(tot.net + tot.juhyu), null, true);
+      var amt = null;
+      if (showPay){ amt = { base: Math.round(tot.net / 60 * wage), juhyu: Math.round(tot.juhyu / 60 * wage), night: Math.round(tot.night / 60 * wage * (S.night_premium || 0.5)) };
+        put('기본급', amt.base, '#,##0'); put('주휴수당', amt.juhyu, '#,##0'); put('야간 가산', amt.night, '#,##0'); put('합계(연장 가산·공제 전)', amt.base + amt.juhyu + amt.night, '#,##0', true); }
+      sumRows.push([name, Object.keys(tot.days).length, h2(tot.net), h2(tot.night), h2(tot.extra), h2(tot.juhyu), h2(tot.net + tot.juhyu)].concat(showPay ? [wage, amt.base, amt.juhyu, amt.night, amt.base + amt.juhyu + amt.night] : []));
+    });
+    summary.mergeCells(showPay ? 'A1:L1' : 'A1:G1'); summary.getCell('A1').value = branchName(b) + ' · ' + ymK + ' 근무·주휴 요약'; summary.getCell('A1').font = { bold: true, size: 14 };
+    summary.mergeCells(showPay ? 'A2:L2' : 'A2:G2'); summary.getCell('A2').value = '주휴: 월~일 한 주, 달이 걸친 주는 7일 전체 근무시간으로 계산해 그 주 일요일이 속한 달에 넣음. 금액은 연장 가산·4대보험·세금 전 참고용(확정은 급여 초안).'; summary.getCell('A2').font = { size: 9, color: { argb: 'FF7A7166' } };
+    var sh = summary.getRow(3); sh.values = ['이름', '근무일수', '인정 시간', '야간', '추가 근무', '주휴', '인정+주휴'].concat(showPay ? ['시급', '기본급', '주휴수당', '야간 가산', '합계'] : []);
+    sh.eachCell(function(c){ c.font = { bold: true }; c.fill = fill('FFF1ECE4'); c.border = border; c.alignment = { horizontal: 'center' }; });
+    for (var ci = 1; ci <= 12; ci++) summary.getColumn(ci).width = ci === 1 ? 12 : 11;
+    sumRows.forEach(function(v, i){ var rw = summary.getRow(4 + i); rw.values = v; rw.eachCell({ includeEmpty: true }, function(c, col){ if (col <= v.length) c.border = border; if (col >= 8) c.numFmt = '#,##0'; }); });
+    var tr = summary.getRow(4 + sumRows.length); tr.getCell(1).value = '합계'; tr.font = { bold: true };
+    for (var col = 2; col <= sumRows[0].length; col++){ if (col === 8) continue; var L = String.fromCharCode(64 + col); tr.getCell(col).value = { formula: 'SUM(' + L + '4:' + L + (3 + sumRows.length) + ')' }; if (col >= 9) tr.getCell(col).numFmt = '#,##0'; tr.getCell(col).border = border; }
+    var buf = await wb.xlsx.writeBuffer();
+    var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = branchName(b) + '_' + ym + '_근무·주휴.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+    toast('엑셀을 내려받았어요');
+  }
   function downloadCsv(){
     var rows = app._csv || []; var text = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
     var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })); a.download = app._csvName || 'hours.csv'; document.body.appendChild(a); a.click(); a.remove();
@@ -4181,6 +4294,7 @@
         case 'hours-month': nav('#/hours/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-ym')); break;
         case 'hours-toggle': document.getElementById('hx-' + id).classList.toggle('hidden'); break;
         case 'hours-csv': downloadCsv(); break;
+        case 'hours-xlsx': el.disabled = true; try { await hoursXlsx(el.getAttribute('data-branch'), el.getAttribute('data-ym')); } catch(err){ console.error(err); toast('엑셀 만들기 실패: ' + (err.message || err)); } finally { el.disabled = false; } break;
         case 'att-edit': await attEdit(id); break;
         case 'att-add': await attAdd(el.getAttribute('data-branch')); break;
         // 급여
