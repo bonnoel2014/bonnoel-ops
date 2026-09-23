@@ -3100,12 +3100,13 @@
     html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="prep-save">' + (prepState.batchId ? '수정 저장' : '서류 준비 완료 (서명 대기로)') + '</button></div></div>';
     app.innerHTML = html;
     var ne = document.getElementById('pp-noend'); if (ne) ne.addEventListener('change', function(){ document.getElementById('pp-end').disabled = ne.checked; });
+    var wne = document.getElementById('pp-wagenoend'); if (wne) wne.addEventListener('change', function(){ document.getElementById('pp-wageend').disabled = wne.checked; });
   };
   function prepRead(){
     var f = prepState.f, g = function(id){ return document.getElementById(id); };
     if (!g('pp-branch')) return;
     f.branchId = g('pp-branch').value; f.duty = g('pp-duty').value.trim(); f.start = g('pp-start').value; f.noEnd = g('pp-noend').checked; f.end = f.noEnd ? '' : g('pp-end').value;
-    f.wage = num(g('pp-wage').value); f.wageEnd = g('pp-wageend').value; f.payDay = num(g('pp-payday').value); f.meal = num(g('pp-meal').value); f.probation = g('pp-prob').checked; f.minor = g('pp-minor').checked;
+    f.wage = num(g('pp-wage').value); f.wageNoEnd = g('pp-wagenoend').checked; f.wageEnd = f.wageNoEnd ? '' : g('pp-wageend').value; f.payDay = num(g('pp-payday').value); f.meal = num(g('pp-meal').value); f.probation = g('pp-prob').checked; f.minor = g('pp-minor').checked;
     var days = {}; app.querySelectorAll('.pp-ds').forEach(function(el){ var i = el.getAttribute('data-d'); var s = el.value, e = app.querySelector('.pp-de[data-d="' + i + '"]').value, brk = +app.querySelector('.pp-db[data-d="' + i + '"]').value; if (s && e) days[i] = { s: s, e: e, brk: brk }; }); f.days = days;
     prepState.uniform = Array.prototype.map.call(app.querySelectorAll('.pp-ui'), function(el){ var i = el.getAttribute('data-i'); return { item: el.value.trim(), size: app.querySelector('.pp-us[data-i="' + i + '"]').value.trim(), qty: num(app.querySelector('.pp-uq[data-i="' + i + '"]').value) || 1 }; });
   }
@@ -3114,6 +3115,7 @@
     var f = prepState.f, s = base.staff.filter(function(x){ return x.id === prepState.staffId; })[0];
     if (!f.start){ toast('계약 시작일을 넣어 주세요'); return; }
     if (!f.noEnd && !f.end){ toast('계약 종료일을 넣거나 "기간 정함 없음"을 켜 주세요'); return; }
+    if (!f.wageNoEnd && !f.wageEnd){ toast('임금계약 종료일을 넣거나 "기간 정함 없음"을 켜 주세요'); return; }
     if (!f.wage || f.wage < 10320){ if (!window.confirm('시급이 2026년 최저임금(10,320원)보다 낮아요. 그래도 저장할까요?')) return; }
     if (!Object.keys(f.days).length){ if (!window.confirm('근무시간이 비어 있어요. 계약서 근무시간 표가 빈칸으로 나가요. 계속할까요?')) return; }
     var bn = branchName(f.branchId), addr = (BND().company.sites.filter(function(x){ return bn.indexOf(x[0]) === 0; })[0] || [])[1] || '';
@@ -3457,6 +3459,7 @@
   var BUY_METHODS = [
     { id: 'cash', name: '현금', rate: 30 },
     { id: 'transfer', name: '계좌이체', rate: 30 },
+    { id: 'card', name: '카드', rate: 20 },
     { id: 'stale50', name: '할인빵(전날) 50%', rate: 50 },
     { id: 'farewell', name: '퇴사빵', rate: 0 },
     { id: 'other', name: '기타 (할인 없음)', rate: 0 }
@@ -3550,7 +3553,7 @@
     var html = topbar('직원 구매', true, whoChip());
     html += '<div class="form">';
     if (!st.photo){
-      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 <b>30%</b><br>전날 남은 할인빵 <b>50%</b></div>';
+      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 <b>30%</b><br>카드 <b>20%</b><br>전날 남은 할인빵 <b>50%</b></div>';
       html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="buy-file" class="hidden"></label>';
       html += '<div class="muted">계산한 영수증 사진을 올리면 날짜·정가·할인·낸 금액을 자동으로 읽어요. 틀리면 고치고 저장하면 돼요. 사진이 있으면 증빙으로 남아요. 영수증 한 장에 한 번.</div>';
       html += '<div class="muted">화면 캡처(스크린샷)를 복사해 뒀으면 파일로 안 저장해도 돼요. 이 화면에서 <b>Ctrl+V</b> 눌러서 바로 붙여넣기 하세요.</div>';
