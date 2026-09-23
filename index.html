@@ -238,6 +238,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error('선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -3121,7 +3122,6 @@
       html += '<div><label>직인 이미지 (계약서 사용자 서명란에 찍힘, 투명 배경 PNG 권장)</label>' + (settings.seal ? '<div class="sigprev" style="margin-bottom:6px"><img src="' + settings.seal + '" alt="직인" style="height:50px"></div>' : '') + '<div class="inline"><input type="file" id="docs-seal-file" accept="image/png,image/jpeg">' + (settings.seal ? '<button class="btn sm" data-act="docs-seal-remove">직인 지우기</button>' : '') + '</div></div>';
       html += '<button class="btn primary" data-act="docs-settings-save">설정 저장</button></div>';
     }
-    html += '<div class="muted" style="margin-top:14px">양식 버전 ' + esc(BND().version) + ' · 노무사 양식 문구 그대로. 유니폼 지급대장만 앱에서 만든 표예요.</div>';
     app.innerHTML = html;
   };
   async function docsSettingsSave(){
