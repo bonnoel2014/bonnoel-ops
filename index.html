@@ -582,6 +582,23 @@
   routes.home = async function(){
     await loadBase();
     var html = topbar('본노엘 운영', false, whoChip());
+    try { // 내 현황: 매니저 아닌 근무자도 자기 휴무·대타·보건증은 로그인하자마자 바로 보이게
+      var mySch = await loadSchedule([session.branchId], addDays(todayStr(), -14), addDays(todayStr(), 60));
+      var myOpenReq = mySch.requests.filter(function(q){ return q.staff_id === session.staffId && ['requested', 'covering'].indexOf(q.status) >= 0 && q.date >= todayStr(); });
+      var myCov = mySch.requests.filter(function(q){ return q.status === 'covering' && q.staff_id !== session.staffId && !shiftPassed(q.date, q.start_time); });
+      var myWon = 0, myLost = 0, myWaiting = 0;
+      mySch.offers.filter(function(o){ return o.staff_id === session.staffId; }).forEach(function(o){ if (o.status === 'confirmed') myWon++; else if (o.status === 'passed') myLost++; else myWaiting++; });
+      var hmapMine = healthMap(await loadHealth()); var myHc = hmapMine[session.staffId] || { confirmed: null, pending: null, rows: [] }; var myHst = healthStatus(myHc);
+      if (myOpenReq.length || myCov.length || myWon || myLost || myWaiting || myHst.level !== 'ok' || myHc.pending){
+        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #4CAF50"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">🙋 내 현황</div>' +
+          '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:0"><a href="#/leave"><div class="n">' + myOpenReq.length + '</div><div class="l">내 휴무 신청</div></a>' +
+          '<a href="#/subs"><div class="n' + (myCov.length ? ' danger' : '') + '">' + myCov.length + '</div><div class="l">우리 매장 대타 구하는 중</div></a></div>';
+        if (myWon || myLost || myWaiting) html += '<a href="#/subs" style="display:block;margin-top:8px;font-size:13px">내 대타 지원: ' + (myWaiting ? myWaiting + '건 대기 · ' : '') + (myWon ? '<span style="color:var(--ok);font-weight:700">' + myWon + '건 확정!</span> · ' : '') + (myLost ? '<span class="muted">' + myLost + '건 다른 분으로 정해짐</span>' : '') + '</a>';
+        html += '<a href="#/health" style="display:block;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)"><span class="badge ' + myHst.level + '">' + esc(myHst.level === 'ok' ? '보건증 정상' : '보건증 ' + myHst.label) + '</span>' +
+          (myHc.pending ? ' <span class="badge">제출 · 확인 대기</span>' : '') +
+          (myHst.level === 'danger' && !myHc.pending ? ' <span class="muted" style="font-size:12px">→ 눌러서 새 사진 올리기</span>' : '') + '</a></div>';
+      }
+    } catch(e){ console.warn('내 현황 없음', e); }
     if (isManager()){
       var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
       var st = await loadStock(ids);
@@ -1669,10 +1686,19 @@
     }
     app.innerHTML = html;
   };
+  // 이 요청에 지원한 사람들 중 keepStaffId(뽑힌 사람)만 빼고 전부 '못 감(passed)'으로 표시. keepStaffId가 없으면(1인 근무 확정 등) 전부 못 감.
+  async function passOtherOffers(requestId, keepStaffId){
+    var offers = await db.select('ops_sub_offers', { eq: { request_id: requestId } });
+    for (var i = 0; i < offers.length; i++){
+      var o = offers[i];
+      if (o.staff_id === keepStaffId){ if (o.status !== 'confirmed') await db.update('ops_sub_offers', { id: o.id }, { status: 'confirmed' }); continue; }
+      if (o.status !== 'passed') await db.update('ops_sub_offers', { id: o.id }, { status: 'passed' });
+    }
+  }
   async function reqConfirm(id, staffId){
     var now = new Date().toISOString();
     await db.update('ops_leave_requests', { id: id }, { status: 'confirmed', sub_staff_id: staffId || null, confirmed_by: session.staffId, confirmed_at: now });
-    if (staffId){ await db.update('ops_sub_offers', { request_id: id, staff_id: staffId }, { status: 'confirmed' }); }
+    await passOtherOffers(id, staffId || null);   // 뽑히지 않은 지원자는 '못 감'으로 남겨서 알 수 있게
     toast(staffId ? staffName(staffId) + '(으)로 확정. 근무표에 반영됐어요' : '1인 근무 휴무로 확정'); render();
   }
   // 이름을 직접 입력해서 대타 확정 (명단에 없으면 그 지점 직원으로 새로 등록 후 확정)
@@ -4522,12 +4548,12 @@
         }
         case 'chip-cancel': document.getElementById('chip-panel').classList.add('hidden'); break;
         case 'leave-submit': await leaveSubmit(); break;
-        case 'leave-cancel': if (window.confirm('신청을 취소할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'cancelled' }); toast('취소했어요'); render(); } break;
+        case 'leave-cancel': if (window.confirm('신청을 취소할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'cancelled' }); await passOtherOffers(id, null); toast('취소했어요'); render(); } break;
         case 'offer': await db.insert('ops_sub_offers', { request_id: id, staff_id: (isOwner() && el.getAttribute('data-staff')) || session.staffId, status: 'offered', created_at: new Date().toISOString() }); toast('지원했어요. 사장님·매니저 컨펌을 기다려 주세요'); render(); break;
         case 'offer-cancel': await db.remove('ops_sub_offers', { id: id }); toast('지원을 취소했어요'); render(); break;
         case 'solo-ok': await db.update('ops_leave_requests', { id: id }, { solo_ok_by: (isOwner() && el.getAttribute('data-staff')) || session.staffId }); toast('"혼자 가능"으로 표시했어요'); render(); break;
         case 'req-accept': await db.update('ops_leave_requests', { id: id }, { status: 'covering', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('수락. 같은 매장에 "대타 구하는 중"으로 떠요'); render(); break;
-        case 'req-reject': { var adhoc = el.getAttribute('data-adhoc') === '1'; if (window.confirm(adhoc ? '이 자리를 취소할까요?' : '거절(출근)으로 할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'rejected', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast(adhoc ? '자리를 취소했어요' : '거절했어요'); render(); } } break;
+        case 'req-reject': { var adhoc = el.getAttribute('data-adhoc') === '1'; if (window.confirm(adhoc ? '이 자리를 취소할까요?' : '거절(출근)으로 할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'rejected', decided_by: session.staffId, decided_at: new Date().toISOString() }); await passOtherOffers(id, null); toast(adhoc ? '자리를 취소했어요' : '거절했어요'); render(); } } break;
         case 'opensub-toggle': document.getElementById('opensub-box').classList.toggle('hidden'); break;
         case 'opensub-add': await opensubAdd(el.getAttribute('data-branch')); break;
         case 'req-confirm': await reqConfirm(id, el.getAttribute('data-staff')); break;
