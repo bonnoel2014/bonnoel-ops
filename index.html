@@ -76,6 +76,13 @@
   .summary .n{ font-size:24px; font-weight:700; line-height:1.1; }
   .summary .n.danger{ color:var(--danger); }
   .summary .l{ font-size:12px; color:var(--ink-soft); }
+  .daystrip{ display:flex; gap:6px; overflow-x:auto; margin-top:8px; padding-bottom:2px; -webkit-overflow-scrolling:touch; }
+  .daypill{ flex:none; min-width:58px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-m); padding:6px 4px; text-align:center; }
+  .daypill.today{ border-color:var(--accent); background:var(--accent-soft); }
+  .daypill .dp-d{ font-size:11px; color:var(--ink-soft); margin-bottom:2px; }
+  .daypill .dp-v{ font-size:12px; font-weight:700; line-height:1.2; }
+  .daypill .dp-v.zero{ color:var(--ink-faint); font-weight:400; }
+  .daypill .dp-n{ font-size:10px; color:var(--ink-faint); margin-top:1px; }
 
   .section{ margin-top:16px; }
   .sec-h{ display:flex; align-items:center; gap:8px; padding:10px 14px; background:var(--surface-sunken); font-weight:600; font-size:14px; border-bottom:1px solid var(--line); }
@@ -610,16 +617,20 @@
         var ymNow = monthOf(todayStr()), mr = monthRange(ymNow);
         var exps = (await db.select('ops_expenses', { gte: { spent_on: mr.from } })).filter(function(x){ return x.spent_on <= mr.to && (isOwner() || x.branch_id === session.branchId); });
         var expSum = 0; exps.forEach(function(x){ expSum += num(x.amount) || 0; });
+        var expRecent = (await db.select('ops_expenses', { gte: { spent_on: addDays(todayStr(), -6) } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
         html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #9C27B0"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">💳 카드·급여</div><div class="summary" style="grid-template-columns:1fr 1fr;margin-top:0"><a href="#/expense-sum/' + ymNow + '"><div class="n" style="font-size:20px">' + won(expSum) + '<span style="font-size:13px">원</span></div><div class="l">이번 달 카드 지출' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
-                '<a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n">' + exps.length + '</div><div class="l">영수증 ' + exps.filter(function(x){ return !x.statement_key; }).length + '장 미대조</div></a></div></div>';
+                '<a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n">' + exps.length + '</div><div class="l">영수증 ' + exps.filter(function(x){ return !x.statement_key; }).length + '장 미대조</div></a></div>' +
+                recentDayStrip(expRecent, 'spent_on', function(x){ return num(x.amount) || 0; }, function(d){ return '#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + monthOf(d); }) + '</div>';
       } catch(e){ console.warn('카드 지출 테이블 없음', e); }
       try { // 직원 구매 테이블(supabase-migration-staffbuy.sql)이 아직 없어도 홈은 열리게
         var buysToday = (await db.select('ops_staff_purchases', { eq: { bought_on: todayStr() } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
         var bs = buySums(buysToday);
+        var buysRecent = (await db.select('ops_staff_purchases', { gte: { bought_on: addDays(todayStr(), -6) } })).filter(function(x){ return isOwner() || x.branch_id === session.branchId; });
         html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #FFC107"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">🥐 직원 구매</div><div class="summary" style="grid-template-columns:1fr 1fr 1fr;margin-top:0"><a href="#/buy-list"><div class="n">' + bs.n + '</div><div class="l">오늘 구매' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
                 '<a href="#/buy-list"><div class="n" style="font-size:18px">' + won(bs.list) + '<span style="font-size:12px">원</span></div><div class="l">판매금액(할인전)</div></a>' +
                 '<a href="#/buy-list"><div class="n" style="font-size:18px">' + won(bs.disc) + '<span style="font-size:12px">원</span></div><div class="l">할인 합계</div></a></div>' +
-                (buysToday.length ? '<a href="#/buy-list" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">' + buysToday.slice(0, 6).map(function(x){ return esc(branchName(x.branch_id)) + ' ' + esc(buyerLabel(x)); }).join(' · ') + (buysToday.length > 6 ? ' 외 ' + (buysToday.length - 6) + '건' : '') + '</a>' : '') + '</div>';
+                (buysToday.length ? '<a href="#/buy-list" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">' + buysToday.slice(0, 6).map(function(x){ return esc(branchName(x.branch_id)) + ' ' + esc(buyerLabel(x)); }).join(' · ') + (buysToday.length > 6 ? ' 외 ' + (buysToday.length - 6) + '건' : '') + '</a>' : '') +
+                recentDayStrip(buysRecent, 'bought_on', function(x){ return num(x.paid) || 0; }, function(d){ return '#/buy-list/' + (isOwner() ? 'all' : session.branchId) + '/' + monthOf(d); }, { showCount: true }) + '</div>';
       } catch(e){ console.warn('직원 구매 테이블 없음', e); }
       try { // 청년지원금 표(supabase-migration-subsidy.sql)가 아직 없어도 홈은 열리게
         if (isOwner()){
@@ -2334,6 +2345,20 @@
   var paySettings = null;
   async function loadPaySettings(){ if (paySettings) return paySettings; var r = await db.select('ops_settings', { eq: { key: 'pay' } }).catch(function(){ return []; }); paySettings = Object.assign({}, PAY_DEFAULT, r[0] ? r[0].value : {}); return paySettings; }
   function won(n){ return (Math.round(n) || 0).toLocaleString('ko-KR'); }
+  // 홈 화면용 "최근 며칠" 가로 스트립: 오늘·어제·그제 + 날짜별 합계, 눌러서 그 날짜가 든 화면으로. 날짜 경계를 안 넘게 항상 오늘 기준 역순.
+  function recentDayStrip(rows, dateKey, amtFn, hrefFn, opts){
+    opts = opts || {}; var days = opts.days || 7;
+    var sums = {}, cnt = {};
+    rows.forEach(function(r){ var d = r[dateKey]; if (!d) return; sums[d] = (sums[d] || 0) + (amtFn(r) || 0); cnt[d] = (cnt[d] || 0) + 1; });
+    var html = '<div class="daystrip">';
+    for (var i = 0; i < days; i++){
+      var d = addDays(todayStr(), -i);
+      var label = i === 0 ? '오늘' : i === 1 ? '어제' : i === 2 ? '그제' : fmtDateK(d);
+      var sum = sums[d] || 0, n = cnt[d] || 0;
+      html += '<a class="daypill' + (i === 0 ? ' today' : '') + '" href="' + hrefFn(d) + '"><div class="dp-d">' + esc(label) + '</div><div class="dp-v' + (sum ? '' : ' zero') + '">' + (sum ? won(sum) : '-') + '</div>' + (opts.showCount ? '<div class="dp-n">' + n + '건</div>' : '') + '</a>';
+    }
+    return html + '</div>';
+  }
   function floor10(n){ return Math.floor(n / 10) * 10; }
   function computePay(recsFull, sch, profile, S, ym, flags){
     // recsFull: 이 달 기록 + 달에 걸친 주(첫/끝 주)의 다른 달 날짜 기록도 포함(주휴를 7일 전체로 계산하기 위함, 9/24)
@@ -3432,11 +3457,6 @@
   var BUY_METHODS = [
     { id: 'cash', name: '현금', rate: 30 },
     { id: 'transfer', name: '계좌이체', rate: 30 },
-    { id: 'kakaopay', name: '카카오페이', rate: 30 },
-    { id: 'cash_receipt', name: '현금 + 현금영수증', rate: 20 },
-    { id: 'card', name: '카드', rate: 20 },
-    { id: 'seoulpay', name: '서울페이', rate: 20 },
-    { id: 'onnuri', name: '온누리상품권', rate: 20 },
     { id: 'stale50', name: '할인빵(전날) 50%', rate: 50 },
     { id: 'farewell', name: '퇴사빵', rate: 0 },
     { id: 'other', name: '기타 (할인 없음)', rate: 0 }
@@ -3530,7 +3550,7 @@
     var html = topbar('직원 구매', true, whoChip());
     html += '<div class="form">';
     if (!st.photo){
-      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 · 카카오페이 <b>30%</b><br>카드 · 서울페이 · 온누리 · 현금영수증 끊은 현금 <b>20%</b><br>전날 남은 할인빵 <b>50%</b></div>';
+      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 <b>30%</b><br>전날 남은 할인빵 <b>50%</b></div>';
       html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="buy-file" class="hidden"></label>';
       html += '<div class="muted">계산한 영수증 사진을 올리면 날짜·정가·할인·낸 금액을 자동으로 읽어요. 틀리면 고치고 저장하면 돼요. 사진이 있으면 증빙으로 남아요. 영수증 한 장에 한 번.</div>';
       html += '<div class="muted">화면 캡처(스크린샷)를 복사해 뒀으면 파일로 안 저장해도 돼요. 이 화면에서 <b>Ctrl+V</b> 눌러서 바로 붙여넣기 하세요.</div>';
@@ -3881,6 +3901,17 @@
     toast('직원 명단을 새로 불러왔어요');
     render();
   }
+  // 명부 동기화 화면에서 시트 붙여넣기 없이 바로 퇴사 처리 (지점·이름은 이미 이 화면에서 알고 있으니 날짜만)
+  async function rsQuit(id){
+    var s = base.staff.filter(function(x){ return x.id === id; })[0]; if (!s) return;
+    var d = window.prompt(s.name + ' 님 퇴사일 (YYYY-MM-DD, 오늘이면 그냥 확인)', todayStr()); if (d === null) return;
+    d = d.trim() || todayStr();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)){ toast('날짜는 YYYY-MM-DD 형식으로 넣어 주세요'); return; }
+    if (!window.confirm(s.name + ' 님을 ' + fmtYmdK(d) + ' 퇴사 처리할까요?')) return;
+    var memo = (s.memo ? s.memo + '\n' : '') + '퇴사 ' + d + ' (명부 동기화)';
+    await db.update('manual_staff', { id: id }, { active: false, memo: memo });
+    toast(s.name + ' 님 퇴사 처리했어요'); render();
+  }
   async function rsImportSave(){
     var rows = rsState.importRows || []; var map = healthMap(await loadHealth());
     var payMap = {}; (await db.select('ops_pay_profiles')).forEach(function(p){ payMap[p.staff_id] = p; });
@@ -3928,7 +3959,7 @@
     html += '<div class="group-title">현재 명단 (' + rsList.length + '명)</div><div class="card">';
     html += rsList.length ? rsList.map(function(s){
       var hc = rsHealth[s.id] && rsHealth[s.id].confirmed, em = rsPay[s.id] && rsPay[s.id].email;
-      return '<div class="item"><div class="iname"><div class="t">' + esc(s.name) + (rsBranch === 'all' ? ' <span class="badge muted">' + esc(branchName(s.branch_id)) + '</span>' : '') + '</div><div class="s">' + (s.hire_on ? '입사 ' + esc(fmtYmdK(s.hire_on)) + ' · ' : '입사일 없음 · ') + (hc ? '보건증 ' + esc(fmtYmdK(hc.expires_on)) : '보건증 없음') + ' · ' + (em ? esc(em) : '<span class="bad">이메일 없음</span>') + '</div></div></div>';
+      return '<div class="item"><div class="iname"><div class="t">' + esc(s.name) + (rsBranch === 'all' ? ' <span class="badge muted">' + esc(branchName(s.branch_id)) + '</span>' : '') + '</div><div class="s">' + (s.hire_on ? '입사 ' + esc(fmtYmdK(s.hire_on)) + ' · ' : '입사일 없음 · ') + (hc ? '보건증 ' + esc(fmtYmdK(hc.expires_on)) : '보건증 없음') + ' · ' + (em ? esc(em) : '<span class="bad">이메일 없음</span>') + '</div></div><button class="btn sm" data-act="rs-quit" data-id="' + esc(s.id) + '">퇴사</button></div>';
     }).join('') : '<div class="empty">근무자가 없어요</div>';
     html += '</div>';
     html += '<div class="form"><textarea class="in" id="rs-import" rows="4" placeholder="여기에 붙여넣기">' + esc(rsState.importText) + '</textarea>';
