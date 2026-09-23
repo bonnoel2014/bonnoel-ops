@@ -187,8 +187,7 @@
   var SUPABASE_URL = 'https://caetlljnyxsusswqhtci.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_Oiqo2urdo-9s-HIso3rkmQ_7pP-I0nV';
   var LINKS = { manual: 'https://bakery-manual-book.vercel.app', logbook: 'https://bonnoel-manager-logbook.vercel.app',
-    hiring: 'https://bonnoel-hiring.vercel.app/', hiringAdmin: 'https://bonnoel-hiring.vercel.app/#admin', hiringWelcome: 'https://bonnoel-hiring.vercel.app/#welcome',
-    bakerAdmin: 'https://bonnoel-baker-hiring.vercel.app/' };
+    hiring: 'https://bonnoel-hiring.vercel.app/', hiringAdmin: 'https://bonnoel-hiring.vercel.app/#admin', hiringWelcome: 'https://bonnoel-hiring.vercel.app/#welcome' };
   var DEMO = /[?&]demo=1/.test(location.search);   // ?demo=1 : 창고 없이 가짜 데이터로 눌러보기
 
   var app = document.getElementById('app');
@@ -681,10 +680,9 @@
     html += grp('설정·채용');
     if (isManager()) html += row('#/staff', 'tile-gray', '👥', '직원·비밀번호', '역할 정하기·비밀번호 초기화');
     if (isOwner()) html += row('#/subsidy', 'tile-blue', '🧑‍💼', '청년지원금', '참여자 등록·6/9/12개월·2년차 신청 현황·서류·입금 (사장님만)');
-    if (isOwner()) html += row(LINKS.hiringAdmin, 'tile-blue', '🗂️', '지원자 관리', '지원서 확인 · 면접 제안 문자 · 엑셀 (사장님 이메일 로그인)');
+    if (isOwner()) html += row(LINKS.hiringAdmin, 'tile-blue', '🗂️', '지원자 관리', '아르바이트·베이커 지원서 확인 · 면접 제안 문자 · 엑셀 (사장님 이메일 로그인)');
     if (isManager()) html += row(LINKS.hiring, 'tile-yellow', '📮', '지원서 링크', '지원자에게 보내는 주소 · 열어서 공유');
     if (isOwner()) html += row(LINKS.hiringWelcome, 'tile-green', '🎉', '입사 안내', '합격자 준비물·복장 안내');
-    if (isOwner()) html += row(LINKS.bakerAdmin, 'tile-purple', '🥐', '베이커 채용 관리', '정직원 후보자 · 면접 제안 문자(지점 안내) · 엑셀 (사장님 이메일 로그인)');
     html += tge();
     html += grp('자료');
     if (isOwner()) html += row(LINKS.manual, 'tile-red', '📖', '매뉴얼북', '사진·영상으로 업무 익히기');
