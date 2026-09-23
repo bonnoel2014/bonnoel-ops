@@ -3064,6 +3064,25 @@
 
   // --- 서류 준비 (계약 조건 입력) ---
   var prepState = null, prepKeep = false;
+  // 유니폼: 우리가 쓰는 품목은 이 세 가지뿐이라 자유 입력 대신 버튼으로 고른다. 카라티만 반팔·긴팔 선택, 조리복은 긴팔 고정.
+  var UNI_KEYS = [ { key: 'apron', label: '앞치마' }, { key: 'karate', label: '카라티' }, { key: 'chef', label: '조리복 (긴팔)' } ];
+  function uniformFromArray(arr){
+    var u = { apron: { on: false, qty: 1 }, karate: { on: false, sleeve: 'short', qty: 1 }, chef: { on: false, qty: 1 } };
+    (arr || []).forEach(function(x){
+      var name = (x.item || '').trim();
+      if (name.indexOf('앞치마') >= 0) u.apron = { on: true, qty: num(x.qty) || 1 };
+      else if (name.indexOf('카라티') >= 0) u.karate = { on: true, sleeve: (x.size || '').indexOf('긴') >= 0 ? 'long' : 'short', qty: num(x.qty) || 1 };
+      else if (name.indexOf('조리복') >= 0) u.chef = { on: true, qty: num(x.qty) || 1 };
+    });
+    return u;
+  }
+  function uniformToArray(u){
+    var out = [];
+    if (u.apron.on) out.push({ item: '앞치마', size: '', qty: u.apron.qty || 1 });
+    if (u.karate.on) out.push({ item: '카라티', size: u.karate.sleeve === 'long' ? '긴팔' : '반팔', qty: u.karate.qty || 1 });
+    if (u.chef.on) out.push({ item: '조리복', size: '긴팔', qty: u.chef.qty || 1 });
+    return out;
+  }
   routes['docs-prep'] = async function(params){
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
@@ -3078,7 +3097,7 @@
       if (!days){ days = {}; try { var pats = await db.select('ops_shift_patterns', { eq: { staff_id: s.id } }); pats.forEach(function(p){ if (p.active === false || p.week_start) return; var brk = p.break_start && p.break_end ? toMin(p.break_end) - toMin(p.break_start) : 0; days[p.weekday] = { s: p.start_time.slice(0, 5), e: p.end_time.slice(0, 5), brk: brk >= 45 ? 60 : brk > 0 ? 30 : 0 }; }); } catch(e){} }
       var start = c.start || todayStr();
       prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || '', wageNoEnd: c.wageEnd ? false : true, payDay: c.payDay || 10, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor) };
-      prepState.uniform = (old && old.uniform && old.uniform.length) ? old.uniform : [{ item: '', size: '', qty: 1 }];
+      prepState.uniform = uniformFromArray(old && old.uniform);
     }
     prepKeep = false;
     var f = prepState.f;
@@ -3093,9 +3112,13 @@
     html += '<div><label>요일별 근무시간 · 휴게 (비우면 휴무)</label><table class="slip-t" style="margin:0"><tr><th style="width:44px">요일</th><th>시작</th><th>끝</th><th>휴게</th></tr>';
     [1, 2, 3, 4, 5, 6, 0].forEach(function(i){ var d = f.days[i] || {}; html += '<tr><td class="c"><b>' + WD[i] + '</b></td><td><input class="in pp-ds" data-d="' + i + '" type="time" step="1800" value="' + esc(d.s || '') + '" style="padding:6px"></td><td><input class="in pp-de" data-d="' + i + '" type="time" step="1800" value="' + esc(d.e || '') + '" style="padding:6px"></td><td><select class="in pp-db" data-d="' + i + '" style="padding:6px"><option value="0"' + (!d.brk ? ' selected' : '') + '>없음</option><option value="30"' + (d.brk === 30 ? ' selected' : '') + '>30분</option><option value="60"' + (d.brk === 60 ? ' selected' : '') + '>60분</option></select></td></tr>'; });
     html += '</table></div>';
-    html += '<div><label>유니폼 지급 (품목 · 사이즈 · 수량)</label>';
-    prepState.uniform.forEach(function(u, i){ html += '<div class="inline" style="margin-bottom:6px"><input class="in pp-ui" data-i="' + i + '" placeholder="예: 앞치마" value="' + esc(u.item || '') + '" style="flex:2;min-width:110px"><input class="in pp-us" data-i="' + i + '" placeholder="사이즈" value="' + esc(u.size || '') + '" style="flex:1;min-width:60px"><input class="in pp-uq" data-i="' + i + '" type="number" min="1" value="' + esc(u.qty || 1) + '" style="width:64px"><button class="btn sm" data-act="prep-uni-del" data-i="' + i + '">✕</button></div>'; });
-    html += '<button class="btn sm" data-act="prep-uni-add">+ 품목 추가</button></div>';
+    html += '<div><label>유니폼 지급</label><div class="inline" style="flex-wrap:wrap;gap:8px;margin:0 0 10px">';
+    UNI_KEYS.forEach(function(k){ var on = prepState.uniform[k.key].on; html += '<button class="btn' + (on ? ' primary' : '') + '" data-act="uni-toggle" data-key="' + k.key + '">' + (on ? '✓ ' : '') + esc(k.label) + '</button>'; });
+    html += '</div>';
+    if (prepState.uniform.apron.on) html += '<div class="inline" style="margin-bottom:8px"><span class="muted" style="flex:1">앞치마 수량</span><input class="in pp-uq" data-key="apron" type="number" min="1" value="' + esc(prepState.uniform.apron.qty) + '" style="width:64px"></div>';
+    if (prepState.uniform.karate.on) html += '<div class="inline" style="margin-bottom:8px;flex-wrap:wrap"><span class="muted" style="flex:1;min-width:100%">카라티</span><button class="btn sm' + (prepState.uniform.karate.sleeve === 'short' ? ' primary' : '') + '" data-act="uni-sleeve" data-sleeve="short">반팔</button><button class="btn sm' + (prepState.uniform.karate.sleeve === 'long' ? ' primary' : '') + '" data-act="uni-sleeve" data-sleeve="long">긴팔</button><span class="muted" style="margin-left:6px">수량</span><input class="in pp-uq" data-key="karate" type="number" min="1" value="' + esc(prepState.uniform.karate.qty) + '" style="width:64px"></div>';
+    if (prepState.uniform.chef.on) html += '<div class="inline" style="margin-bottom:8px"><span class="muted" style="flex:1">조리복 (긴팔) 수량</span><input class="in pp-uq" data-key="chef" type="number" min="1" value="' + esc(prepState.uniform.chef.qty) + '" style="width:64px"></div>';
+    html += '</div>';
     html += '</div>';
     html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="prep-save">' + (prepState.batchId ? '수정 저장' : '서류 준비 완료 (서명 대기로)') + '</button></div></div>';
     app.innerHTML = html;
@@ -3108,7 +3131,7 @@
     f.branchId = g('pp-branch').value; f.duty = g('pp-duty').value.trim(); f.start = g('pp-start').value; f.noEnd = g('pp-noend').checked; f.end = f.noEnd ? '' : g('pp-end').value;
     f.wage = num(g('pp-wage').value); f.wageNoEnd = g('pp-wagenoend').checked; f.wageEnd = f.wageNoEnd ? '' : g('pp-wageend').value; f.payDay = num(g('pp-payday').value); f.meal = num(g('pp-meal').value); f.probation = g('pp-prob').checked; f.minor = g('pp-minor').checked;
     var days = {}; app.querySelectorAll('.pp-ds').forEach(function(el){ var i = el.getAttribute('data-d'); var s = el.value, e = app.querySelector('.pp-de[data-d="' + i + '"]').value, brk = +app.querySelector('.pp-db[data-d="' + i + '"]').value; if (s && e) days[i] = { s: s, e: e, brk: brk }; }); f.days = days;
-    prepState.uniform = Array.prototype.map.call(app.querySelectorAll('.pp-ui'), function(el){ var i = el.getAttribute('data-i'); return { item: el.value.trim(), size: app.querySelector('.pp-us[data-i="' + i + '"]').value.trim(), qty: num(app.querySelector('.pp-uq[data-i="' + i + '"]').value) || 1 }; });
+    ['apron', 'karate', 'chef'].forEach(function(k){ var el = app.querySelector('.pp-uq[data-key="' + k + '"]'); if (el) prepState.uniform[k].qty = num(el.value) || 1; });
   }
   async function prepSave(){
     prepRead();
@@ -3120,7 +3143,7 @@
     if (!Object.keys(f.days).length){ if (!window.confirm('근무시간이 비어 있어요. 계약서 근무시간 표가 빈칸으로 나가요. 계속할까요?')) return; }
     var bn = branchName(f.branchId), addr = (BND().company.sites.filter(function(x){ return bn.indexOf(x[0]) === 0; })[0] || [])[1] || '';
     var c = { branchId: f.branchId, branchName: bn, branchAddr: addr, start: f.start, end: f.noEnd ? '' : f.end, probation: f.probation, duty: f.duty, wage: f.wage, wageEnd: f.wageEnd, payDay: f.payDay, meal: f.meal, days: f.days, preparedBy: session.name };
-    var data = { c: c, uniform: prepState.uniform.filter(function(u){ return u.item; }), minor: f.minor, staff: { name: s.name }, checks: {} };
+    var data = { c: c, uniform: uniformToArray(prepState.uniform), minor: f.minor, staff: { name: s.name }, checks: {} };
     var batchId = prepState.batchId || uuid4();
     var keys = BND().list.filter(function(d){ return !d.minorOnly || f.minor; });
     var rows = keys.map(function(d){ return { batch_id: batchId, staff_id: s.id, branch_id: f.branchId, doc_key: d.key, doc_title: d.title, template_version: BND().version, data: data, status: 'prepared', prepared_by: session.staffId }; });
@@ -4457,8 +4480,8 @@
         case 'docs-open-pdf': { var du = await db.signedUrl(DOCS_BUCKET, el.getAttribute('data-path')); window.open(du, '_blank'); break; }
         case 'docs-settings-save': await docsSettingsSave(); break;
         case 'docs-seal-remove': await saveDocsSettings({ seal: null }); toast('직인을 지웠어요'); render(); break;
-        case 'prep-uni-add': prepRead(); prepState.uniform.push({ item: '', size: '', qty: 1 }); prepKeep = true; render(); break;
-        case 'prep-uni-del': prepRead(); prepState.uniform.splice(+el.getAttribute('data-i'), 1); if (!prepState.uniform.length) prepState.uniform.push({ item: '', size: '', qty: 1 }); prepKeep = true; render(); break;
+        case 'uni-toggle': { prepRead(); var ukey = el.getAttribute('data-key'); prepState.uniform[ukey].on = !prepState.uniform[ukey].on; prepKeep = true; render(); break; }
+        case 'uni-sleeve': prepRead(); prepState.uniform.karate.sleeve = el.getAttribute('data-sleeve'); prepKeep = true; render(); break;
         case 'prep-save': el.disabled = true; try { await prepSave(); } finally { el.disabled = false; } break;
         case 'sign-branch': signState.branchId = id; try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} render(); break;
         case 'sign-branch-reset': signState.branchId = null; try { localStorage.removeItem(KIOSK_KEY); } catch(err){} if (session && !isOwner()){ toast('내 매장에서만 서명할 수 있어요'); break; } render(); break;
