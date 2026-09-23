@@ -158,6 +158,11 @@
   table.grid th{ background:var(--surface-sunken); font-weight:500; color:var(--ink-soft); position:sticky; left:0; }
   table.grid th:first-child{ min-width:44px; z-index:1; }
   table.grid .on{ background:var(--accent-soft); }
+  table.pptable{ border-collapse:collapse; width:100%; font-size:13px; }
+  table.pptable th, table.pptable td{ padding:8px 10px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+  table.pptable th{ color:var(--ink-soft); font-weight:500; background:var(--surface-sunken); }
+  table.pptable td:first-child, table.pptable th:first-child{ text-align:left; }
+  table.pptable tr.tot td{ font-weight:700; background:var(--surface-sunken); }
   .chip{ display:inline-block; padding:0 4px; margin:1px; border-radius:4px; background:var(--tile-gray); color:#2b2420; white-space:nowrap; }
   .chip.sub{ outline:2px solid var(--accent); outline-offset:-1px; font-weight:600; }
   .dot{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; border:1px solid rgba(0,0,0,.15); }
@@ -288,6 +293,7 @@
       update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
       upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
       remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); },
+      rpc: async function(fn, args){ return clone(ppMemRpc(tables, fn, args || {})); },
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
@@ -691,6 +697,10 @@
     html += row('#/arrive', 'tile-green', '📥', '도착 확인', '온 물건 수량 맞는지');
     html += row('#/transfer', 'tile-purple', '🔁', '점간 이동', '매장끼리 물건 주고받기');
     if (isManager()) html += row('#/items', 'tile-gray', '⚙️', '비품 설정', '품목·단위·적정재고');
+    html += tge();
+    html += grp('선결제');
+    html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
+    if (isOwner()) html += row('#/prepay-admin', 'tile-gray', '📊', '선결제 관리', '매장별 충전·사용 합계 · 손님 잔액 · 옮기기 · 코드 (사장님만)');
     html += tge();
     html += grp('카드·급여');
     html += row('#/expense', 'tile-orange', '🧾', '영수증 올리기', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
@@ -4454,6 +4464,416 @@
     await db.insert('ops_subsidy_logs', { case_id: caseId, content: text || null, file_path: path, created_by: session.staffId, created_at: nowIso() });
     subsidyLogFile = null;
     toast('기록했어요'); render();
+  // ===== 선결제: 손님이 미리 충전해 두고 4매장에서 같이 쓰는 잔액 (supabase-migration-prepay.sql, 기획/선결제_설계.md) =====
+  // 돈 장부라서 표를 직접 안 건드리고 prepay_* DB 함수로만 — 매장 코드(6자리)/사장님 코드를 서버가 확인
+  // 코드는 이 화면 메모리에만 들고 있음 (새로고침·잠그기 하면 다시 입력)
+  var prepaySt = { code: null, role: null, q: '', found: null, act: 'use', status: null, importText: '', importRows: null };
+  var PP_KIND = { charge: '충전', use: '사용', refund: '환불', import: '옮김', cancel: '취소' };
+  async function ppCall(fn, args){ var r = await db.rpc(fn, args); if (r && r.ok === false) throw new Error(r.error || '실패했어요'); return r; }
+  function ppArgs(extra){ return Object.assign({ p_branch: session.branchId, p_code: prepaySt.code }, extra || {}); }
+  function ppVal(id){ var el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; }
+  function ppDigits(s){ return String(s || '').replace(/[^0-9]/g, ''); }
+  function ppPhone(p){ p = String(p || ''); if (p.length === 11) return p.slice(0, 3) + '-' + p.slice(3, 7) + '-' + p.slice(7); if (p.length === 10) return p.slice(0, 3) + '-' + p.slice(3, 6) + '-' + p.slice(6); return p; }
+  function ppMasked(p){ p = String(p || ''); return p.length >= 10 ? p.slice(0, 3) + '-****-' + p.slice(-4) : p; }
+  function ppBonus(paid){ var s = prepaySt.status || {}; var min = s.bonus_min != null ? s.bonus_min : 100000, rate = s.bonus_rate != null ? +s.bonus_rate : 5; return paid >= min ? Math.floor(paid * rate / 100) : 0; }
+  function ppRuleText(){ var s = prepaySt.status || {}; return won(s.bonus_min != null ? s.bonus_min : 100000) + '원 이상 충전하면 ' + (s.bonus_rate != null ? +s.bonus_rate : 5) + '% 추가 적립'; }
+  function ppWhen(s){ var d = new Date(s); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function ppSigned(n){ return (n > 0 ? '+' : n < 0 ? '−' : '') + won(Math.abs(n)); }
+  function ppPublicUrl(){ return location.origin + location.pathname.replace(/[^/]*$/, '') + 'prepay.html'; }
+  // 취소 줄은 원래 무엇(충전·사용…)이었는지로 합산 — 받은 돈·적립·사용·환불
+  function ppSums(rows){
+    var s = { paid: 0, bonus: 0, use: 0, refund: 0, imported: 0 };
+    rows.forEach(function(l){
+      var k = l.kind === 'cancel' ? l.orig_kind : l.kind;
+      if (k === 'charge'){ s.paid += l.paid; s.bonus += l.bonus; }
+      else if (k === 'use') s.use -= l.amount;
+      else if (k === 'refund') s.refund -= l.paid;
+      else if (k === 'import') s.imported += l.amount;
+    });
+    return s;
+  }
+  // 서버 규칙과 같게: 사장님 코드는 전부, 매장 코드는 오늘 우리 매장 충전·사용만 (최종 확인은 서버가 함)
+  function ppCanCancel(l){
+    if (l.kind === 'cancel' || l.canceled) return false;
+    if (prepaySt.role === 'owner') return true;
+    return (l.kind === 'charge' || l.kind === 'use') && l.branch_id === session.branchId && localDateKey(l.created_at) === todayStr();
+  }
+  function ppLedgerRow(l, showWho){
+    var kind = l.kind === 'cancel' ? '취소' + (l.orig_kind ? '(' + (PP_KIND[l.orig_kind] || '') + ')' : '') : (PP_KIND[l.kind] || l.kind);
+    var cls = l.kind === 'use' || l.kind === 'refund' ? 'danger' : l.kind === 'cancel' ? 'muted' : 'ok';
+    var sub = [ppWhen(l.created_at), l.branch_id ? branchName(l.branch_id) : ''];
+    if (l.staff_name) sub.push(l.staff_name + (l.by_owner ? '(사장님 코드)' : ''));
+    if (l.kind === 'charge' && l.bonus) sub.push('받은 돈 ' + won(l.paid) + ' + 적립 ' + won(l.bonus));
+    if (l.kind === 'refund') sub.push('돌려준 돈 ' + won(-l.paid) + (l.bonus ? ' · 적립 ' + won(-l.bonus) + ' 소멸' : ''));
+    if (l.memo) sub.push(l.memo);
+    var who = showWho ? (l.customer_id ? '<a href="#/prepay-c/' + esc(l.customer_id) + '">' + esc(l.name || '(이름 없음)') + '</a>' : esc(l.name || '')) + ' <span class="muted">' + esc(String(l.phone || '').slice(-4)) + '</span>' : '';
+    return '<div class="item"' + (l.canceled ? ' style="opacity:.55"' : '') + '><div class="iname"><div class="t"><span class="badge ' + cls + '">' + esc(kind) + '</span> ' + who + (l.canceled ? ' <span class="badge muted">취소됨</span>' : '') + '</div><div class="s">' + esc(sub.filter(Boolean).join(' · ')) + '</div></div>' +
+      '<b style="white-space:nowrap' + (l.canceled ? ';text-decoration:line-through' : '') + '">' + ppSigned(l.amount) + '원</b>' +
+      (ppCanCancel(l) ? '<button class="btn sm danger" data-act="pp-cancel" data-id="' + esc(l.id) + '">취소</button>' : '') + '</div>';
+  }
+  function ppCodeForm(title, sub){
+    return '<div class="pin-wrap"><div style="font-size:18px;font-weight:600;margin-bottom:6px">' + esc(title) + '</div><div class="muted" style="margin-bottom:14px">' + esc(sub) + '</div>' +
+      '<input class="pin" id="pp-code" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" style="width:240px;letter-spacing:10px">' +
+      '<div style="margin-top:18px"><button class="btn primary" data-act="pp-login">들어가기</button></div></div>';
+  }
+  function ppChargeFields(){
+    return '<div><label>받은 돈(원)</label><input class="in" id="pp-paid" type="number" inputmode="numeric" placeholder="카드·현금으로 받은 금액" style="font-size:22px" autocomplete="off"></div>' +
+      '<div class="inline">' + [30000, 50000, 100000, 200000, 300000].map(function(n){ return '<button type="button" class="btn sm" data-act="pp-quick" data-id="' + n + '">' + (n / 10000) + '만</button>'; }).join('') + '</div>' +
+      '<div class="note ok" id="pp-preview" style="margin-top:0"></div>' +
+      '<div><label>메모 (선택)</label><input class="in" id="pp-memo" placeholder="예: 카드 결제 · 회사 선결제" autocomplete="off"></div>';
+  }
+  function ppChargePreview(){
+    var el = document.getElementById('pp-preview'); if (!el) return;
+    var paid = num(ppVal('pp-paid')) || 0, b = ppBonus(paid);
+    el.innerHTML = paid ? '받은 돈 ' + won(paid) + '원' + (b ? ' + 추가 적립 <b>' + won(b) + '원</b>' : '') + ' → <b>' + won(paid + b) + '원 충전</b>' + (b ? '' : '<br><span class="muted">' + esc(ppRuleText()) + '</span>') : esc(ppRuleText());
+  }
+
+  routes.prepay = async function(){
+    await loadBase();
+    prepaySt.status = await db.rpc('prepay_status', {});
+    var html = topbar('선결제', true, whoChip());
+    if (!prepaySt.status.ready){
+      if (isOwner()) html += '<div class="form"><div><b>처음 한 번: 사장님 코드 정하기</b></div><div class="muted">숫자 6자리. 환불·잔액 옮기기·전체 합계·매장 코드 정하기에 써요. 직원에게 알려주지 마세요. 암호화해서 저장하기 때문에 <b>잊으면 되찾을 수 없어요</b> — 꼭 따로 적어 두세요.</div>' +
+        '<input class="in" id="pp-init1" type="password" inputmode="numeric" maxlength="6" placeholder="6자리" autocomplete="off"><input class="in" id="pp-init2" type="password" inputmode="numeric" maxlength="6" placeholder="한 번 더" autocomplete="off"><button class="btn primary" data-act="pp-init">정하기</button></div>';
+      else html += '<div class="note">사장님이 아직 선결제를 준비하지 않았어요.</div>';
+      app.innerHTML = html; return;
+    }
+    if (!prepaySt.code){
+      html += ppCodeForm((session.branchName || '') + ' 선결제 코드', '매장 코드 6자리' + (isOwner() ? ' (사장님 코드도 돼요)' : ''));
+      if ((prepaySt.status.branches || []).indexOf(session.branchId) < 0 && !isOwner()) html += '<div class="note">이 매장 코드가 아직 없어요. 사장님께 정해 달라고 해 주세요.</div>';
+      else html += '<div class="muted" style="text-align:center">코드는 매니저·사장님께 물어보세요. 손님이 보는 앞에서 누르지 않게 조심!</div>';
+      app.innerHTML = html; var ci = document.getElementById('pp-code'); if (ci) ci.focus(); return;
+    }
+    html += '<div class="note ok" style="margin-top:0">' + esc(ppRuleText()) + ' · 4매장 어디서나 사용</div>';
+    html += '<div class="form" style="margin-top:10px"><label>손님 찾기</label><div class="inline"><input class="in" id="pp-q" type="search" placeholder="휴대폰 뒷자리 4개 또는 이름" value="' + esc(prepaySt.q) + '" style="flex:1" autocomplete="off"><button class="btn primary" data-act="pp-search">찾기</button></div>';
+    if (prepaySt.found){
+      if (!prepaySt.found.length) html += '<div class="empty" style="padding:8px">못 찾았어요. 처음 오신 손님이면 아래 [새 손님 충전]을 눌러 주세요.</div>';
+      else html += '<div class="card">' + prepaySt.found.map(function(c){ return '<a class="row" href="#/prepay-c/' + esc(c.id) + '"><div class="rt"><div class="rtitle">' + esc(c.name || '(이름 없음)') + '</div><div class="rsub">' + esc(ppMasked(c.phone)) + '</div></div><b>' + won(c.balance) + '원</b><div class="chev">›</div></a>'; }).join('') + '</div>';
+    }
+    html += '</div>';
+    html += '<div style="margin-top:10px"><a class="btn block" href="#/prepay-c/new" style="padding:14px">＋ 새 손님 충전</a></div>';
+    var t = todayStr();
+    var rep = await ppCall('prepay_report', ppArgs({ p_from: t, p_to: t }));
+    var mine = rep.rows.filter(function(l){ return l.branch_id === session.branchId; }), s = ppSums(mine);
+    html += '<div class="group-title">오늘 ' + esc(session.branchName || '') + ' · 충전 받은 돈 ' + won(s.paid) + '원 · 사용 ' + won(s.use) + '원</div>';
+    html += mine.length ? '<div class="card">' + mine.map(function(l){ return ppLedgerRow(l, true); }).join('') + '</div>' : '<div class="empty">오늘 기록이 없어요</div>';
+    html += '<div class="muted" style="margin:6px 4px">잘못 누른 건 [취소] — 기록은 지워지지 않고 취소 줄이 남아요. 매장 코드로는 오늘 우리 매장 것만 취소돼요.</div>';
+    html += '<div class="inline" style="justify-content:center;margin-top:14px">' + (prepaySt.role === 'owner' ? '<a class="btn sm" href="#/prepay-admin">📊 선결제 관리</a>' : '') + '<button class="btn sm" data-act="pp-lock">🔒 잠그기</button></div>';
+    app.innerHTML = html;
+    var qi = document.getElementById('pp-q'); if (qi && !prepaySt.found) qi.focus();
+  };
+
+  routes['prepay-c'] = async function(params){
+    await loadBase();
+    if (!prepaySt.code){ nav('#/prepay'); return; }
+    if (!prepaySt.status) prepaySt.status = await db.rpc('prepay_status', {});
+    var html = topbar('선결제 손님', true, whoChip());
+    if (params.arg === 'new'){
+      html += '<div class="form"><div><b>새 손님 충전</b></div>' +
+        '<div><label>휴대폰 번호</label><input class="in" id="pp-phone" type="tel" inputmode="numeric" placeholder="010-0000-0000" autocomplete="off"></div>' +
+        '<div><label>이름 (단체면 단체명)</label><input class="in" id="pp-name" autocomplete="off"></div>' + ppChargeFields() +
+        '<div><label>손님 조회 비밀번호 4자리 (선택 · 손님이 직접 입력)</label><input class="in" id="pp-cpin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="나중에 정해도 돼요"><div class="muted">손님이 자기 폰으로 잔액을 볼 때 써요.</div></div>' +
+        '<button class="btn primary block" data-act="pp-charge" style="padding:14px">충전하기</button></div>';
+      html += '<div class="muted" style="margin:8px 4px">이미 등록된 번호면 그 손님 잔액에 더해져요.</div>';
+      app.innerHTML = html; ppChargePreview(); return;
+    }
+    var r = await ppCall('prepay_customer', ppArgs({ p_customer: params.arg }));
+    prepaySt.role = r.role;
+    var c = r.customer, kinds = {};
+    r.ledger.forEach(function(l){ kinds[l.id] = l.kind; });
+    r.ledger.forEach(function(l){ if (l.cancel_of) l.orig_kind = kinds[l.cancel_of]; });
+    html += '<div class="form" style="text-align:center"><div style="font-size:18px;font-weight:700">' + esc(c.name || '(이름 없음)') + '</div><div class="muted">' + esc(ppPhone(c.phone)) + '</div>' +
+      '<div style="font-size:34px;font-weight:700;margin-top:6px">' + won(r.balance) + '<span style="font-size:16px">원</span></div><div class="muted">남은 돈</div></div>';
+    var tab = function(k, label){ return '<span class="tab' + (prepaySt.act === k ? ' on' : '') + '" data-act="pp-act" data-id="' + k + '">' + label + '</span>'; };
+    if (prepaySt.act === 'refund' && prepaySt.role !== 'owner') prepaySt.act = 'use';
+    html += '<div class="tabs" style="margin-top:10px">' + tab('use', '사용 (빼기)') + tab('charge', '충전') + tab('info', '손님 정보') + (prepaySt.role === 'owner' ? tab('refund', '환불') : '') + '</div><div class="form">';
+    if (prepaySt.act === 'use'){
+      html += '<div><label>쓸 금액(원)</label><input class="in" id="pp-amount" type="number" inputmode="numeric" placeholder="계산 금액" style="font-size:22px" autocomplete="off"></div><div><label>메모 (선택)</label><input class="in" id="pp-memo" placeholder="예: 케이크 픽업" autocomplete="off"></div>' +
+        '<button class="btn primary block" data-act="pp-use" data-id="' + esc(c.id) + '" data-name="' + esc(c.name || '') + '" style="padding:14px">빼기</button>';
+    } else if (prepaySt.act === 'charge'){
+      html += ppChargeFields() + '<button class="btn primary block" data-act="pp-charge" data-id="' + esc(c.id) + '" data-phone="' + esc(c.phone) + '" data-name="' + esc(c.name || '') + '" style="padding:14px">충전하기</button>';
+    } else if (prepaySt.act === 'info'){
+      html += '<div><label>이름</label><input class="in" id="pp-name" value="' + esc(c.name || '') + '" autocomplete="off"></div>' +
+        '<div><label>손님 조회 비밀번호 4자리 ' + (c.has_pin ? '<span class="badge ok">정해져 있음</span>' : '<span class="badge muted">없음</span>') + '</label><input class="in" id="pp-cpin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="' + (c.has_pin ? '바꿀 때만 (손님이 직접 입력)' : '손님이 직접 입력') + '"></div>' +
+        '<button class="btn primary" data-act="pp-setcust" data-id="' + esc(c.id) + '">저장</button>' +
+        '<div class="muted">손님 잔액 조회 주소: <b>' + esc(ppPublicUrl()) + '</b> (번호 + 이 비밀번호로 봐요)</div>';
+    } else if (prepaySt.act === 'refund'){
+      var forfeit = r.balance - r.refundable;
+      html += '<div style="font-size:15px">돌려줄 돈 <b style="font-size:22px">' + won(r.refundable) + '원</b></div>' +
+        '<div class="muted">남은 돈 ' + won(r.balance) + '원' + (forfeit > 0 ? ' 중 추가 적립으로 받은 ' + won(forfeit) + '원은 빼고 돌려줘요' : '') + '. 처리하면 잔액이 0원이 돼요.</div>' +
+        '<div><label>메모 (선택)</label><input class="in" id="pp-memo" placeholder="예: 이사 · 계좌이체로 환불" autocomplete="off"></div>' +
+        '<button class="btn danger block" data-act="pp-refund" data-id="' + esc(c.id) + '"' + (r.balance > 0 ? '' : ' disabled') + '>돈을 돌려줬어요 · 환불 처리</button>';
+    }
+    html += '</div>';
+    html += '<div class="group-title">내역</div>' + (r.ledger.length ? '<div class="card">' + r.ledger.map(function(l){ return ppLedgerRow(l, false); }).join('') + '</div>' : '<div class="empty">아직 기록이 없어요</div>');
+    app.innerHTML = html;
+    if (prepaySt.act === 'charge') ppChargePreview();
+    var ai = document.getElementById(prepaySt.act === 'charge' ? 'pp-paid' : 'pp-amount'); if (ai) ai.focus();
+  };
+
+  routes['prepay-admin'] = async function(params){
+    await loadBase();
+    if (!isOwner()){ nav('#/prepay'); return; }
+    var html = topbar('선결제 관리', true);
+    prepaySt.status = await db.rpc('prepay_status', {});
+    if (!prepaySt.status.ready){ nav('#/prepay'); return; }
+    if (!prepaySt.code || prepaySt.role !== 'owner'){
+      html += ppCodeForm('사장님 코드', '선결제 관리는 사장님 코드 6자리로 들어가요');
+      app.innerHTML = html; var ci = document.getElementById('pp-code'); if (ci) ci.focus(); return;
+    }
+    var tabName = params.arg || 'sum';
+    var t = function(k, label){ return '<span class="tab' + (tabName === k ? ' on' : '') + '" data-act="go" data-href="#/prepay-admin/' + k + '">' + label + '</span>'; };
+    html += '<div class="tabs">' + t('sum', '합계') + t('cust', '손님') + t('import', '옮기기') + t('set', '설정') + '</div>';
+    if (tabName === 'sum'){
+      var ym = ymOf(params.arg2), mr = monthRange(ym);
+      var rep = await ppCall('prepay_report', ppArgs({ p_from: mr.from, p_to: mr.to }));
+      var all = await ppCall('prepay_customers_all', { p_code: prepaySt.code });
+      var owed = 0, withBal = 0; all.rows.forEach(function(c){ owed += c.balance; if (c.balance > 0) withBal++; });
+      html += '<div class="summary" style="grid-template-columns:1.4fr 1fr"><a href="#/prepay-admin/cust"><div class="n" style="font-size:20px">' + won(owed) + '<span style="font-size:13px">원</span></div><div class="l">손님들에게 남은 돈 (앞으로 빵으로 내줄 돈)</div></a><a href="#/prepay-admin/cust"><div class="n">' + withBal + '</div><div class="l">잔액 있는 손님 / 전체 ' + all.rows.length + '명</div></a></div>';
+      html += monthNav(ym, function(m){ return '#/prepay-admin/sum/' + m; });
+      var cols = base.branches.map(function(b){ return { id: b.id, name: b.name, s: ppSums(rep.rows.filter(function(l){ return l.branch_id === b.id; })) }; });
+      cols.push({ id: null, name: '합계', s: ppSums(rep.rows) });
+      html += '<div class="card" style="overflow-x:auto"><table class="pptable"><tr><th></th><th>충전 받은 돈</th><th>추가 적립</th><th>사용</th><th>환불</th></tr>' +
+        cols.map(function(c){ return '<tr' + (c.id ? '' : ' class="tot"') + '><td>' + esc(c.name) + '</td><td>' + won(c.s.paid) + '</td><td>' + won(c.s.bonus) + '</td><td>' + won(c.s.use) + '</td><td>' + won(c.s.refund) + '</td></tr>'; }).join('') + '</table></div>';
+      // 날짜별·매장별 충전 받은 돈 — POS 카드·현금 매출과 대조용
+      var byDay = {};
+      rep.rows.forEach(function(l){ var k = l.kind === 'cancel' ? l.orig_kind : l.kind; if (k !== 'charge') return; var d = localDateKey(l.created_at); byDay[d] = byDay[d] || {}; byDay[d][l.branch_id] = (byDay[d][l.branch_id] || 0) + l.paid; });
+      var days = Object.keys(byDay).sort().reverse();
+      html += '<div class="group-title">날짜별 충전 받은 돈 (POS 매출과 맞춰 보세요)</div>';
+      html += days.length ? '<div class="card" style="overflow-x:auto"><table class="pptable"><tr><th></th>' + base.branches.map(function(b){ return '<th>' + esc(b.name) + '</th>'; }).join('') + '</tr>' +
+        days.map(function(d){ return '<tr><td>' + esc(fmtDateK(d)) + '</td>' + base.branches.map(function(b){ var v = byDay[d][b.id]; return '<td>' + (v ? won(v) : '') + '</td>'; }).join('') + '</tr>'; }).join('') + '</table></div>' : '<div class="empty">이 달 충전이 없어요</div>';
+      if (rep.rows.length) html += '<div class="group-title">이 달 기록 ' + rep.rows.length + '건</div><div class="card">' + rep.rows.slice(0, 200).map(function(l){ return ppLedgerRow(l, true); }).join('') + '</div>' + (rep.rows.length > 200 ? '<div class="muted" style="margin:6px 4px">최근 200건만 보여요</div>' : '');
+    } else if (tabName === 'cust'){
+      var list = (await ppCall('prepay_customers_all', { p_code: prepaySt.code })).rows;
+      html += '<div class="form"><input class="in" id="pp-cf" type="search" placeholder="이름·번호로 거르기" autocomplete="off"></div>';
+      html += list.length ? '<div class="card" style="margin-top:10px">' + list.map(function(c){ return '<a class="row pp-cust" data-k="' + esc((c.name || '') + ' ' + c.phone) + '" href="#/prepay-c/' + esc(c.id) + '"><div class="rt"><div class="rtitle">' + esc(c.name || '(이름 없음)') + (c.has_pin ? '' : ' <span class="badge muted">조회 비번 없음</span>') + '</div><div class="rsub">' + esc(ppPhone(c.phone)) + (c.last_at ? ' · 마지막 ' + esc(ppWhen(c.last_at)) : '') + '</div></div><b>' + won(c.balance) + '원</b><div class="chev">›</div></a>'; }).join('') + '</div>' : '<div class="empty">아직 손님이 없어요</div>';
+    } else if (tabName === 'import'){
+      html += '<div class="form"><div><b>지금 쓰는 선불권 앱의 손님 잔액 옮기기</b></div>' +
+        '<div class="muted">① 지금 앱에서 손님 목록을 엑셀로 내려받기 → ② 엑셀에서 번호·이름·잔액이 있는 부분을 <b>머리글 줄부터</b> 선택해 복사(Ctrl+C) → ③ 아래 칸에 붙여넣기(Ctrl+V). 저장 전에 미리보기로 확인해요.<br>같은 번호를 두 번 옮겨도 두 번 더해지지 않아요.</div>' +
+        '<textarea class="in" id="pp-imp" rows="6" placeholder="여기에 붙여넣기">' + esc(prepaySt.importText) + '</textarea></div>';
+      if (prepaySt.importRows){
+        var good = prepaySt.importRows.filter(function(x){ return x.ok; }), bad = prepaySt.importRows.length - good.length, tot = 0;
+        good.forEach(function(x){ tot += x.balance; });
+        html += '<div class="note' + (bad ? '' : ' ok') + '">읽은 손님 ' + good.length + '명 · 잔액 합계 ' + won(tot) + '원' + (bad ? ' · <b>읽지 못한 줄 ' + bad + '개</b>(아래 빨간 줄 — 번호나 잔액이 이상해요, 옮기지 않아요)' : '') + '</div>';
+        html += '<div class="card" style="overflow-x:auto;margin-top:8px"><table class="pptable"><tr><th>번호</th><th>이름</th><th>잔액</th></tr>' + prepaySt.importRows.slice(0, 300).map(function(x){ return '<tr' + (x.ok ? '' : ' style="color:var(--danger)"') + '><td>' + esc(ppPhone(x.phone) || '?') + '</td><td>' + esc(x.name) + '</td><td>' + (x.balance != null ? won(x.balance) : '?') + '</td></tr>'; }).join('') + '</table></div>';
+        if (good.length) html += '<div style="margin-top:10px"><button class="btn primary block" data-act="pp-import">' + good.length + '명 옮기기</button></div>';
+      }
+    } else if (tabName === 'set'){
+      var bset = prepaySt.status.branches || [];
+      html += '<div class="form"><div><b>추가 적립 규칙</b></div><div class="grid2"><div><label>기준 금액(원 이상)</label><input class="in" id="pp-bmin" type="number" inputmode="numeric" value="' + esc(prepaySt.status.bonus_min) + '"></div><div><label>추가 적립(%)</label><input class="in" id="pp-brate" type="number" inputmode="decimal" value="' + esc(prepaySt.status.bonus_rate) + '"></div></div><button class="btn primary" data-act="pp-set-bonus">규칙 저장</button><div class="muted">바꾸면 다음 충전부터 적용돼요. 이미 충전된 건 그대로예요.</div></div>';
+      html += '<div class="group-title">매장 코드 (6자리 · 그 매장 직원만 알게)</div><div class="card">' + base.branches.map(function(b){ return '<div class="item"><div class="iname"><div class="t">' + esc(b.name) + ' ' + (bset.indexOf(b.id) >= 0 ? '<span class="badge ok">정해짐</span>' : '<span class="badge danger">없음</span>') + '</div></div><input class="in" id="pp-bc-' + esc(b.id) + '" type="password" inputmode="numeric" maxlength="6" placeholder="새 코드" style="width:110px" autocomplete="off"><button class="btn sm primary" data-act="pp-set-code" data-id="' + esc(b.id) + '">정하기</button></div>'; }).join('') + '</div>';
+      html += '<div class="muted" style="margin:6px 4px">직원이 그만두면 그 매장 코드를 바꿔 주세요. 코드는 암호화돼 있어 여기서도 다시 볼 수 없어요.</div>';
+      html += '<div class="group-title">사장님 코드 바꾸기</div><div class="form"><input class="in" id="pp-bc-owner" type="password" inputmode="numeric" maxlength="6" placeholder="새 사장님 코드 6자리" autocomplete="off"><button class="btn" data-act="pp-set-code" data-id="">바꾸기</button></div>';
+      html += '<div class="group-title">손님용 주소 (이용안내 · 잔액 조회)</div><div class="form"><a href="' + esc(ppPublicUrl()) + '" target="_blank" rel="noopener">' + esc(ppPublicUrl()) + '</a><div class="muted">매장 QR·인스타 프로필·문자에 이 주소를 넣으면 돼요.</div></div>';
+    }
+    app.innerHTML = html;
+  };
+
+  // 엑셀 붙여넣기 읽기: 머리글(번호/이름/잔액)이 있으면 그 칸, 없으면 줄마다 휴대폰 번호·마지막 숫자 칸으로 추측
+  function ppParseImport(text){
+    var lines = String(text || '').split(/\r?\n/).filter(function(l){ return l.trim(); });
+    var split = function(l){ return (l.indexOf('\t') >= 0 ? l.split('\t') : l.split(',')).map(function(c){ return c.trim().replace(/^"|"$/g, ''); }); };
+    var col = { phone: -1, name: -1, bal: -1 }, start = 0;
+    for (var i = 0; i < Math.min(lines.length, 5); i++){
+      var hit = false;
+      split(lines[i]).forEach(function(c, j){
+        if (col.bal < 0 && /잔액|잔여|포인트|남은/.test(c)){ col.bal = j; hit = true; }
+        else if (col.phone < 0 && /전화|연락처|휴대|핸드폰|번호/.test(c)){ col.phone = j; hit = true; }
+        else if (col.name < 0 && /이름|성함|고객명|회원명|닉네임/.test(c)){ col.name = j; hit = true; }
+      });
+      if (hit){ start = i + 1; break; }
+    }
+    var isPhone = function(d){ return /^01\d{8,9}$/.test(d); };
+    var money = function(c){ var raw = String(c == null ? '' : c).replace(/[,원P\s]/g, ''); return /^\d+(\.\d+)?$/.test(raw) ? Math.floor(+raw) : null; };
+    var out = [];
+    lines.slice(start).forEach(function(l){
+      var cells = split(l), phone = col.phone >= 0 ? ppDigits(cells[col.phone]) : '';
+      if (!isPhone(phone)){ phone = ''; cells.some(function(c){ var d = ppDigits(c); if (isPhone(d) && /^[0-9\-\s.]+$/.test(c)){ phone = d; return true; } return false; }); }
+      var bal = col.bal >= 0 ? money(cells[col.bal]) : null;
+      if (bal == null && col.bal < 0){ for (var k = cells.length - 1; k >= 0; k--){ var m = money(cells[k]); if (m != null && ppDigits(cells[k]) !== phone){ bal = m; break; } } }
+      var name = col.name >= 0 ? (cells[col.name] || '') : (cells.filter(function(c){ return /[가-힣a-zA-Z]/.test(c) && !/\d{3,}/.test(c); })[0] || '');
+      if (!phone && bal == null) return;
+      out.push({ phone: phone, name: name, balance: bal, ok: !!phone && bal != null });
+    });
+    return out;
+  }
+
+  async function ppLogin(){
+    var code = ppVal('pp-code');
+    if (!/^\d{6}$/.test(code)){ toast('숫자 6자리로 넣어 주세요'); return; }
+    var r = await ppCall('prepay_login', { p_branch: session.branchId, p_code: code });
+    prepaySt.code = code; prepaySt.role = r.role; prepaySt.found = null; prepaySt.q = '';
+    if (current.route === 'prepay-admin' && r.role !== 'owner'){ prepaySt.code = null; toast('사장님 코드가 아니에요'); return; }
+    render();
+  }
+  async function ppInit(){
+    var a = ppVal('pp-init1'), b = ppVal('pp-init2');
+    if (!/^\d{6}$/.test(a)){ toast('숫자 6자리로 정해 주세요'); return; }
+    if (a !== b){ toast('두 번 넣은 코드가 달라요'); return; }
+    await ppCall('prepay_owner_init', { p_code: a });
+    prepaySt.code = a; prepaySt.role = 'owner';
+    toast('사장님 코드를 정했어요. 이제 매장 코드를 정해 주세요');
+    nav('#/prepay-admin/set');
+  }
+  async function ppSearch(){
+    prepaySt.q = ppVal('pp-q');
+    if (ppDigits(prepaySt.q).length < 4 && prepaySt.q.replace(/[0-9\s-]/g, '').length < 2){ toast('번호 뒷자리 4개 이상, 또는 이름 2글자 이상'); return; }
+    var r = await ppCall('prepay_find', ppArgs({ p_q: prepaySt.q }));
+    prepaySt.found = r.rows;
+    if (r.rows.length === 1){ prepaySt.act = 'use'; nav('#/prepay-c/' + r.rows[0].id); return; }
+    render();
+  }
+  async function ppCharge(el){
+    var id = el.getAttribute('data-id');
+    var phone = id ? el.getAttribute('data-phone') : ppDigits(ppVal('pp-phone'));
+    var name = id ? el.getAttribute('data-name') : ppVal('pp-name');
+    if (!/^01\d{8,9}$/.test(phone)){ toast('휴대폰 번호를 010으로 시작하게 넣어 주세요'); return; }
+    var paid = num(ppVal('pp-paid'));
+    if (!paid || paid < 1000){ toast('받은 돈을 넣어 주세요 (1,000원 이상)'); return; }
+    paid = Math.round(paid);
+    var cpin = id ? '' : ppVal('pp-cpin');
+    if (cpin && !/^\d{4}$/.test(cpin)){ toast('손님 비밀번호는 숫자 4자리'); return; }
+    var b = ppBonus(paid);
+    if (!window.confirm(ppPhone(phone) + (name ? ' ' + name : '') + '\n받은 돈 ' + won(paid) + '원' + (b ? ' + 적립 ' + won(b) + '원' : '') + '\n→ ' + won(paid + b) + '원 충전할까요?\n\n카드·현금 결제를 먼저 받았는지 꼭 확인!')) return;
+    var r = await ppCall('prepay_charge', ppArgs({ p_staff: session.staffId, p_phone: phone, p_name: name, p_paid: paid, p_pin: cpin || null, p_memo: ppVal('pp-memo') }));
+    toast('충전했어요' + (r.bonus ? ' (적립 ' + won(r.bonus) + '원 포함)' : '') + ' · 남은 돈 ' + won(r.balance) + '원');
+    prepaySt.act = 'use'; prepaySt.found = null; prepaySt.q = '';
+    if (id) render(); else nav('#/prepay-c/' + r.customer_id);
+  }
+  async function ppUse(el){
+    var amt = num(ppVal('pp-amount'));
+    if (!amt || amt < 1){ toast('쓸 금액을 넣어 주세요'); return; }
+    amt = Math.round(amt);
+    if (!window.confirm((el.getAttribute('data-name') || '손님') + ' 선결제에서 ' + won(amt) + '원 뺄까요?')) return;
+    var r = await ppCall('prepay_use', ppArgs({ p_staff: session.staffId, p_customer: el.getAttribute('data-id'), p_amount: amt, p_memo: ppVal('pp-memo') }));
+    toast('뺐어요 · 남은 돈 ' + won(r.balance) + '원');
+    render();
+  }
+  async function ppCancel(id){
+    var reason = window.prompt('취소할까요? 이유를 적어 주세요 (예: 금액 잘못 입력)');
+    if (reason == null) return;
+    var r = await ppCall('prepay_cancel', ppArgs({ p_staff: session.staffId, p_ledger: id, p_reason: reason }));
+    toast('취소했어요 · 남은 돈 ' + won(r.balance) + '원');
+    render();
+  }
+  async function ppSetCust(id){
+    var pin = ppVal('pp-cpin');
+    if (pin && !/^\d{4}$/.test(pin)){ toast('손님 비밀번호는 숫자 4자리'); return; }
+    await ppCall('prepay_set_customer', ppArgs({ p_customer: id, p_name: ppVal('pp-name'), p_pin: pin || null }));
+    toast('저장했어요'); render();
+  }
+  async function ppRefund(id){
+    if (!window.confirm('돈을 돌려준 뒤에 누르세요.\n환불 처리하면 이 손님 잔액이 0원이 돼요. 할까요?')) return;
+    var r = await ppCall('prepay_refund', { p_code: prepaySt.code, p_branch: session.branchId, p_staff: session.staffId, p_customer: id, p_memo: ppVal('pp-memo') });
+    prepaySt.act = 'use';
+    toast('환불 ' + won(r.refund) + '원 기록했어요' + (r.forfeit ? ' (적립 ' + won(r.forfeit) + '원 소멸)' : ''));
+    render();
+  }
+  async function ppImport(){
+    var rows = (prepaySt.importRows || []).filter(function(x){ return x.ok; }).map(function(x){ return { phone: x.phone, name: x.name, balance: x.balance }; });
+    if (!rows.length) return;
+    if (!window.confirm(rows.length + '명의 잔액을 옮길까요?')) return;
+    var r = await ppCall('prepay_import', { p_code: prepaySt.code, p_branch: session.branchId, p_staff: session.staffId, p_rows: rows });
+    prepaySt.importText = ''; prepaySt.importRows = null;
+    window.alert('옮겼어요: ' + r.added + '명' + (r.skipped ? '\n이미 옮긴 번호라 건너뜀: ' + r.skipped + '명' : '') + (r.bad ? '\n번호가 이상해서 못 옮김: ' + r.bad + '명' : ''));
+    nav('#/prepay-admin/cust');
+  }
+  async function ppSetCode(branchId){
+    var code = ppVal(branchId ? 'pp-bc-' + branchId : 'pp-bc-owner');
+    if (!/^\d{6}$/.test(code)){ toast('숫자 6자리로 정해 주세요'); return; }
+    if (!window.confirm((branchId ? branchName(branchId) + ' 매장 코드' : '사장님 코드') + '를 바꿀까요?\n잊지 않게 따로 적어 두세요.')) return;
+    await ppCall('prepay_set_code', { p_owner_code: prepaySt.code, p_branch: branchId || null, p_new_code: code });
+    if (!branchId) prepaySt.code = code;
+    toast('정했어요'); render();
+  }
+  async function ppSetBonus(){
+    var min = num(ppVal('pp-bmin')), rate = num(ppVal('pp-brate'));
+    if (min == null || rate == null){ toast('기준 금액과 %를 넣어 주세요'); return; }
+    await ppCall('prepay_set_bonus', { p_code: prepaySt.code, p_min: Math.round(min), p_rate: rate });
+    toast('규칙을 저장했어요'); render();
+  }
+
+  // 시연 모드(?demo=1)용: DB 함수와 같은 규칙을 메모리에서 흉내 (코드: 사장님 000000, 성수 111111, 왕십리 222222, 중계 333333, 답십리 444444)
+  function ppMemRpc(T, fn, a){
+    if (!T.__pp){
+      T.__pp = { owner: '000000', codes: { b1: '111111', b2: '222222', b3: '333333', b4: '444444' }, bonus_min: 100000, bonus_rate: 5 };
+      T.prepay_customers = [ { id: 'pc1', phone: '01012345678', name: '김단골', pin: '1234' }, { id: 'pc2', phone: '01098765432', name: '성수 디자인랩', pin: null } ];
+      T.prepay_ledger = [
+        { id: 'pl1', customer_id: 'pc1', kind: 'charge', amount: 105000, paid: 100000, bonus: 5000, branch_id: 'b1', staff_name: '알바 A', created_at: daysAgo(3) },
+        { id: 'pl2', customer_id: 'pc1', kind: 'use', amount: -12000, paid: 0, bonus: 0, branch_id: 'b2', staff_name: '알바 F', memo: '케이크', created_at: daysAgo(1) },
+        { id: 'pl3', customer_id: 'pc2', kind: 'import', amount: 250000, paid: 250000, bonus: 0, branch_id: 'b1', staff_name: '사장님', by_owner: true, memo: '기존 앱 잔액', created_at: daysAgo(5) }
+      ];
+    }
+    var S = T.__pp, L = T.prepay_ledger, C = T.prepay_customers;
+    var err = function(m){ return { ok: false, error: m }; };
+    var bal = function(cid){ var s = 0; L.forEach(function(l){ if (l.customer_id === cid) s += l.amount; }); return s; };
+    var bon = function(cid){ var s = 0; L.forEach(function(l){ if (l.customer_id === cid) s += l.bonus || 0; }); return s; };
+    var cust = function(id){ return C.filter(function(c){ return c.id === id; })[0]; };
+    var byId = function(id){ return L.filter(function(l){ return l.id === id; })[0]; };
+    var dec = function(l){ return Object.assign({}, l, { canceled: L.some(function(z){ return z.cancel_of === l.id; }), orig_kind: l.cancel_of ? (byId(l.cancel_of) || {}).kind : null }); };
+    var add = function(row){ L.push(Object.assign({ id: uid(), paid: 0, bonus: 0, branch_id: a.p_branch, staff_name: staffName(a.p_staff), by_owner: role === 'owner', created_at: new Date().toISOString() }, row)); };
+    if (fn === 'prepay_status') return { ready: !!S.owner, bonus_min: S.bonus_min, bonus_rate: S.bonus_rate, branches: Object.keys(S.codes) };
+    if (fn === 'prepay_owner_init'){ if (S.owner) return err('사장님 코드가 이미 정해져 있어요'); S.owner = a.p_code; return { ok: true }; }
+    var code = a.p_code || a.p_owner_code;
+    var role = code && code === S.owner ? 'owner' : (code && S.codes[a.p_branch] === code ? 'branch' : null);
+    if (!role) return err('선결제 코드가 틀려요');
+    if (['prepay_customers_all', 'prepay_refund', 'prepay_import', 'prepay_set_code', 'prepay_set_bonus'].indexOf(fn) >= 0 && role !== 'owner') return err('사장님 코드가 필요해요');
+    var c, b;
+    switch (fn){
+      case 'prepay_login': return { ok: true, role: role };
+      case 'prepay_find': {
+        var d = ppDigits(a.p_q), q = String(a.p_q || '').trim();
+        return { ok: true, rows: C.filter(function(x){ return d.length >= 4 ? x.phone.slice(-d.length) === d : (x.name || '').indexOf(q) >= 0; }).map(function(x){ return { id: x.id, phone: x.phone, name: x.name, has_pin: !!x.pin, balance: bal(x.id) }; }) };
+      }
+      case 'prepay_customer':
+        c = cust(a.p_customer); if (!c) return err('손님을 못 찾았어요');
+        b = bal(c.id);
+        return { ok: true, role: role, customer: { id: c.id, phone: c.phone, name: c.name, has_pin: !!c.pin }, balance: b, bonus_left: bon(c.id), refundable: Math.max(0, b - bon(c.id)),
+          ledger: L.filter(function(l){ return l.customer_id === c.id; }).map(dec).sort(function(x, y){ return x.created_at < y.created_at ? 1 : -1; }) };
+      case 'prepay_charge': {
+        var ph = ppDigits(a.p_phone), extra = a.p_paid >= S.bonus_min ? Math.floor(a.p_paid * S.bonus_rate / 100) : 0;
+        c = C.filter(function(x){ return x.phone === ph; })[0];
+        if (!c){ c = { id: uid(), phone: ph, name: a.p_name || null, pin: a.p_pin || null }; C.push(c); }
+        else { if (a.p_name) c.name = a.p_name; if (a.p_pin) c.pin = a.p_pin; }
+        add({ customer_id: c.id, kind: 'charge', amount: a.p_paid + extra, paid: a.p_paid, bonus: extra, memo: a.p_memo || null });
+        return { ok: true, customer_id: c.id, bonus: extra, balance: bal(c.id) };
+      }
+      case 'prepay_use':
+        b = bal(a.p_customer);
+        if (a.p_amount > b) return err('잔액이 모자라요 (남은 돈 ' + won(b) + '원)');
+        add({ customer_id: a.p_customer, kind: 'use', amount: -a.p_amount, memo: a.p_memo || null });
+        return { ok: true, balance: b - a.p_amount };
+      case 'prepay_cancel': {
+        var l = byId(a.p_ledger); if (!l) return err('기록을 못 찾았어요');
+        if (l.kind === 'cancel' || dec(l).canceled) return err('이미 취소했어요');
+        if (role !== 'owner' && (['charge', 'use'].indexOf(l.kind) < 0 || l.branch_id !== a.p_branch || localDateKey(l.created_at) !== todayStr())) return err('오늘 우리 매장의 충전·사용만 취소할 수 있어요. 그 밖의 건 사장님께 말해 주세요');
+        b = bal(l.customer_id);
+        if (b - l.amount < 0) return err('이미 쓴 돈이 있어서 이 충전을 취소하면 잔액이 마이너스가 돼요');
+        add({ customer_id: l.customer_id, kind: 'cancel', amount: -l.amount, paid: -l.paid, bonus: -l.bonus, cancel_of: l.id, memo: a.p_reason || null });
+        return { ok: true, balance: b - l.amount };
+      }
+      case 'prepay_set_customer': c = cust(a.p_customer); if (a.p_name) c.name = a.p_name; if (a.p_pin) c.pin = a.p_pin; return { ok: true };
+      case 'prepay_report':
+        return { ok: true, role: role, rows: L.filter(function(l){ var d = localDateKey(l.created_at); return d >= a.p_from && d <= a.p_to && (role === 'owner' || l.branch_id === a.p_branch); })
+          .map(function(l){ var x = dec(l), cc = cust(l.customer_id) || {}; x.name = cc.name; x.phone = cc.phone; return x; }).sort(function(x, y){ return x.created_at < y.created_at ? 1 : -1; }) };
+      case 'prepay_customers_all':
+        return { ok: true, rows: C.map(function(x){ var last = null; L.forEach(function(l){ if (l.customer_id === x.id && (!last || l.created_at > last)) last = l.created_at; }); return { id: x.id, phone: x.phone, name: x.name, has_pin: !!x.pin, balance: bal(x.id), bonus_left: bon(x.id), last_at: last }; }).sort(function(x, y){ return y.balance - x.balance; }) };
+      case 'prepay_refund':
+        b = bal(a.p_customer); if (b <= 0) return err('남은 잔액이 없어요');
+        var bl = bon(a.p_customer), ref = Math.max(0, b - bl);
+        add({ customer_id: a.p_customer, kind: 'refund', amount: -b, paid: -ref, bonus: -bl, memo: a.p_memo || null });
+        return { ok: true, refund: ref, forfeit: b - ref };
+      case 'prepay_import': {
+        var added = 0, skipped = 0;
+        a.p_rows.forEach(function(r){ var x = C.filter(function(y){ return y.phone === r.phone; })[0]; if (x && L.some(function(l){ return l.customer_id === x.id && l.kind === 'import'; })){ skipped++; return; } if (!x){ x = { id: uid(), phone: r.phone, name: r.name || null, pin: null }; C.push(x); } add({ customer_id: x.id, kind: 'import', amount: r.balance, paid: r.balance, memo: '기존 앱 잔액' }); added++; });
+        return { ok: true, added: added, skipped: skipped, bad: 0 };
+      }
+      case 'prepay_set_code': if (a.p_branch) S.codes[a.p_branch] = a.p_new_code; else S.owner = a.p_new_code; return { ok: true };
+      case 'prepay_set_bonus': S.bonus_min = a.p_min; S.bonus_rate = a.p_rate; return { ok: true };
+    }
+    return err('모르는 기능: ' + fn);
+  }
+
   }
 
   app.addEventListener('click', async function(e){
@@ -4462,6 +4882,20 @@
     try {
       switch (act){
         case 'back': history.length > 1 ? history.back() : nav('#/home'); break;
+        case 'pp-init': el.disabled = true; try { await ppInit(); } finally { el.disabled = false; } break;
+        case 'pp-login': el.disabled = true; try { await ppLogin(); } finally { el.disabled = false; } break;
+        case 'pp-lock': prepaySt.code = null; prepaySt.role = null; prepaySt.found = null; prepaySt.q = ''; toast('잠갔어요'); render(); break;
+        case 'pp-search': await ppSearch(); break;
+        case 'pp-act': prepaySt.act = id; render(); break;
+        case 'pp-quick': { var ppi = document.getElementById('pp-paid'); if (ppi){ ppi.value = id; ppChargePreview(); } break; }
+        case 'pp-charge': el.disabled = true; try { await ppCharge(el); } finally { el.disabled = false; } break;
+        case 'pp-use': el.disabled = true; try { await ppUse(el); } finally { el.disabled = false; } break;
+        case 'pp-cancel': await ppCancel(id); break;
+        case 'pp-setcust': await ppSetCust(id); break;
+        case 'pp-refund': el.disabled = true; try { await ppRefund(id); } finally { el.disabled = false; } break;
+        case 'pp-import': el.disabled = true; try { await ppImport(); } finally { el.disabled = false; } break;
+        case 'pp-set-code': await ppSetCode(id); break;
+        case 'pp-set-bonus': await ppSetBonus(); break;
         case 'logout': if (window.confirm('다른 이름으로 들어갈까요?')){ saveSession(null); nav('#/login'); } break;
         case 'owner-quick': await ownerQuick(); break;
         case 'soon': e.preventDefault(); toast('다음 단계에서 만들어요'); break;
@@ -4747,6 +5181,7 @@
     if (e.target.classList.contains('hc-manual-file')){ await hcAdminPhotoPicked(e.target.getAttribute('data-staff'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('subsidy-checklist-file')){ await subsidyChecklistFilePicked(e.target.getAttribute('data-case'), +e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'sc-log-file'){ await subsidyLogFilePicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'pp-imp'){ prepaySt.importText = e.target.value; prepaySt.importRows = e.target.value.trim() ? ppParseImport(e.target.value) : null; render(); return; }   // 붙여넣기만 해도 미리보기
     if (e.target.classList.contains('sub-file')){ subReadSkips(); await subPicked(e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('sub-file-later')){ await subLaterPicked(e.target.getAttribute('data-batch'), e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'rs-import'){ rsState.importText = e.target.value; if (e.target.value.trim()) rsImportPreview(); return; }   // 붙여넣기만 해도 바로 읽어 보기
@@ -4756,7 +5191,10 @@
     var el = e.target.closest('[data-act="role"]'); if (!el) return;
     try { await db.update('manual_staff', { id: el.getAttribute('data-id') }, { role: el.value }); toast('역할을 바꿨어요'); render(); } catch(err){ toast('실패: ' + (err.message || err)); }
   });
-  app.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
+  app.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && e.target.id === 'pp-code'){ e.preventDefault(); ppLogin().catch(function(err){ toast('실패했어요: ' + (err.message || err)); }); return; }
+    if (e.key === 'Enter' && e.target.id === 'pp-q'){ e.preventDefault(); ppSearch().catch(function(err){ toast('실패했어요: ' + (err.message || err)); }); return; }
+    if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
   // 화면 캡처(스크린샷)를 파일로 안 저장하고 바로 붙여넣기(Ctrl+V) — 직원 구매·영수증 올리기 사진 올리기 화면에서만
   document.addEventListener('paste', async function(e){
     if (!current || (current.route !== 'buy' && current.route !== 'expense' && current.route !== 'transfer')) return;
@@ -4773,6 +5211,8 @@
   });
   app.addEventListener('input', function(e){
     if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
+    if (e.target.id === 'pp-paid'){ ppChargePreview(); return; }
+    if (e.target.id === 'pp-cf'){ var ppk = e.target.value.trim(), ppkd = ppDigits(ppk); app.querySelectorAll('.pp-cust').forEach(function(r){ var k = r.getAttribute('data-k') || ''; r.classList.toggle('hidden', !!ppk && k.indexOf(ppk) < 0 && !(ppkd.length >= 3 && ppDigits(k).indexOf(ppkd) >= 0)); }); return; }
     if (e.target.classList.contains('resident')){ fmtResidentTyping(e.target); return; }
     if (e.target.id === 'item-search'){ itemSearchFilter(e.target.value); return; }
     if (e.target.id === 'chk-search'){ checkSearchFilter(e.target.value); return; }
