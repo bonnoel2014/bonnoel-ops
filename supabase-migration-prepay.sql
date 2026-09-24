@@ -54,8 +54,10 @@ create table if not exists prepay_ledger (
   by_owner boolean not null default false,      -- 사장님 코드로 한 일
   cancel_of uuid references prepay_ledger(id),  -- 취소 줄이면 원래 줄
   memo text,
+  photo_path text,                              -- 영수증 사진(선택, receipts 버킷)
   created_at timestamptz not null default now()
 );
+alter table prepay_ledger add column if not exists photo_path text;
 create unique index if not exists prepay_ledger_cancel_once on prepay_ledger(cancel_of) where cancel_of is not null;
 create index if not exists prepay_ledger_customer on prepay_ledger(customer_id, created_at);
 create index if not exists prepay_ledger_created on prepay_ledger(created_at);
@@ -172,7 +174,8 @@ begin
     'customer', jsonb_build_object('id', c.id, 'phone', c.phone, 'name', c.name, 'memo', c.memo, 'has_pin', c.pin_hash is not null, 'created_at', c.created_at),
     'balance', bal, 'bonus_left', bon, 'refundable', greatest(0, bal - bon),
     'ledger', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'kind', l.kind, 'amount', l.amount, 'paid', l.paid, 'bonus', l.bonus,
-        'branch_id', l.branch_id, 'staff_name', l.staff_name, 'by_owner', l.by_owner, 'cancel_of', l.cancel_of, 'memo', l.memo, 'created_at', l.created_at,
+        'branch_id', l.branch_id, 'staff_name', l.staff_name, 'by_owner', l.by_owner, 'cancel_of', l.cancel_of, 'memo', l.memo, 'photo_path', l.photo_path, 'created_at', l.created_at,
+        'orig_kind', (select o.kind from prepay_ledger o where o.id = l.cancel_of),
         'canceled', exists(select 1 from prepay_ledger z where z.cancel_of = l.id)) order by l.created_at desc)
       from prepay_ledger l where l.customer_id = c.id), '[]'::jsonb));
 end $$;
@@ -204,8 +207,9 @@ begin
   return jsonb_build_object('ok', true, 'customer_id', cid, 'bonus', bon, 'balance', prepay__balance(cid));
 end $$;
 
--- 사용 (잔액 넘게 못 씀)
-create or replace function prepay_use(p_branch uuid, p_code text, p_staff uuid, p_customer uuid, p_amount int, p_memo text) returns jsonb
+-- 사용 (잔액 넘게 못 씀). p_photo: 영수증 사진 경로(선택, receipts 버킷에 앱이 먼저 올려 둠)
+drop function if exists prepay_use(uuid, text, uuid, uuid, int, text);
+create or replace function prepay_use(p_branch uuid, p_code text, p_staff uuid, p_customer uuid, p_amount int, p_memo text, p_photo text default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare r text := prepay__auth(p_branch, p_code); bal int;
 begin
@@ -215,8 +219,8 @@ begin
   if not found then return jsonb_build_object('ok', false, 'error', '손님을 못 찾았어요'); end if;
   bal := prepay__balance(p_customer);
   if p_amount > bal then return jsonb_build_object('ok', false, 'error', '잔액이 모자라요 (남은 돈 ' || to_char(bal, 'FM999,999,999') || '원)'); end if;
-  insert into prepay_ledger (customer_id, kind, amount, branch_id, staff_id, staff_name, by_owner, memo)
-  values (p_customer, 'use', -p_amount, p_branch, p_staff, prepay__staff_name(p_staff), r = 'owner', nullif(btrim(coalesce(p_memo, '')), ''));
+  insert into prepay_ledger (customer_id, kind, amount, branch_id, staff_id, staff_name, by_owner, memo, photo_path)
+  values (p_customer, 'use', -p_amount, p_branch, p_staff, prepay__staff_name(p_staff), r = 'owner', nullif(btrim(coalesce(p_memo, '')), ''), p_photo);
   return jsonb_build_object('ok', true, 'balance', bal - p_amount);
 end $$;
 
@@ -269,7 +273,7 @@ begin
   return jsonb_build_object('ok', true, 'role', r, 'rows', coalesce((
     select jsonb_agg(jsonb_build_object('id', l.id, 'customer_id', l.customer_id, 'name', c.name, 'phone', c.phone,
       'kind', l.kind, 'amount', l.amount, 'paid', l.paid, 'bonus', l.bonus, 'branch_id', l.branch_id, 'staff_name', l.staff_name,
-      'by_owner', l.by_owner, 'cancel_of', l.cancel_of, 'memo', l.memo, 'created_at', l.created_at,
+      'by_owner', l.by_owner, 'cancel_of', l.cancel_of, 'memo', l.memo, 'photo_path', l.photo_path, 'created_at', l.created_at,
       'orig_kind', (select o.kind from prepay_ledger o where o.id = l.cancel_of),   -- 취소 줄이면 무엇을 취소했는지
       'canceled', exists(select 1 from prepay_ledger z where z.cancel_of = l.id)) order by l.created_at desc)
     from prepay_ledger l join prepay_customers c on c.id = l.customer_id

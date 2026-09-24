@@ -4491,7 +4491,7 @@
   // ===== 선결제: 손님이 미리 충전해 두고 4매장에서 같이 쓰는 잔액 (supabase-migration-prepay.sql, 기획/선결제_설계.md) =====
   // 돈 장부라서 표를 직접 안 건드리고 prepay_* DB 함수로만 — 매장 코드(6자리)/사장님 코드를 서버가 확인
   // 코드는 이 화면 메모리에만 들고 있음 (새로고침·잠그기 하면 다시 입력)
-  var prepaySt = { code: null, role: null, q: '', found: null, act: 'use', status: null, importText: '', importRows: null };
+  var prepaySt = { code: null, role: null, q: '', found: null, act: 'use', status: null, importText: '', importRows: null, usePhoto: null, usePhotoFor: null };
   var PP_KIND = { charge: '충전', use: '사용', refund: '환불', import: '옮김', cancel: '취소' };
   async function ppCall(fn, args){ var r = await db.rpc(fn, args); if (r && r.ok === false) throw new Error(r.error || '실패했어요'); return r; }
   function ppArgs(extra){ return Object.assign({ p_branch: session.branchId, p_code: prepaySt.code }, extra || {}); }
@@ -4533,6 +4533,7 @@
     var who = showWho ? (l.customer_id ? '<a href="#/prepay-c/' + esc(l.customer_id) + '">' + esc(l.name || '(이름 없음)') + '</a>' : esc(l.name || '')) + ' <span class="muted">' + esc(String(l.phone || '').slice(-4)) + '</span>' : '';
     return '<div class="item"' + (l.canceled ? ' style="opacity:.55"' : '') + '><div class="iname"><div class="t"><span class="badge ' + cls + '">' + esc(kind) + '</span> ' + who + (l.canceled ? ' <span class="badge muted">취소됨</span>' : '') + '</div><div class="s">' + esc(sub.filter(Boolean).join(' · ')) + '</div></div>' +
       '<b style="white-space:nowrap' + (l.canceled ? ';text-decoration:line-through' : '') + '">' + ppSigned(l.amount) + '원</b>' +
+      (l.photo_path ? '<button class="btn sm" data-act="pp-photo" data-path="' + esc(l.photo_path) + '">📷</button>' : '') +
       (ppCanCancel(l) ? '<button class="btn sm danger" data-act="pp-cancel" data-id="' + esc(l.id) + '">취소</button>' : '') + '</div>';
   }
   function ppCodeForm(title, sub){
@@ -4545,6 +4546,19 @@
       '<div class="inline">' + [30000, 50000, 100000, 200000, 300000].map(function(n){ return '<button type="button" class="btn sm" data-act="pp-quick" data-id="' + n + '">' + (n / 10000) + '만</button>'; }).join('') + '</div>' +
       '<div class="note ok" id="pp-preview" style="margin-top:0"></div>' +
       '<div><label>메모 (선택)</label><input class="in" id="pp-memo" placeholder="예: 카드 결제 · 회사 선결제" autocomplete="off"></div>';
+  }
+  function ppUsePhotoHtml(){
+    var p = prepaySt.usePhoto;
+    if (!p) return '<label class="btn block" style="justify-content:flex-start;gap:8px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="pp-use-file" class="hidden"></label>' +
+      '<div class="muted">화면 캡처(스크린샷)를 복사해 뒀으면 파일로 안 저장해도 돼요. 이 화면에서 <b>Ctrl+V</b> 눌러서 바로 붙여넣기 하세요. 안 넣어도 저장돼요.</div>';
+    return '<img src="' + p.dataUrl + '" alt="영수증" style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">' +
+      '<div style="text-align:center"><span class="muted" data-act="pp-use-retake" style="cursor:pointer;text-decoration:underline">다른 사진으로 · 사진 빼기</span></div>';
+  }
+  async function ppUsePhotoPicked(file){
+    if (!file) return;
+    try { prepaySt.usePhoto = await resizeImage(file, 1600); }
+    catch(e){ prepaySt.usePhoto = null; toast(e.message || '사진을 열 수 없어요'); return; }
+    if (current.route === 'prepay-c' && prepaySt.act === 'use') render();
   }
   function ppChargePreview(){
     var el = document.getElementById('pp-preview'); if (!el) return;
@@ -4612,7 +4626,9 @@
     if (prepaySt.act === 'refund' && prepaySt.role !== 'owner') prepaySt.act = 'use';
     html += '<div class="tabs" style="margin-top:10px">' + tab('use', '사용 (빼기)') + tab('charge', '충전') + tab('info', '손님 정보') + (prepaySt.role === 'owner' ? tab('refund', '환불') : '') + '</div><div class="form">';
     if (prepaySt.act === 'use'){
+      if (prepaySt.usePhotoFor !== c.id){ prepaySt.usePhoto = null; prepaySt.usePhotoFor = c.id; }
       html += '<div><label>쓸 금액(원)</label><input class="in" id="pp-amount" type="number" inputmode="numeric" placeholder="계산 금액" style="font-size:22px" autocomplete="off"></div><div><label>메모 (선택)</label><input class="in" id="pp-memo" placeholder="예: 케이크 픽업" autocomplete="off"></div>' +
+        '<div><label>영수증 사진 (선택)</label>' + ppUsePhotoHtml() + '</div>' +
         '<button class="btn primary block" data-act="pp-use" data-id="' + esc(c.id) + '" data-name="' + esc(c.name || '') + '" style="padding:14px">빼기</button>';
     } else if (prepaySt.act === 'charge'){
       html += ppChargeFields() + '<button class="btn primary block" data-act="pp-charge" data-id="' + esc(c.id) + '" data-phone="' + esc(c.phone) + '" data-name="' + esc(c.name || '') + '" style="padding:14px">충전하기</button>';
@@ -4769,7 +4785,14 @@
     if (!amt || amt < 1){ toast('쓸 금액을 넣어 주세요'); return; }
     amt = Math.round(amt);
     if (!window.confirm((el.getAttribute('data-name') || '손님') + ' 선결제에서 ' + won(amt) + '원 뺄까요?')) return;
-    var r = await ppCall('prepay_use', ppArgs({ p_staff: session.staffId, p_customer: el.getAttribute('data-id'), p_amount: amt, p_memo: ppVal('pp-memo') }));
+    var custId = el.getAttribute('data-id'), path = null;
+    if (prepaySt.usePhoto && prepaySt.usePhoto.blob){
+      path = 'prepay/' + session.branchId + '/' + todayStr().slice(0, 7) + '/' + uid() + '.jpg';
+      try { await db.upload('receipts', path, prepaySt.usePhoto.blob, 'image/jpeg'); }
+      catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 저장할까요?')) return; path = null; }
+    }
+    var r = await ppCall('prepay_use', ppArgs({ p_staff: session.staffId, p_customer: custId, p_amount: amt, p_memo: ppVal('pp-memo'), p_photo: path }));
+    prepaySt.usePhoto = null;
     toast('뺐어요 · 남은 돈 ' + won(r.balance) + '원');
     render();
   }
@@ -4865,7 +4888,7 @@
       case 'prepay_use':
         b = bal(a.p_customer);
         if (a.p_amount > b) return err('잔액이 모자라요 (남은 돈 ' + won(b) + '원)');
-        add({ customer_id: a.p_customer, kind: 'use', amount: -a.p_amount, memo: a.p_memo || null });
+        add({ customer_id: a.p_customer, kind: 'use', amount: -a.p_amount, memo: a.p_memo || null, photo_path: a.p_photo || null });
         return { ok: true, balance: b - a.p_amount };
       case 'prepay_cancel': {
         var l = byId(a.p_ledger); if (!l) return err('기록을 못 찾았어요');
@@ -4915,6 +4938,8 @@
         case 'pp-charge': el.disabled = true; try { await ppCharge(el); } finally { el.disabled = false; } break;
         case 'pp-use': el.disabled = true; try { await ppUse(el); } finally { el.disabled = false; } break;
         case 'pp-cancel': await ppCancel(id); break;
+        case 'pp-use-retake': prepaySt.usePhoto = null; render(); break;
+        case 'pp-photo': { var ppu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(ppu, '_blank'); break; }
         case 'pp-setcust': await ppSetCust(id); break;
         case 'pp-refund': el.disabled = true; try { await ppRefund(id); } finally { el.disabled = false; } break;
         case 'pp-import': el.disabled = true; try { await ppImport(); } finally { el.disabled = false; } break;
@@ -5189,6 +5214,7 @@
     if (e.target.id === 'exp-file'){ await expPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'pp-use-file'){ await ppUsePhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-file'){ await tfPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-item'){ var tfu = document.getElementById('tf-unit'); if (tfu) tfu.textContent = (e.target.selectedOptions[0] && e.target.selectedOptions[0].getAttribute('data-unit')) || ''; return; }
@@ -5220,16 +5246,20 @@
     if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
   // 화면 캡처(스크린샷)를 파일로 안 저장하고 바로 붙여넣기(Ctrl+V) — 직원 구매·영수증 올리기 사진 올리기 화면에서만
   document.addEventListener('paste', async function(e){
-    if (!current || (current.route !== 'buy' && current.route !== 'expense' && current.route !== 'transfer')) return;
-    if (current.route === 'buy' && buyState.ocrBusy) return;
-    if (current.route === 'expense' && expState.ocrBusy) return;
+    if (!current) return;
+    var route = current.route;
+    if (route !== 'buy' && route !== 'expense' && route !== 'transfer' && route !== 'prepay-c') return;
+    if (route === 'buy' && buyState.ocrBusy) return;
+    if (route === 'expense' && expState.ocrBusy) return;
+    if (route === 'prepay-c' && prepaySt.act !== 'use') return;
     var dt = e.clipboardData || window.clipboardData; if (!dt || !dt.items) return;
     var file = null;
     for (var i = 0; i < dt.items.length; i++){ if (dt.items[i].kind === 'file' && /^image\//.test(dt.items[i].type)){ file = dt.items[i].getAsFile(); break; } }
     if (!file) return;
     e.preventDefault();
-    if (current.route === 'expense') await expPhotoPicked(file);
-    else if (current.route === 'transfer') await tfPhotoPicked(file);
+    if (route === 'expense') await expPhotoPicked(file);
+    else if (route === 'transfer') await tfPhotoPicked(file);
+    else if (route === 'prepay-c') await ppUsePhotoPicked(file);
     else await buyPhotoPicked(file);
   });
   app.addEventListener('input', function(e){
