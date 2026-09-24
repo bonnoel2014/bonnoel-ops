@@ -373,6 +373,17 @@
       ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
       ops_pay_profiles: [ { staff_id: 'm1', hourly_wage: 12000, pay_type: 'insured', dependents: 1 }, { staff_id: 's2', hourly_wage: 10320, pay_type: 'insured', dependents: 1 }, { staff_id: 's1', hourly_wage: 10320, pay_type: 'freelance', dependents: 1 } ],
       ops_settings: [], ops_pay_runs: [], ops_merchant_rules: [], ops_documents: [],
+      ops_shift_logs: [
+        { id: 'al1', log_date: addDays(todayStr(), -1), branch_id: 'b2', staff_id: 's2', shift: 'close', nothing: false, items: [
+          { cat: 'request', text: '내일 오후 3시 소금빵 20개 예약 문의 (전화 주신다고 함)', photo_path: null },
+          { cat: 'repair', text: '2번 쇼케이스 온도가 8도에서 안 내려가요', photo_path: null },
+          { cat: 'handover', text: '우유 새로 뜯은 거 냉장고 오른쪽 — 왼쪽 것 먼저 쓰기', photo_path: null } ],
+          mgr_checked_by: null, mgr_checked_at: null, owner_checked_at: null, created_at: daysAgo(1), updated_at: daysAgo(1) },
+        { id: 'al2', log_date: addDays(todayStr(), -1), branch_id: 'b2', staff_id: 's1', shift: 'open', nothing: true, items: [], mgr_checked_by: 'm1', mgr_checked_at: daysAgo(1), owner_checked_at: null, created_at: daysAgo(1), updated_at: daysAgo(1) },
+        { id: 'al3', log_date: addDays(todayStr(), -3), branch_id: 'b1', staff_id: 's3', shift: 'middle', nothing: false, items: [
+          { cat: 'claim', text: '케이크 문구가 틀렸다고 하셔서 다시 써 드림', photo_path: null, done_at: daysAgo(2), done_by: 'o1', done_note: '다음부터 주문서 확인' } ],
+          mgr_checked_by: null, mgr_checked_at: null, owner_checked_at: daysAgo(2), created_at: daysAgo(3), updated_at: daysAgo(3) }
+      ],
       ops_staff_purchases: [
         { id: 'sp1', bought_on: todayStr(), staff_id: 's2', branch_id: 'b2', pay_method: 'card', discount_rate: 20, list_total: 5500, discount: 1100, paid: 4400, items: '버터프레첼 1개', memo: null, photo_path: null, created_at: daysAgo(0), updated_at: daysAgo(0) },
         { id: 'sp2', bought_on: todayStr(), staff_id: 'm1', branch_id: 'b2', pay_method: 'cash', discount_rate: 30, list_total: 12000, discount: 3600, paid: 8400, items: '소금빵 2, 깜빠뉴 1', memo: null, photo_path: null, created_at: daysAgo(0), updated_at: daysAgo(0) },
@@ -616,6 +627,22 @@
           (myHst.level === 'danger' && !myHc.pending ? ' <span class="muted" style="font-size:12px">→ 눌러서 새 사진 올리기</span>' : '') + '</a></div>';
       }
     } catch(e){ console.warn('내 현황 없음', e); }
+    try { // 알바 로그북 표(supabase-migration-alog.sql)가 아직 없어도 홈은 열리게
+      var alIds = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
+      var alLogs = await loadAlogs(addDays(todayStr(), -30), todayStr(), isManager() ? alIds : [session.branchId]);
+      if (!isManager()){
+        var alMine = alLogs.some(function(r){ return r.staff_id === session.staffId && r.log_date === todayStr(); });
+        var alHand = 0; alLogs.forEach(function(r){ if (r.staff_id !== session.staffId && r.log_date >= addDays(todayStr(), -1)) (r.items || []).forEach(function(x){ if (x.cat === 'handover') alHand++; }); });
+        html += '<a href="#/alog" class="card" style="display:block;margin-top:12px;padding:10px 14px">✍️ 오늘 로그북: ' + (alMine ? '<span class="badge ok">씀 ✓</span>' : '<span class="badge warn">아직 안 씀</span>') + (alHand ? ' · 📢 우리 매장 전달사항 <b>' + alHand + '</b>건' : '') + '</a>';
+      } else {
+        var alToday = alLogs.filter(function(r){ return r.log_date === todayStr(); }).length;
+        var alUnchk = alLogs.filter(function(r){ return r.log_date >= addDays(todayStr(), -7) && !(isOwner() ? r.owner_checked_at : r.mgr_checked_at); }).length;
+        var alOpen = 0; alLogs.forEach(function(r){ (r.items || []).forEach(function(x){ if (alogNeedsDone(x)) alOpen++; }); });
+        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #795548"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">📒 알바 로그북</div><div class="summary" style="margin-top:0"><a href="#/alog-admin"><div class="n">' + alToday + '</div><div class="l">오늘 쓴 일지</div></a>' +
+          '<a href="#/alog-admin"><div class="n' + (alUnchk ? ' danger' : '') + '">' + alUnchk + '</div><div class="l">확인 전 (7일)</div></a>' +
+          '<a href="#/alog-admin"><div class="n' + (alOpen ? ' danger' : '') + '">' + alOpen + '</div><div class="l">처리 안 된 것</div></a></div></div>';
+      }
+    } catch(e){ console.warn('알바 로그북 표 없음', e); }
     if (isManager()){
       var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
       var st = await loadStock(ids);
@@ -694,6 +721,10 @@
     if (isOwner()) html += row('#/extra-approve', 'tile-green', '✅', '추가 근무 승인', extraPend ? '⚠ 승인 대기 ' + extraPend + '건' : '직원이 올린 조기 출근·연장 수락');
     html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '근무표보다 더 일했을 때 직접 올리기');
     html += tge();
+    html += grp('알바 로그북');
+    html += row('#/alog', 'tile-yellow', '✍️', '로그북 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
+    if (isManager()) html += row('#/alog-admin', 'tile-orange', '📒', '로그북 확인', '매장별 일지 · 확인 체크 · 처리 안 된 것 · 종류별 모아보기');
+    html += tge();
     html += grp('근무표·휴무·대타');
     html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
     html += row('#/leave', 'tile-yellow', '🌴', '휴무 신청', '쉬고 싶은 날 신청·내 신청 상태');
@@ -771,8 +802,8 @@
       .map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === sel ? ' selected' : '') + '>' + esc(s.name) + (s.id === session.staffId ? ' (본인)' : '') + '</option>'; }).join('');
   }
   function actorPicker(id, label, sel){
-    if (!isOwner()) return '';
-    return '<div><label>' + esc(label) + '</label><select class="in" id="' + id + '">' + actorOptions(sel || session.staffId) + '</select><div class="muted">사장님이 직원 대신 넣을 때만 이름을 바꿔 주세요.</div></div>';
+    if (!isManager()) return '';
+    return '<div><label>' + esc(label) + '</label><select class="in" id="' + id + '">' + actorOptions(sel || session.staffId) + '</select><div class="muted">' + (isOwner() ? '사장님' : '매니저') + '가 직원 대신 넣을 때만 이름을 바꿔 주세요.</div></div>';
   }
   function actingStaffId(paramArg){
     return (isOwner() && paramArg && base.staff.some(function(s){ return s.id === paramArg; })) ? paramArg : session.staffId;
@@ -2763,7 +2794,7 @@
       catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 내용만 저장할까요?')) return; path = null; }
     }
     var merchant = v('exp-merchant').trim() || null, category = v('exp-cat') || '기타';
-    var uploaderId = (isOwner() && v('exp-staff')) || session.staffId;
+    var uploaderId = (isManager() && v('exp-staff')) || session.staffId;
     await db.insert('ops_expenses', { spent_on: date, merchant: merchant, amount: amount, card_id: card ? card.id : null, card_last4: card ? card.last4 : ((expState.ocr || {}).card_last4 || null), branch_id: branchId, category: category, memo: v('exp-memo').trim() || null, photo_path: path, ocr: expState.ocr || null, source: 'receipt', statement_key: null, uploaded_by: uploaderId, created_at: nowIso(), updated_at: nowIso() });
     if (merchant) await learnRules([{ merchant: merchant, branch_id: branchId, category: category }]);
     expState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
@@ -2802,6 +2833,7 @@
     app.innerHTML = html;
   };
   async function expUpdate(id){
+    if (!isManager()){ toast('수정할 권한이 없어요'); return; }
     var g = function(p){ return document.getElementById(p + '-' + id).value; };
     var amount = num(g('ea')); if (!amount || amount <= 0){ toast('금액을 넣어 주세요'); return; }
     if (!g('ed')){ toast('날짜를 넣어 주세요'); return; }
@@ -4046,6 +4078,7 @@
     app._csvName = '직원구매_' + (scope === 'all' ? '전체' : branchName(scope)) + '_' + ym + '.csv';
   };
   async function buyUpdate(id){
+    if (!isManager()){ toast('수정할 권한이 없어요'); return; }
     var g = function(p){ return document.getElementById(p + '-' + id).value; };
     var method = buyMethod(g('bm')); var list = num(g('bl')), disc = num(g('bc')), paid = num(g('bp'));
     if (!g('bd')){ toast('날짜를 넣어 주세요'); return; }
@@ -5027,6 +5060,288 @@
     return err('모르는 기능: ' + fn);
   }
 
+  // ===== 알바 로그북: 근무자가 근무 중 손님 요청·특이사항을 적고, 매니저·사장님이 확인 =====
+  // 한 사람이 하루 한 근무조(오픈/미들/마감)에 한 장. 알바는 자기 일지 + 같은 매장의 "다음 조 전달"만 봄
+  var ALOG_BUCKET = 'receipts';
+  var ALOG_SHIFTS = [ { id: 'open', name: '오픈', icon: '🌅' }, { id: 'middle', name: '미들', icon: '☀️' }, { id: 'close', name: '마감', icon: '🌙' } ];
+  var ALOG_CATS = [   // act: 매니저가 "처리 완료"를 눌러야 끝나는 것
+    { id: 'request', name: '손님 요청', icon: '🙋', act: true, hint: '예) 내일 소금빵 20개 예약 문의, 케이크 문구 요청' },
+    { id: 'claim', name: '클레임', icon: '😣', act: true, hint: '예) 빵이 딱딱했다고 하셔서 교환해 드림' },
+    { id: 'stock', name: '품절·재고', icon: '📦', act: true, hint: '예) 14시 소금빵 품절, 빵봉투 거의 없음' },
+    { id: 'repair', name: '고장·시설', icon: '🔧', act: true, hint: '예) 2번 쇼케이스 온도가 안 내려감' },
+    { id: 'money', name: '돈·결제', icon: '💰', act: true, hint: '예) 시재 3,000원 모자람, 카드 취소 1건' },
+    { id: 'handover', name: '다음 조 전달', icon: '📢', act: false, hint: '예) 우유 새로 뜯은 것 먼저 쓰기 (같은 매장 근무자 모두 봐요)' },
+    { id: 'etc', name: '기타', icon: '📝', act: false, hint: '그 밖에 알려야 할 것' }
+  ];
+  function alogCat(id){ return ALOG_CATS.filter(function(c){ return c.id === id; })[0] || null; }
+  function alogCatBadge(id){ var c = alogCat(id); return c ? '<span class="badge' + (c.act ? '' : ' muted') + '">' + c.icon + ' ' + esc(c.name) + '</span>' : ''; }
+  function alogShiftName(id){ var s = ALOG_SHIFTS.filter(function(x){ return x.id === id; })[0]; return s ? s.icon + ' ' + s.name : esc(id || ''); }
+  function alogShiftOrder(id){ return { open: 0, middle: 1, close: 2 }[id] || 0; }
+  function alogNeedsDone(x){ var c = alogCat(x.cat); return !!(c && c.act && !x.done_at); }
+  var alogState = { key: null };
+  var alogAdmin = { openList: true };
+
+  async function loadAlogs(fromDate, toDate, branchIds){
+    var rows = await db.select('ops_shift_logs', { gte: { log_date: fromDate }, order: { col: 'log_date', asc: false } });
+    return rows.filter(function(r){ return r.log_date <= toDate && (!branchIds || branchIds.indexOf(r.branch_id) >= 0); });
+  }
+  // 근무표로 근무조 짐작: 그날 매장에서 가장 늦게 끝나면 마감, 가장 일찍 시작하면 오픈, 나머지는 미들
+  async function alogGuessShift(b, staffId, dateStr){
+    try {
+      var sch = await loadSchedule([b], addDays(dateStr, -7), addDays(dateStr, 1));
+      var all = shiftsOn(sch, b, dateStr).filter(function(s){ return s.kind !== 'off'; });
+      var mine = myShift(sch, b, staffId, dateStr, dateStr === todayStr() ? nowMin() : 720);
+      if (!mine || !all.length) return null;
+      var endOf = function(s, e){ var x = toMin(hm5(e)); return x <= toMin(hm5(s)) ? x + 1440 : x; };
+      var minS = Math.min.apply(null, all.map(function(s){ return toMin(hm5(s.start)); }));
+      var maxE = Math.max.apply(null, all.map(function(s){ return endOf(s.start, s.end); }));
+      if (endOf(mine.sched_start, mine.sched_end) >= maxE) return 'close';
+      if (toMin(mine.sched_start) <= minS) return 'open';
+      return 'middle';
+    } catch(e){ return null; }
+  }
+  function alogLoadShift(shift){
+    var st = alogState, ex = shift ? st.mine.filter(function(r){ return r.log_date === st.date && r.shift === shift; })[0] : null;
+    st.shift = shift;
+    if (ex){
+      st.logId = ex.id; st.checked = !!(ex.mgr_checked_at || ex.owner_checked_at);
+      st.items = (ex.items || []).map(function(x){ return Object.assign({}, x); });
+    } else {   // 아직 안 쓴 조로 바꾸면 쓰던 글(새로 적은 것)은 그대로 들고 감
+      st.logId = null; st.checked = false;
+      st.items = (st.items || []).filter(function(x){ return !x.photo_path && ((x.text || '').trim() || x.photo); });
+    }
+    if (!st.items.length) st.items.push({ cat: null, text: '' });
+  }
+  function alogRead(){ app.querySelectorAll('.alog-text').forEach(function(el){ var i = +el.getAttribute('data-i'); if (alogState.items[i]) alogState.items[i].text = el.value; }); }
+  function alogFormHtml(){
+    var st = alogState, html = '';
+    html += '<div class="group-title">어느 근무였어요?</div><div class="inline" style="gap:6px;flex-wrap:nowrap">';
+    ALOG_SHIFTS.forEach(function(s){
+      var has = st.mine.some(function(r){ return r.log_date === st.date && r.shift === s.id; });
+      html += '<button class="btn' + (st.shift === s.id ? ' primary' : '') + '" style="flex:1;padding:12px 4px" data-act="alog-shift" data-id="' + s.id + '">' + s.icon + ' ' + s.name + (has ? ' ✓' : '') + '</button>';
+    });
+    html += '</div>';
+    if (st.guess && st.shift === st.guess && !st.logId) html += '<div class="muted" style="margin:6px 4px 0">근무표를 보고 골라 뒀어요. 다르면 바꿔 주세요.</div>';
+    if (!st.shift) html += '<div class="muted" style="margin:6px 4px 0">오픈 · 미들 · 마감 중 하나를 눌러 주세요.</div>';
+    if (st.logId) html += '<div class="note ok">이 근무 일지는 이미 저장돼 있어요. 고치고 다시 저장하면 돼요.' + (st.checked ? '<br>매니저·사장님이 이미 확인한 일지라, 고치면 다시 "확인 전"으로 바뀌어요.' : '') + '</div>';
+    html += '<div class="group-title">무슨 일이 있었나요?</div>';
+    st.items.forEach(function(x, i){
+      var c = alogCat(x.cat);
+      html += '<div class="form" style="margin-bottom:10px">';
+      html += '<div class="inline" style="justify-content:space-between"><b>' + (i + 1) + '. 종류를 골라 주세요</b>' + (st.items.length > 1 ? '<span class="muted" data-act="alog-del" data-i="' + i + '" style="cursor:pointer">✕ 빼기</span>' : '') + '</div>';
+      html += '<div class="inline" style="gap:6px">';
+      ALOG_CATS.forEach(function(k){ html += '<button class="btn sm' + (x.cat === k.id ? ' primary' : '') + '" data-act="alog-cat" data-i="' + i + '" data-id="' + k.id + '">' + k.icon + ' ' + esc(k.name) + '</button>'; });
+      html += '</div>';
+      html += '<textarea class="in alog-text" data-i="' + i + '" rows="3" placeholder="' + esc(c ? c.hint : '위에서 종류를 먼저 골라 주세요') + '">' + esc(x.text || '') + '</textarea>';
+      if (x.photo) html += '<img src="' + x.photo.dataUrl + '" alt="사진" style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;background:var(--surface-sunken)">';
+      html += '<div class="inline">';
+      if (x.photo_path && !x.photo) html += '<button class="btn sm" data-act="alog-photo" data-path="' + esc(x.photo_path) + '">📷 올린 사진 보기</button>';
+      html += '<label class="btn sm" style="cursor:pointer">📷 ' + (x.photo || x.photo_path ? '사진 바꾸기' : '사진 붙이기 (선택)') + '<input type="file" accept="image/*" class="hidden alog-file" data-i="' + i + '"></label>';
+      if (x.photo || x.photo_path) html += '<span class="muted" data-act="alog-unphoto" data-i="' + i + '" style="cursor:pointer">사진 빼기</span>';
+      if (x.done_at) html += '<span class="badge ok">처리 완료</span>';
+      html += '</div></div>';
+    });
+    html += '<button class="btn block" data-act="alog-add">+ 한 가지 더 적기</button>';
+    html += '<div style="margin-top:14px;display:grid;gap:8px"><button class="btn primary block" style="padding:14px" data-act="alog-save">저장</button>';
+    html += '<button class="btn block" data-act="alog-nothing">오늘은 특이사항 없음</button></div>';
+    return html;
+  }
+  function alogRedraw(){ var f = document.getElementById('alog-form'); if (f) f.innerHTML = alogFormHtml(); }
+  function alogItemLine(x){
+    var c = alogCat(x.cat);
+    return '<div style="padding:6px 0;border-top:1px dashed var(--line)">' + alogCatBadge(x.cat) + (x.done_at ? ' <span class="badge ok">처리 완료</span>' : (c && c.act ? ' <span class="badge warn">처리 전</span>' : '')) +
+      '<div style="white-space:pre-wrap;margin-top:4px">' + esc(x.text || '') + '</div>' +
+      (x.photo_path ? '<button class="btn sm" style="margin-top:4px" data-act="alog-photo" data-path="' + esc(x.photo_path) + '">📷 사진</button>' : '') +
+      (x.done_at ? '<div class="muted" style="font-size:12px;margin-top:2px">✔ ' + esc(staffName(x.done_by) || '') + ' ' + esc(fmtDT(x.done_at)) + (x.done_note ? ' · ' + esc(x.done_note) : '') + '</div>' : '') + '</div>';
+  }
+  function alogCheckBadges(r){
+    return (r.nothing ? '<span class="badge muted">특이사항 없음</span> ' : '') +
+      (r.mgr_checked_at ? '<span class="badge ok">✓ 매니저 확인</span> ' : '<span class="badge warn">매니저 확인 전</span> ') +
+      (r.owner_checked_at ? '<span class="badge ok">✓ 사장님 확인</span>' : '');
+  }
+
+  // --- 알바 로그북 쓰기 (모두) ---
+  routes.alog = async function(params){
+    await loadBase();
+    var b = session.branchId;
+    if (!b){ app.innerHTML = topbar('알바 로그북', true) + '<div class="note">매장을 골라서 들어와야 쓸 수 있어요. 오른쪽 위 이름을 눌러 매장을 골라 다시 들어와 주세요.</div>'; return; }
+    var date = /^\d{4}-\d{2}-\d{2}$/.test(params.arg || '') ? params.arg : todayStr();
+    if (date > todayStr()) date = todayStr();
+    var key = session.staffId + '|' + date;
+    var mine = await db.select('ops_shift_logs', { eq: { staff_id: session.staffId }, gte: { log_date: addDays(todayStr(), -30) }, order: { col: 'log_date', asc: false } });
+    if (alogState.key !== key){
+      var guess = await alogGuessShift(b, session.staffId, date);
+      var todays = mine.filter(function(r){ return r.log_date === date; });
+      alogState = { key: key, date: date, mine: mine, guess: guess, items: [] };
+      alogLoadShift(guess || (todays[0] ? todays[0].shift : null));
+    } else alogState.mine = mine;
+    var html = topbar('알바 로그북', true, whoChip());
+    html += '<div class="muted" style="margin:4px 4px 0">근무 중 손님 요청, 클레임, 품절, 고장, 다음 조에 알릴 것을 적어 주세요. 다이어리·카톡 대신 여기에 쓰면 매니저·사장님이 바로 봐요.</div>';
+    html += '<div class="inline" style="margin-top:10px;justify-content:space-between"><b>' + esc(branchName(b)) + ' · ' + esc(fmtDateK(date)) + (date === todayStr() ? ' 오늘' : '') + '</b><input class="in" type="date" id="alog-date" value="' + esc(date) + '" max="' + todayStr() + '" style="width:auto"></div>';
+    html += '<div id="alog-form">' + alogFormHtml() + '</div>';
+    // 같은 매장 "다음 조 전달" (어제·오늘, 내 것 빼고)
+    try {
+      var hand = [];
+      (await loadAlogs(addDays(todayStr(), -1), todayStr(), [b])).forEach(function(r){ if (r.staff_id === session.staffId) return; (r.items || []).forEach(function(x){ if (x.cat === 'handover') hand.push({ r: r, x: x }); }); });
+      hand.sort(function(p, q){ return (q.r.log_date + alogShiftOrder(q.r.shift)).localeCompare(p.r.log_date + alogShiftOrder(p.r.shift)); });
+      html += '<div class="group-title">📢 우리 매장 전달사항 (어제·오늘)</div><div class="card">';
+      if (!hand.length) html += '<div class="empty">전달사항이 없어요</div>';
+      hand.forEach(function(h){ html += '<div class="item" style="display:block"><div class="muted" style="font-size:12px">' + esc(fmtDateK(h.r.log_date)) + ' ' + alogShiftName(h.r.shift) + ' · ' + esc(staffName(h.r.staff_id)) + '</div><div style="white-space:pre-wrap">' + esc(h.x.text) + '</div>' + (h.x.photo_path ? '<button class="btn sm" style="margin-top:4px" data-act="alog-photo" data-path="' + esc(h.x.photo_path) + '">📷 사진</button>' : '') + '</div>'; });
+      html += '</div>';
+    } catch(e){ console.warn('전달사항 없음', e); }
+    // 내 지난 일지
+    var past = mine.filter(function(r){ return !(r.log_date === date && r.shift === alogState.shift); }).slice(0, 10);
+    if (past.length){
+      html += '<div class="group-title">내 지난 일지 (최근 한 달)</div><div class="card">';
+      past.forEach(function(r){ html += '<div class="item" style="display:block"><div class="inline" style="justify-content:space-between"><b>' + esc(fmtDateK(r.log_date)) + ' ' + alogShiftName(r.shift) + '</b><span>' + alogCheckBadges(r) + '</span></div>' + (r.items || []).map(alogItemLine).join('') + (r.log_date >= addDays(todayStr(), -2) && r.log_date !== date ? '<div style="margin-top:6px"><span class="muted" data-act="go" data-href="#/alog/' + esc(r.log_date) + '" style="cursor:pointer;text-decoration:underline">이 날 일지 고치기</span></div>' : '') + '</div>'; });
+      html += '</div>';
+    }
+    if (isManager()) html += '<div style="text-align:center;margin-top:12px"><a class="btn sm" href="#/alog-admin">📒 로그북 확인 (매니저·사장님) ›</a></div>';
+    app.innerHTML = html;
+  };
+  async function alogPhotoPicked(i, file){
+    if (!file || !alogState.items || !alogState.items[i]) return;
+    alogRead();
+    try { alogState.items[i].photo = await resizeImage(file, 1280); } catch(e){ toast(e.message || '사진을 열 수 없어요'); return; }
+    alogRedraw();
+  }
+  async function alogSave(nothing){
+    alogRead();
+    var st = alogState;
+    if (!st.shift){ toast('오픈 · 미들 · 마감 중 하나를 골라 주세요'); return; }
+    var items = st.items.filter(function(x){ return (x.text || '').trim() || x.photo || x.photo_path; });
+    if (nothing){
+      if (items.length && !window.confirm('적어 둔 내용이 지워지고 "특이사항 없음"으로 제출돼요. 괜찮아요?')) return;
+      items = [];
+    } else {
+      if (!items.length){ toast('적은 내용이 없어요. 없으면 "특이사항 없음"을 눌러 주세요'); return; }
+      if (items.some(function(x){ return !x.cat; })){ toast('항목마다 종류(손님 요청·클레임 등)를 골라 주세요'); return; }
+      if (items.some(function(x){ return !(x.text || '').trim(); })){ toast('사진만 있고 설명이 없는 항목이 있어요. 한 줄만 적어 주세요'); return; }
+    }
+    var out = [];
+    for (var i = 0; i < items.length; i++){
+      var x = items[i], path = x.photo_path || null;
+      if (x.photo && x.photo.blob){ path = 'alog/' + session.branchId + '/' + st.date.slice(0, 7) + '/' + Date.now() + '-' + i + '.jpg'; await db.upload(ALOG_BUCKET, path, x.photo.blob, 'image/jpeg'); }
+      out.push({ cat: x.cat, text: (x.text || '').trim(), photo_path: path, done_at: x.done_at || null, done_by: x.done_by || null, done_note: x.done_note || null });
+    }
+    await db.upsert('ops_shift_logs', [{ log_date: st.date, branch_id: session.branchId, staff_id: session.staffId, shift: st.shift, nothing: !!nothing, items: out, mgr_checked_by: null, mgr_checked_at: null, owner_checked_at: null, updated_at: nowIso() }], 'log_date,staff_id,shift');
+    alogState.key = null;   // 저장한 걸 다시 읽어서 보여 줌
+    toast(nothing ? '"특이사항 없음"으로 제출했어요' : '저장했어요. 매니저·사장님이 바로 볼 수 있어요');
+    render();
+  }
+
+  // --- 로그북 확인 (매니저·사장님): 처리 안 된 것 · 제출 현황 · 그날 일지 확인 · 종류별 모아보기 ---
+  routes['alog-admin'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/alog'); return; }
+    var scope = isOwner() ? (params.arg || 'all') : session.branchId;
+    var arg2 = params.arg2 || '';
+    var catMode = /^cat-/.test(arg2) ? arg2.slice(4) : null;
+    var date = /^\d{4}-\d{2}-\d{2}$/.test(arg2) ? arg2 : todayStr();
+    if (date > todayStr()) date = todayStr();
+    var ids = scope === 'all' ? base.branches.map(function(b){ return b.id; }) : [scope];
+    var from = addDays(todayStr(), catMode ? -90 : -30); if (date < from) from = date;
+    var logs = await loadAlogs(from, todayStr(), ids);
+    var href = function(sc, a2){ return '#/alog-admin/' + sc + (a2 ? '/' + a2 : ''); };
+    var who = function(r){ return esc(staffName(r.staff_id) || '(이름 없음)') + (scope === 'all' ? ' <span class="badge muted">' + esc(branchName(r.branch_id)) + '</span>' : ''); };
+    var html = topbar('로그북 확인', true, whoChip());
+    if (isOwner()){
+      html += '<div class="tabs"><span class="tab' + (scope === 'all' ? ' on' : '') + '" data-act="go" data-href="' + href('all', arg2) + '">전체</span>';
+      base.branches.forEach(function(b){ html += '<span class="tab' + (scope === b.id ? ' on' : '') + '" data-act="go" data-href="' + href(b.id, arg2) + '">' + esc(b.name) + '</span>'; });
+      html += '</div>';
+    }
+    html += '<div class="tabs"><span class="tab' + (!catMode ? ' on' : '') + '" data-act="go" data-href="' + href(scope, '') + '">📅 날짜별</span>';
+    ALOG_CATS.forEach(function(c){ html += '<span class="tab' + (catMode === c.id ? ' on' : '') + '" data-act="go" data-href="' + href(scope, 'cat-' + c.id) + '">' + c.icon + ' ' + esc(c.name) + '</span>'; });
+    html += '</div>';
+    if (catMode){   // 종류별 모아보기 (최근 90일)
+      var c = alogCat(catMode), list = [];
+      logs.forEach(function(r){ (r.items || []).forEach(function(x, i){ if (x.cat === catMode) list.push({ r: r, x: x, i: i }); }); });
+      html += '<div class="muted" style="margin:4px">' + (c ? c.icon + ' ' + esc(c.name) : '') + ' · 최근 90일 ' + list.length + '건' + (c && c.act ? ' · 처리 전 ' + list.filter(function(p){ return !p.x.done_at; }).length + '건' : '') + '</div><div class="card">';
+      if (!list.length) html += '<div class="empty">없어요</div>';
+      list.forEach(function(p){ html += alogAdminItem(p.r, p.x, p.i, who); });
+      html += '</div>';
+      app.innerHTML = html; return;
+    }
+    // 처리 안 된 것 (최근 30일)
+    var open = [];
+    logs.forEach(function(r){ (r.items || []).forEach(function(x, i){ if (alogNeedsDone(x)) open.push({ r: r, x: x, i: i }); }); });
+    html += '<div class="group-title" data-act="alog-toggle-open" style="cursor:pointer">' + (alogAdmin.openList ? '▼' : '▶') + ' 🔴 처리 안 된 것 ' + open.length + '건 <span class="muted">(최근 30일)</span></div>';
+    if (alogAdmin.openList){
+      html += '<div class="card">';
+      if (!open.length) html += '<div class="empty">다 처리했어요 👍</div>';
+      open.forEach(function(p){ html += alogAdminItem(p.r, p.x, p.i, who); });
+      html += '</div>';
+    }
+    // 날짜 이동
+    html += '<div class="inline" style="justify-content:space-between;margin:18px 0 8px;flex-wrap:nowrap"><button class="btn sm" data-act="go" data-href="' + href(scope, addDays(date, -1)) + '">‹ 전날</button><input class="in" type="date" id="alog-adate" value="' + esc(date) + '" max="' + todayStr() + '" style="width:auto"><button class="btn sm" data-act="go" data-href="' + href(scope, date < todayStr() ? addDays(date, 1) : date) + '"' + (date >= todayStr() ? ' disabled' : '') + '>다음날 ›</button></div>';
+    var dayLogs = logs.filter(function(r){ return r.log_date === date; });
+    // 제출 현황: 그날 근무표에 있는 사람 중 누가 썼나
+    try {
+      var sch = await loadSchedule(ids, addDays(date, -7), addDays(date, 1));
+      var sub = '';
+      ids.forEach(function(b){
+        var ppl = {}, order = [];
+        shiftsOn(sch, b, date).forEach(function(s){ if (s.kind === 'off') return; var sid = s.kind === 'sub' ? (s.req && s.req.sub_staff_id) : s.staffId; if (!sid || ppl[sid]) return; ppl[sid] = 1; order.push(sid); });
+        dayLogs.forEach(function(r){ if (r.branch_id === b && r.staff_id && !ppl[r.staff_id]){ ppl[r.staff_id] = 1; order.push(r.staff_id); } });
+        if (!order.length) return;
+        var wrote = function(sid){ return dayLogs.some(function(r){ return r.staff_id === sid && r.branch_id === b; }); };
+        sub += '<div style="margin:6px 0">' + (ids.length > 1 ? '<b>' + esc(branchName(b)) + '</b> ' : '') + '<span class="muted">' + order.filter(wrote).length + '/' + order.length + '명 씀</span><div class="inline" style="gap:4px;margin-top:4px">';
+        order.forEach(function(sid){ var ok = wrote(sid); sub += '<span class="badge ' + (ok ? 'ok' : 'muted') + '">' + (ok ? '✓ ' : '') + esc(staffName(sid)) + '</span>'; });
+        sub += '</div></div>';
+      });
+      if (sub) html += '<div class="card" style="padding:10px 14px"><div style="font-weight:600">' + esc(fmtDateK(date)) + ' 제출 현황</div>' + sub + '<div class="muted" style="font-size:12px">초록 = 씀 · 회색 = 아직 안 씀 (근무표 기준)</div></div>';
+    } catch(e){ console.warn('근무표 없음', e); }
+    // 그날 일지
+    var mineKey = isOwner() ? 'owner_checked_at' : 'mgr_checked_at';
+    var unchecked = dayLogs.filter(function(r){ return !r[mineKey]; });
+    html += '<div class="inline" style="justify-content:space-between;margin:18px 4px 8px"><b>' + esc(fmtDateK(date)) + ' 일지 ' + dayLogs.length + '장</b>' + (unchecked.length ? '<button class="btn sm primary" data-act="alog-check-all" data-date="' + esc(date) + '" data-scope="' + esc(scope) + '">' + unchecked.length + '장 모두 확인</button>' : '') + '</div>';
+    if (!dayLogs.length) html += '<div class="card"><div class="empty">이 날 쓴 일지가 없어요</div></div>';
+    dayLogs.sort(function(a, b){ return (ids.indexOf(a.branch_id) - ids.indexOf(b.branch_id)) || (alogShiftOrder(a.shift) - alogShiftOrder(b.shift)) || String(a.updated_at || '').localeCompare(String(b.updated_at || '')); });
+    dayLogs.forEach(function(r){
+      html += '<div class="card" style="padding:12px 14px;margin-bottom:10px">';
+      html += '<div class="inline" style="justify-content:space-between"><b>' + alogShiftName(r.shift) + ' · ' + who(r) + '</b><span class="muted" style="font-size:12px">' + esc(fmtDT(r.updated_at || r.created_at)) + '</span></div>';
+      html += '<div style="margin:4px 0">' + alogCheckBadges(r) + '</div>';
+      (r.items || []).forEach(function(x, i){ html += alogItemLine(x) + alogDoneBtn(r, x, i); });
+      html += '<div class="inline" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">';
+      if (!isOwner()) html += r.mgr_checked_at ? '<span class="muted" style="font-size:12px">매니저 확인: ' + esc(staffName(r.mgr_checked_by)) + ' ' + esc(fmtDT(r.mgr_checked_at)) + '</span>' : '<button class="btn sm primary" data-act="alog-check" data-id="' + esc(r.id) + '">매니저 확인</button>';
+      else html += (r.mgr_checked_at ? '<span class="muted" style="font-size:12px">매니저 ' + esc(staffName(r.mgr_checked_by)) + ' 확인함</span>' : '') + (r.owner_checked_at ? '<span class="muted" style="font-size:12px">· 사장님 확인 ' + esc(fmtDT(r.owner_checked_at)) + '</span>' : '<button class="btn sm primary" data-act="alog-check" data-id="' + esc(r.id) + '">사장님 확인</button>');
+      html += '</div></div>';
+    });
+    html += '<div style="text-align:center;margin-top:12px"><a class="btn sm" href="#/alog">✍️ 내 일지 쓰기 ›</a></div>';
+    app.innerHTML = html;
+  };
+  function alogDoneBtn(r, x, i){
+    if (alogNeedsDone(x)) return '<button class="btn sm" style="margin:2px 0 4px" data-act="alog-done" data-id="' + esc(r.id) + '" data-i="' + i + '">처리 완료로</button>';
+    if (x.done_at) return '<span class="muted" data-act="alog-undone" data-id="' + esc(r.id) + '" data-i="' + i + '" style="cursor:pointer;font-size:12px;text-decoration:underline">처리 완료 취소</span>';
+    return '';
+  }
+  function alogAdminItem(r, x, i, who){
+    return '<div class="item" style="display:block"><div class="muted" style="font-size:12px">' + esc(fmtDateK(r.log_date)) + ' ' + alogShiftName(r.shift) + ' · ' + who(r) + '</div>' + alogItemLine(x) + alogDoneBtn(r, x, i) + '</div>';
+  }
+  async function alogSetItem(id, i, patch){
+    var r = (await db.select('ops_shift_logs', { eq: { id: id } }))[0]; if (!r || !r.items || !r.items[i]) throw new Error('일지를 찾지 못했어요. 새로고침해 주세요');
+    var items = r.items.slice(); items[i] = Object.assign({}, items[i], patch);
+    await db.update('ops_shift_logs', { id: id }, { items: items });   // updated_at은 그대로(쓴 시각 유지)
+  }
+  async function alogDone(id, i){
+    var note = window.prompt('어떻게 처리했는지 한 줄 (비워도 돼요)', ''); if (note === null) return;
+    await alogSetItem(id, i, { done_at: nowIso(), done_by: session.staffId, done_note: note.trim() || null });
+    toast('처리 완료로 표시했어요'); render();
+  }
+  async function alogUndone(id, i){
+    if (!window.confirm('처리 완료를 취소할까요?')) return;
+    await alogSetItem(id, i, { done_at: null, done_by: null, done_note: null });
+    render();
+  }
+  function alogCheckPatch(){ return isOwner() ? { owner_checked_at: nowIso() } : { mgr_checked_by: session.staffId, mgr_checked_at: nowIso() }; }
+  async function alogCheck(id){ await db.update('ops_shift_logs', { id: id }, alogCheckPatch()); toast('확인했어요'); render(); }
+  async function alogCheckAll(date, scope){
+    var ids = scope === 'all' ? base.branches.map(function(b){ return b.id; }) : [scope];
+    var rows = (await loadAlogs(date, date, ids)).filter(function(r){ return isOwner() ? !r.owner_checked_at : !r.mgr_checked_at; });
+    for (var k = 0; k < rows.length; k++) await db.update('ops_shift_logs', { id: rows[k].id }, alogCheckPatch());
+    toast(rows.length + '장 확인했어요'); render();
+  }
+
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
     var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
@@ -5051,6 +5366,20 @@
         case 'pp-import': el.disabled = true; try { await ppImport(); } finally { el.disabled = false; } break;
         case 'pp-set-code': await ppSetCode(id); break;
         case 'pp-set-bonus': await ppSetBonus(); break;
+        // 알바 로그북
+        case 'alog-shift': alogRead(); alogLoadShift(id); alogRedraw(); break;
+        case 'alog-cat': { alogRead(); var ai = +el.getAttribute('data-i'); if (alogState.items[ai]) alogState.items[ai].cat = id; alogRedraw(); var ta = app.querySelector('.alog-text[data-i="' + ai + '"]'); if (ta) ta.focus(); break; }
+        case 'alog-add': alogRead(); alogState.items.push({ cat: null, text: '' }); alogRedraw(); break;
+        case 'alog-del': alogRead(); alogState.items.splice(+el.getAttribute('data-i'), 1); if (!alogState.items.length) alogState.items.push({ cat: null, text: '' }); alogRedraw(); break;
+        case 'alog-unphoto': { alogRead(); var ux = alogState.items[+el.getAttribute('data-i')]; if (ux){ ux.photo = null; ux.photo_path = null; } alogRedraw(); break; }
+        case 'alog-save': el.disabled = true; try { await alogSave(false); } finally { el.disabled = false; } break;
+        case 'alog-nothing': el.disabled = true; try { await alogSave(true); } finally { el.disabled = false; } break;
+        case 'alog-photo': { var au = await db.signedUrl(ALOG_BUCKET, el.getAttribute('data-path')); window.open(au, '_blank'); break; }
+        case 'alog-done': await alogDone(id, +el.getAttribute('data-i')); break;
+        case 'alog-undone': await alogUndone(id, +el.getAttribute('data-i')); break;
+        case 'alog-check': el.disabled = true; try { await alogCheck(id); } finally { el.disabled = false; } break;
+        case 'alog-check-all': el.disabled = true; try { await alogCheckAll(el.getAttribute('data-date'), el.getAttribute('data-scope')); } finally { el.disabled = false; } break;
+        case 'alog-toggle-open': alogAdmin.openList = !alogAdmin.openList; render(); break;
         case 'soon': e.preventDefault(); toast('다음 단계에서 만들어요'); break;
         case 'pick-branch': loginState.branchId = id; if (loginReturnTo){ try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} } render(); break;
         case 'pick-branch-reset': loginState.branchId = null; render(); break;
@@ -5324,6 +5653,9 @@
     if (e.target.id === 'stmt-text'){ if (e.target.value.trim()) { try { await stmtRun(); } catch(err){ toast('실패: ' + (err.message || err)); } } return; }   // 붙여넣기만 해도 바로 저장·대조
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'pp-use-file'){ await ppUsePhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.classList.contains('alog-file')){ await alogPhotoPicked(+e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'alog-date'){ if (e.target.value) nav('#/alog/' + e.target.value); return; }
+    if (e.target.id === 'alog-adate'){ if (e.target.value) nav('#/alog-admin/' + (isOwner() ? (current.params.arg || 'all') : session.branchId) + '/' + e.target.value); return; }
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-file'){ await tfPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-item'){ var tfu = document.getElementById('tf-unit'); if (tfu) tfu.textContent = (e.target.selectedOptions[0] && e.target.selectedOptions[0].getAttribute('data-unit')) || ''; return; }
@@ -5357,7 +5689,7 @@
   document.addEventListener('paste', async function(e){
     if (!current) return;
     var route = current.route;
-    if (route !== 'buy' && route !== 'expense' && route !== 'transfer' && route !== 'prepay-c') return;
+    if (route !== 'buy' && route !== 'expense' && route !== 'transfer' && route !== 'prepay-c' && route !== 'alog') return;
     if (route === 'buy' && buyState.ocrBusy) return;
     if (route === 'expense' && expState.ocrBusy) return;
     if (route === 'prepay-c' && prepaySt.act !== 'use') return;
@@ -5366,7 +5698,8 @@
     for (var i = 0; i < dt.items.length; i++){ if (dt.items[i].kind === 'file' && /^image\//.test(dt.items[i].type)){ file = dt.items[i].getAsFile(); break; } }
     if (!file) return;
     e.preventDefault();
-    if (route === 'expense') await expPhotoPicked(file);
+    if (route === 'alog'){ var ae = document.activeElement, ati = ae && ae.classList && ae.classList.contains('alog-text') ? +ae.getAttribute('data-i') : (alogState.items ? alogState.items.length - 1 : 0); await alogPhotoPicked(ati, file); }
+    else if (route === 'expense') await expPhotoPicked(file);
     else if (route === 'transfer') await tfPhotoPicked(file);
     else if (route === 'prepay-c') await ppUsePhotoPicked(file);
     else await buyPhotoPicked(file);
