@@ -744,8 +744,8 @@
     if (isManager()) html += row('#/prepay-admin', 'tile-gray', '📊', '선결제 관리', '매장별 충전·사용 합계 · 손님 잔액 · 옮기기 · 코드');
     html += tge();
     html += grp('카드·급여');
-    html += row('#/expense', 'tile-orange', '🧾', '영수증 올리기', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
-    if (isManager()) html += row('#/expense-list', 'tile-purple', '💳', '카드 지출', '월별·지점별 지출 목록 · 합계 · 명세서 대조');
+    html += row('#/expense', 'tile-orange', '🧾', '법인카드 영수증', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
+    if (isManager()) html += row('#/expense-list', 'tile-purple', '💳', '법인카드 지출', '월별·지점별 지출 목록 · 합계 · 명세서 대조');
     if (isOwner()) html += row('#/expense-cards', 'tile-gray', '💳', '카드 설정', '법인카드 끝 4자리·지점 (사장님만)');
     html += row('#/buy', 'tile-yellow', '🥐', '직원 구매', '직원 할인으로 산 빵 영수증 올리기 (현금 30% · 카드 20%)');
     if (isManager()) html += row('#/buy-list', 'tile-orange', '🧮', '직원 구매 내역', '날짜별 할인·낸 금액 합계 (마감용) · 사람별');
@@ -806,7 +806,7 @@
     return '<div><label>' + esc(label) + '</label><select class="in" id="' + id + '">' + actorOptions(sel || session.staffId) + '</select><div class="muted">' + (isOwner() ? '사장님' : '매니저') + '가 직원 대신 넣을 때만 이름을 바꿔 주세요.</div></div>';
   }
   function actingStaffId(paramArg){
-    return (isOwner() && paramArg && base.staff.some(function(s){ return s.id === paramArg; })) ? paramArg : session.staffId;
+    return (isManager() && paramArg && base.staff.some(function(s){ return s.id === paramArg; })) ? paramArg : session.staffId;
   }
 
   // ===== 화면: 비품 체크 =====
@@ -858,7 +858,7 @@
   }
   async function saveCheck(b){
     var chkSel = document.getElementById('chk-staff');
-    var staffId = (isOwner() && chkSel && chkSel.value) || session.staffId;
+    var staffId = (isManager() && chkSel && chkSel.value) || session.staffId;
     var rows = [];
     app.querySelectorAll('.qty').forEach(function(inp){
       var itemId = inp.getAttribute('data-item');
@@ -1669,7 +1669,7 @@
     var lvs = document.getElementById('lv-staff'); if (lvs) lvs.addEventListener('change', function(){ nav('#/leave/' + sel + '/' + lvs.value); });
   };
   async function leaveSubmit(){
-    var actingId = (isOwner() && document.getElementById('lv-staff') && document.getElementById('lv-staff').value) || session.staffId;
+    var actingId = (isManager() && document.getElementById('lv-staff') && document.getElementById('lv-staff').value) || session.staffId;
     var date = document.getElementById('lv-date').value; var pid = (document.querySelector('input[name=lv-pat]:checked') || {}).value; if (!date || !pid){ toast('날짜와 근무를 골라 주세요'); return; }
     var p = (await db.select('ops_shift_patterns', { eq: { id: pid } }))[0];
     var dup = await db.select('ops_leave_requests', { eq: { staff_id: actingId, date: date, start_time: p.start_time } });
@@ -3937,7 +3937,7 @@
       var defBranch = buyGuessBranch(o) || session.branchId || (base.branches[0] || {}).id;
       html += '<div><label>날짜</label><input class="in" type="date" id="buy-date" value="' + esc(o.bought_on || todayStr()) + '"></div>';
       html += '<div style="margin-top:8px"><label>어느 매장에서?</label><input type="hidden" id="buy-branch" value="' + esc(defBranch) + '"><div class="tabs" id="buy-branch-tabs" style="flex-wrap:wrap;overflow:visible">' + base.branches.map(function(b){ return '<span class="tab' + (b.id === defBranch ? ' on' : '') + '" data-act="buy-pick-branch" data-id="' + esc(b.id) + '">' + esc(b.name) + '</span>'; }).join('') + '</div></div>';
-      if (isOwner()){
+      if (isManager()){
         var curBuyerName = o.buyer_name || session.name;
         var curBuyerMatch = base.staff.filter(function(s){ return s.active !== false && s.name === curBuyerName; })[0];
         html += '<div style="margin-top:10px"><label>실제 구매한 사람</label><div class="name-grid" id="buy-staff-grid">' + buyStaffGridHtml(defBranch, curBuyerName) + '</div>' +
@@ -3985,8 +3985,8 @@
     if (disc == null) disc = Math.round(list * method.rate / 100);
     if (paid == null) paid = list - disc;
     if (paid < 0 || disc < 0){ toast('금액이 이상해요. 정가·할인·낸 금액을 확인해 주세요'); return; }
-    var typedName = isOwner() ? v('buy-staff-name').trim() : '';
-    if (isOwner() && !typedName){ toast('구매한 사람 이름을 넣어 주세요'); return; }
+    var typedName = isManager() ? v('buy-staff-name').trim() : '';
+    if (isManager() && !typedName){ toast('구매한 사람 이름을 넣어 주세요'); return; }
     var path = null;
     if (buyState.photo && buyState.photo.blob){
       path = 'staff/' + branchId + '/' + date.slice(0, 7) + '/' + uid() + '.jpg';
@@ -3994,8 +3994,8 @@
       catch(e){ console.error(e); if (!window.confirm('사진 저장이 안 됐어요 (' + (e.message || e) + ').\n사진 없이 내용만 저장할까요?')) return; path = null; }
     }
     var buyerMatch = typedName ? base.staff.filter(function(s){ return s.active !== false && s.name === typedName; })[0] : null;
-    var buyerId = isOwner() ? (buyerMatch ? buyerMatch.id : null) : session.staffId;
-    var buyerName = isOwner() ? typedName : null;
+    var buyerId = isManager() ? (buyerMatch ? buyerMatch.id : null) : session.staffId;
+    var buyerName = isManager() ? typedName : null;
     await db.insert('ops_staff_purchases', { bought_on: date, staff_id: buyerId, buyer_name: buyerName, branch_id: branchId, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: v('buy-items').trim() || null, memo: v('buy-memo').trim() || null, photo_path: path, ocr: buyState.ocr || null, entered_by: session.staffId, created_at: nowIso(), updated_at: nowIso() });
     buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null };
     toast('저장했어요 · ' + (buyerName && buyerName !== session.name ? buyerName + ' · ' : '') + branchName(branchId) + ' · 할인 ' + won(disc) + '원, 낸 금액 ' + won(paid) + '원');
@@ -4097,7 +4097,7 @@
   // 규칙: 만료·30일 이내·보건증 없음 = 빨강, 60일 이내 = 노랑. 직원이 새 사진 올리면 '제출', 매니저가 날짜 확인하면 '완료'.
   var HC_BUCKET = 'documents', HC_RED = 30, HC_YELLOW = 60;
   var hcState = { photo: null, open: {} };
-  var hcAdminPhoto = {};   // 사장님이 직원 대신 올릴 사진 (제출 전 임시 보관, staffId별)
+  var hcAdminPhoto = {};   // 사장님·매니저가 직원 대신 올릴 사진 (제출 전 임시 보관, staffId별)
   async function loadHealth(){ return await db.select('ops_health_certs', { order: { col: 'created_at', asc: false } }); }
   function healthMap(rows){
     var m = {};
@@ -4219,9 +4219,9 @@
         html += '<div class="inline" style="margin-top:8px;flex-wrap:wrap;gap:8px">' + (p.photo_path ? '<button class="btn sm" data-act="hc-photo" data-path="' + esc(p.photo_path) + '">📷 사진 열기</button>' : '') + '<input class="in" type="date" id="hc-date-' + esc(p.id) + '" value="' + esc(p.expires_on || '') + '" style="width:auto"><button class="btn sm primary" data-act="hc-confirm" data-id="' + esc(p.id) + '">완료</button><button class="btn sm danger" data-act="hc-del" data-id="' + esc(p.id) + '" data-path="' + esc(p.photo_path || '') + '">반려(지움)</button></div>';
       }
       html += '<div class="inline" style="margin-top:10px;flex-wrap:wrap;gap:8px"><span class="muted">만료일 직접 넣기</span><input class="in" type="date" id="hc-new-' + esc(s.id) + '" style="width:auto">' +
-        (isOwner() ? '<label class="btn sm" style="cursor:pointer">' + (hcAdminPhoto[s.id] ? '📷 사진 넣음 (바꾸기)' : '📷 사진(선택)') + '<input type="file" accept="image/*" class="hidden hc-manual-file" data-staff="' + esc(s.id) + '"></label>' : '') +
+        '<label class="btn sm" style="cursor:pointer">' + (hcAdminPhoto[s.id] ? '📷 사진 넣음 (바꾸기)' : '📷 사진(선택)') + '<input type="file" accept="image/*" class="hidden hc-manual-file" data-staff="' + esc(s.id) + '"></label>' +
         '<button class="btn sm" data-act="hc-manual" data-id="' + esc(s.id) + '">저장</button></div>';
-      if (isOwner()) html += '<div class="muted" style="margin:2px 0 0">사장님은 직원 대신 만료일만 넣거나(증빙 없음), 텍스트로 받은 보건증 사진을 같이 첨부해서 저장할 수 있어요.</div>';
+      html += '<div class="muted" style="margin:2px 0 0">사장님·매니저는 직원 대신 만료일만 넣거나(증빙 없음), 텍스트로 받은 보건증 사진을 같이 첨부해서 저장할 수 있어요.</div>';
       html += '<div class="group-title" style="margin-top:10px">기록</div>' + hcHistory(info.rows, true);
       html += '</div>';
     });
@@ -5485,9 +5485,9 @@
         case 'chip-cancel': document.getElementById('chip-panel').classList.add('hidden'); break;
         case 'leave-submit': await leaveSubmit(); break;
         case 'leave-cancel': if (window.confirm('신청을 취소할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'cancelled' }); await passOtherOffers(id, null); toast('취소했어요'); render(); } break;
-        case 'offer': await db.insert('ops_sub_offers', { request_id: id, staff_id: (isOwner() && el.getAttribute('data-staff')) || session.staffId, status: 'offered', created_at: new Date().toISOString() }); toast('지원했어요. 사장님·매니저 컨펌을 기다려 주세요'); render(); break;
+        case 'offer': await db.insert('ops_sub_offers', { request_id: id, staff_id: (isManager() && el.getAttribute('data-staff')) || session.staffId, status: 'offered', created_at: new Date().toISOString() }); toast('지원했어요. 사장님·매니저 컨펌을 기다려 주세요'); render(); break;
         case 'offer-cancel': await db.remove('ops_sub_offers', { id: id }); toast('지원을 취소했어요'); render(); break;
-        case 'solo-ok': await db.update('ops_leave_requests', { id: id }, { solo_ok_by: (isOwner() && el.getAttribute('data-staff')) || session.staffId }); toast('"혼자 가능"으로 표시했어요'); render(); break;
+        case 'solo-ok': await db.update('ops_leave_requests', { id: id }, { solo_ok_by: (isManager() && el.getAttribute('data-staff')) || session.staffId }); toast('"혼자 가능"으로 표시했어요'); render(); break;
         case 'req-accept': await db.update('ops_leave_requests', { id: id }, { status: 'covering', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('수락. 같은 매장에 "대타 구하는 중"으로 떠요'); render(); break;
         case 'req-reject': { var adhoc = el.getAttribute('data-adhoc') === '1'; if (window.confirm(adhoc ? '이 자리를 취소할까요?' : '거절(출근)으로 할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'rejected', decided_by: session.staffId, decided_at: new Date().toISOString() }); await passOtherOffers(id, null); toast(adhoc ? '자리를 취소했어요' : '거절했어요'); render(); } } break;
         case 'opensub-toggle': document.getElementById('opensub-box').classList.toggle('hidden'); break;
@@ -5549,7 +5549,7 @@
         case 'exp-photo': { var pu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(pu, '_blank'); break; }
         case 'exp-update': await expUpdate(id); break;
         case 'tg': { var tg = el.closest('.tg'); if (tg) { tg.querySelector('.card').classList.toggle('hidden'); el.textContent = el.textContent.replace(/^▼|^▶/, el.textContent[0] === '▼' ? '▶' : '▼'); } break; }
-        case 'exp-del': if (window.confirm('이 지출을 지울까요? (사진도 같이 지워져요)')){ var pp = el.getAttribute('data-path'); await db.remove('ops_expenses', { id: id }); if (pp) db.removeFile('receipts', pp).catch(function(){}); toast('지웠어요'); render(); } break;
+        case 'exp-del': if (!isManager()){ toast('삭제할 권한이 없어요'); } else if (window.confirm('이 지출을 지울까요? (사진도 같이 지워져요)')){ var pp = el.getAttribute('data-path'); await db.remove('ops_expenses', { id: id }); if (pp) db.removeFile('receipts', pp).catch(function(){}); toast('지웠어요'); render(); } break;
         case 'exp-csv': downloadCsv(); break;
         // 직원 구매
         case 'buy-retake': buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null }; render(); break;
@@ -5583,7 +5583,7 @@
         case 'buy-toggle': document.getElementById('bx-' + id).classList.toggle('hidden'); break;
         case 'buy-photo': { var bu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(bu, '_blank'); break; }
         case 'buy-update': await buyUpdate(id); break;
-        case 'buy-del': if (window.confirm('이 구매 기록을 지울까요? (사진도 같이 지워져요)')){ var bp = el.getAttribute('data-path'); await db.remove('ops_staff_purchases', { id: id }); if (bp) db.removeFile('receipts', bp).catch(function(){}); toast('지웠어요'); render(); } break;
+        case 'buy-del': if (!isManager()){ toast('삭제할 권한이 없어요'); } else if (window.confirm('이 구매 기록을 지울까요? (사진도 같이 지워져요)')){ var bp = el.getAttribute('data-path'); await db.remove('ops_staff_purchases', { id: id }); if (bp) db.removeFile('receipts', bp).catch(function(){}); toast('지웠어요'); render(); } break;
         case 'expense-cal-toggle': expenseCalendarOpen = !expenseCalendarOpen; render(); break;
         case 'buy-cal-toggle': buyCalendarOpen = !buyCalendarOpen; render(); break;
         case 'buy-list-view': buyListView = el.getAttribute('data-view'); render(); break;
