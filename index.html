@@ -1364,12 +1364,31 @@
     var b = pickBranch(params, false);
     var day = /^\d{4}-\d{2}-\d{2}$/.test(params.arg2 || '') ? params.arg2 : todayStr();
     var ws = weekStart(day), days = []; for (var i = 0; i < 7; i++) days.push(addDays(ws, i));
-    var r0 = await Promise.all([ loadSchedule([b], ws, days[6]), db.select('ops_branch_notes', { eq: { branch_id: b } }).catch(function(){ return []; }) ]);
-    var sch = r0[0], note = r0[1][0] || null;
+    var r0 = await Promise.all([ loadSchedule([b], ws, days[6]), db.select('ops_branch_notes', { eq: { branch_id: b } }).catch(function(){ return []; }), db.select('ops_schedule_acks', { eq: { branch_id: b, week_start: ws } }).catch(function(){ return []; }) ]);
+    var sch = r0[0], note = r0[1][0] || null, acks = r0[2];
     var pool = poolFor(sch, b, day), isWeekly = pool.length && !!pool[0].week_start;
     var html = topbar('근무표 · ' + branchName(b), true) + branchTabs(b, false);
     html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="sched-day" data-date="' + addDays(ws, -7) + '">‹ 지난주</button><b>' + esc(fmtDateK(ws)) + ' ~ ' + esc(fmtDateK(days[6])) + '</b><button class="btn sm" data-act="sched-day" data-date="' + addDays(ws, 7) + '">다음주 ›</button></div>';
     html += '<div class="muted" style="margin:0 4px 6px">' + (isWeekly ? '이 주 전용 표' : '고정 패턴 (매주 같음)') + (isManager() ? ' · <a href="#/patterns/' + esc(b) + '/' + (isWeekly ? ws : 'fixed') + '" style="text-decoration:underline">고치기</a>' : '') + '</div>';
+    // 이번 주 스케줄 확인: 알바생 본인 확인 버튼 + 매니저용 확인 현황
+    var weekPeople = {};
+    pool.forEach(function(p){ if (!weekPeople[p.staff_id]) weekPeople[p.staff_id] = true; });
+    var weekStaffIds = Object.keys(weekPeople);
+    var myAck = acks.filter(function(a){ return a.staff_id === session.staffId; })[0];
+    if (weekStaffIds.indexOf(session.staffId) >= 0){
+      html += myAck
+        ? '<div class="note ok" style="margin-bottom:8px">✓ 이번 주 스케줄 확인함 (' + md(myAck.acked_at) + ')</div>'
+        : '<div class="note" style="margin-bottom:8px">이번 주 스케줄 확인하셨나요? <button class="btn sm primary" data-act="sched-ack" data-branch="' + esc(b) + '" data-week="' + esc(ws) + '" style="margin-left:6px">확인했어요</button></div>';
+    }
+    if (isManager() && weekStaffIds.length){
+      var ackedIds = {}; acks.forEach(function(a){ ackedIds[a.staff_id] = a; });
+      var notAcked = weekStaffIds.filter(function(id){ return !ackedIds[id]; });
+      html += '<div class="group-title">스케줄 확인 현황<span class="sp"></span>' + (weekStaffIds.length - notAcked.length) + '/' + weekStaffIds.length + '</div>';
+      html += '<div class="card" style="padding:8px 12px">' + weekStaffIds.map(function(id){
+        var a = ackedIds[id];
+        return '<div class="item" style="padding:6px 0"><div class="iname"><div class="t">' + esc(staffName(id)) + '</div></div>' + (a ? '<span class="badge ok">✓ 확인 ' + md(a.acked_at) + '</span>' : '<span class="badge warn">미확인</span>') + '</div>';
+      }).join('') + '</div>';
+    }
     html += '<div class="tabs">' + days.map(function(d){ return '<span class="tab' + (d === day ? ' on' : '') + '" data-act="sched-day" data-date="' + d + '">' + WD[wdOf(d)] + ' ' + dateObj(d).getDate() + '</span>'; }).join('') + '</div>';
     // 근무자마다 색: manual_staff에 저장된 고정 색을 쓰고, 아직 없는 사람만 그때그때 배정
     var colorOf = {}, ci = 0;
@@ -4949,6 +4968,7 @@
         // 근무표·휴무·대타
         case 'sched-day': nav('#/schedule/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-date')); break;
         case 'sched-view': try { localStorage.setItem('bn_sched_view', el.getAttribute('data-mode')); } catch(e){} render(); break;
+        case 'sched-ack': el.disabled = true; try { await db.upsert('ops_schedule_acks', [{ branch_id: el.getAttribute('data-branch'), staff_id: session.staffId, week_start: el.getAttribute('data-week'), acked_at: new Date().toISOString() }], 'branch_id,staff_id,week_start'); toast('확인 처리했어요'); render(); } finally { el.disabled = false; } break;
         case 'myshift-toggle': document.getElementById('msx-' + id).classList.toggle('hidden'); break;
         case 'myshift-save': el.disabled = true; try { await myShiftSave(el.getAttribute('data-branch'), el.getAttribute('data-date'), +el.getAttribute('data-weekday'), el.getAttribute('data-staff')); } finally { el.disabled = false; } break;
         case 'addshift-toggle': document.getElementById('asx-' + id).classList.toggle('hidden'); break;
