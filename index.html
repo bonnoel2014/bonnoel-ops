@@ -513,7 +513,10 @@
     var h = location.hash.replace(/^#\/?/, '') || 'home';
     var parts = h.split('/');
     var route = parts[0]; var params = { arg: parts[1], arg2: parts[2] };
-    if (!session && route !== 'login' && route !== 'clock' && route !== 'sign'){ nav('#/login'); return; }
+    if (!session && route !== 'login' && route !== 'clock' && route !== 'sign'){
+      if (route === 'prepay' || route === 'prepay-c') loginReturnTo = '#/' + h;   // 매장폰 바로가기로 들어오면 로그인 뒤 홈 말고 여기로
+      nav('#/login'); return;
+    }
     if (session && route === 'login'){ nav('#/home'); return; }
     var fn = routes[route] || routes.home;
     current = { route: route, params: params };
@@ -529,12 +532,14 @@
 
   // ===== 화면: 로그인 =====
   var loginState = { branchId: null, staffId: null };
+  var loginReturnTo = null;   // 매장폰에서 선결제 바로가기로 들어온 경우, 로그인 뒤 홈 말고 여기로 보냄
   routes.login = async function(){
     await loadBase();
     var st = loginState;
+    if (!st.branchId && loginReturnTo){ try { st.branchId = localStorage.getItem(KIOSK_KEY) || null; } catch(e){} }
     var html = topbar('본노엘 운영');
     if (!st.branchId){
-      html += '<div class="group-title">어느 매장이에요?</div><div class="card">';
+      html += '<div class="group-title">어느 매장이에요?</div>' + (loginReturnTo ? '<div class="muted" style="margin:-4px 4px 10px">선결제를 쓰려면 먼저 본인 확인이 필요해요</div>' : '') + '<div class="card">';
       base.branches.forEach(function(b){ html += '<div class="row" data-act="pick-branch" data-id="' + esc(b.id) + '"><div class="tile" style="background:var(--tile-orange)">🏬</div><div class="rt"><div class="rtitle">' + esc(b.name) + '</div></div><div class="chev">›</div></div>'; });
       if (!base.branches.length) html += '<div class="empty">매장이 없어요. 매뉴얼북 관리자에서 매장을 먼저 등록해 주세요.</div>';
       html += '</div>';
@@ -575,7 +580,7 @@
     var bid = s.role === 'owner' ? loginState.branchId : (s.branch_id || loginState.branchId);
     saveSession({ staffId: s.id, name: s.name, role: s.role || 'staff', branchId: bid, branchName: branchName(bid) });
     loginState = { branchId: null, staffId: null };
-    nav('#/home');
+    nav(loginReturnTo || '#/home'); loginReturnTo = null;
   }
 
   async function ownerQuick(){
@@ -4946,7 +4951,7 @@
         case 'pp-set-code': await ppSetCode(id); break;
         case 'pp-set-bonus': await ppSetBonus(); break;
         case 'soon': e.preventDefault(); toast('다음 단계에서 만들어요'); break;
-        case 'pick-branch': loginState.branchId = id; render(); break;
+        case 'pick-branch': loginState.branchId = id; if (loginReturnTo){ try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} } render(); break;
         case 'pick-branch-reset': loginState.branchId = null; render(); break;
         case 'pick-staff': loginState.staffId = id; render(); break;
         case 'pick-staff-reset': loginState.staffId = null; render(); break;
