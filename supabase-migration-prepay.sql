@@ -351,9 +351,9 @@ begin
   if p_branch is null then
     update prepay_settings set owner_code_hash = crypt(p_new_code, gen_salt('bf')), updated_at = now() where id = 1;
   else
-    if exists(select 1 from prepay_branch_codes b where b.branch_id <> p_branch and b.code_hash = crypt(p_new_code, b.code_hash))
-       or (select owner_code_hash = crypt(p_new_code, owner_code_hash) from prepay_settings where id = 1) then
-      return jsonb_build_object('ok', false, 'error', '다른 매장이나 사장님 코드와 같은 숫자는 쓸 수 없어요');
+    -- 매장 코드끼리는 같아도 됨(2026-09-24, 사장님 요청). 사장님 코드랑만 겹치면 안 됨 — 겹치면 그 매장 직원이 사장님 권한(환불 등)까지 갖게 되기 때문
+    if (select owner_code_hash = crypt(p_new_code, owner_code_hash) from prepay_settings where id = 1) then
+      return jsonb_build_object('ok', false, 'error', '사장님 코드와 같은 숫자는 매장 코드로 쓸 수 없어요');
     end if;
     insert into prepay_branch_codes (branch_id, code_hash, updated_at) values (p_branch, crypt(p_new_code, gen_salt('bf')), now())
     on conflict (branch_id) do update set code_hash = excluded.code_hash, updated_at = now();
