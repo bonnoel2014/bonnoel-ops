@@ -710,7 +710,7 @@
     html += tge();
     html += grp('선결제');
     html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
-    if (isOwner()) html += row('#/prepay-admin', 'tile-gray', '📊', '선결제 관리', '매장별 충전·사용 합계 · 손님 잔액 · 옮기기 · 코드 (사장님만)');
+    if (isManager()) html += row('#/prepay-admin', 'tile-gray', '📊', '선결제 관리', '매장별 충전·사용 합계 · 손님 잔액 · 옮기기 · 코드');
     html += tge();
     html += grp('카드·급여');
     html += row('#/expense', 'tile-orange', '🧾', '영수증 올리기', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
@@ -4658,23 +4658,27 @@
 
   routes['prepay-admin'] = async function(params){
     await loadBase();
-    if (!isOwner()){ nav('#/prepay'); return; }
+    if (!isManager()){ nav('#/prepay'); return; }
     var html = topbar('선결제 관리', true);
     prepaySt.status = await db.rpc('prepay_status', {});
     if (!prepaySt.status.ready){ nav('#/prepay'); return; }
-    if (!prepaySt.code || prepaySt.role !== 'owner'){
-      html += ppCodeForm('사장님 코드', '선결제 관리는 사장님 코드 6자리로 들어가요');
+    if (!prepaySt.code){
+      html += ppCodeForm('선결제 코드', '매장 코드로는 합계만, 사장님 코드로는 전부 볼 수 있어요');
       app.innerHTML = html; var ci = document.getElementById('pp-code'); if (ci) ci.focus(); return;
     }
     var tabName = params.arg || 'sum';
+    if (tabName !== 'sum' && prepaySt.role !== 'owner'){ nav('#/prepay-admin'); return; }   // 손님·옮기기·설정은 사장님 코드로만
     var t = function(k, label){ return '<span class="tab' + (tabName === k ? ' on' : '') + '" data-act="go" data-href="#/prepay-admin/' + k + '">' + label + '</span>'; };
-    html += '<div class="tabs">' + t('sum', '합계') + t('cust', '손님') + t('import', '옮기기') + t('set', '설정') + '</div>';
+    html += '<div class="tabs">' + t('sum', '합계') + (prepaySt.role === 'owner' ? t('cust', '손님') + t('import', '옮기기') + t('set', '설정') : '') + '</div>';
+    if (prepaySt.role !== 'owner') html += '<div class="muted" style="margin:0 4px 10px">매장 코드로 들어와서 우리 매장 합계만 보여요. 손님 목록·옮기기·설정은 사장님 코드가 필요해요.</div>';
     if (tabName === 'sum'){
       var ym = ymOf(params.arg2), mr = monthRange(ym);
       var rep = await ppCall('prepay_report', ppArgs({ p_from: mr.from, p_to: mr.to }));
-      var all = await ppCall('prepay_customers_all', { p_code: prepaySt.code });
-      var owed = 0, withBal = 0; all.rows.forEach(function(c){ owed += c.balance; if (c.balance > 0) withBal++; });
-      html += '<div class="summary" style="grid-template-columns:1.4fr 1fr"><a href="#/prepay-admin/cust"><div class="n" style="font-size:20px">' + won(owed) + '<span style="font-size:13px">원</span></div><div class="l">손님들에게 남은 돈 (앞으로 빵으로 내줄 돈)</div></a><a href="#/prepay-admin/cust"><div class="n">' + withBal + '</div><div class="l">잔액 있는 손님 / 전체 ' + all.rows.length + '명</div></a></div>';
+      if (prepaySt.role === 'owner'){
+        var all = await ppCall('prepay_customers_all', { p_code: prepaySt.code });
+        var owed = 0, withBal = 0; all.rows.forEach(function(c){ owed += c.balance; if (c.balance > 0) withBal++; });
+        html += '<div class="summary" style="grid-template-columns:1.4fr 1fr"><a href="#/prepay-admin/cust"><div class="n" style="font-size:20px">' + won(owed) + '<span style="font-size:13px">원</span></div><div class="l">손님들에게 남은 돈 (앞으로 빵으로 내줄 돈)</div></a><a href="#/prepay-admin/cust"><div class="n">' + withBal + '</div><div class="l">잔액 있는 손님 / 전체 ' + all.rows.length + '명</div></a></div>';
+      }
       html += monthNav(ym, function(m){ return '#/prepay-admin/sum/' + m; });
       var cols = base.branches.map(function(b){ return { id: b.id, name: b.name, s: ppSums(rep.rows.filter(function(l){ return l.branch_id === b.id; })) }; });
       cols.push({ id: null, name: '합계', s: ppSums(rep.rows) });
@@ -4748,7 +4752,6 @@
     if (!/^\d{6}$/.test(code)){ toast('숫자 6자리로 넣어 주세요'); return; }
     var r = await ppCall('prepay_login', { p_branch: session.branchId, p_code: code });
     prepaySt.code = code; prepaySt.role = r.role; prepaySt.found = null; prepaySt.q = '';
-    if (current.route === 'prepay-admin' && r.role !== 'owner'){ prepaySt.code = null; toast('사장님 코드가 아니에요'); return; }
     render();
   }
   async function ppInit(){
