@@ -1,0 +1,13 @@
+{
+  "name": "본노엘 선결제",
+  "short_name": "선결제",
+  "start_url": "./#/prepay",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fffdfd",
+  "theme_color": "#af4c60",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
