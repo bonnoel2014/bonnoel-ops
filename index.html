@@ -724,6 +724,7 @@
     html += grp('서류·보건증');
     if (isManager()) html += row('#/docs-admin', 'tile-purple', '📝', '근로계약서 & 입사서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부');
     if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
+    if (isManager()) html += row('#/uniform-swap', 'tile-orange', '🔄', '유니폼 교체 (반팔 → 긴팔)', '계절 교체 · 반팔 반납 + 긴팔 수령 · 날짜 · 서명 PDF');
     if (isManager()) html += row('#/uniform-return', 'tile-purple', '👕', '유니폼 반납', '퇴사자 반납 확인 · 서명 · 반납확인서 PDF');
     if (isOwner()) html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
     html += row('#/health', 'tile-red', '🩺', '보건증', '내 보건증 만료일 · 새 보건증 사진 올리기');
@@ -1411,7 +1412,7 @@
       var who = r.kind === 'sub' ? '<span class="dot" style="background:' + col(r.req.sub_staff_id) + '"></span><s style="color:var(--ink-faint)">' + esc(r.name) + '</s> → ' + esc(r.subName) : '<span class="dot" style="background:' + col(r.staffId) + '"></span>' + esc(r.name);
       var memo = (base.staff.filter(function(s){ return s.id === r.staffId; })[0] || {}).memo;
       var isSelf = r.kind === 'normal' && r.staffId === session.staffId;
-      var canEdit = r.kind === 'normal' && (isSelf || isOwner());
+      var canEdit = r.kind === 'normal' && (isSelf || isManager());
       var badge = canEdit ? '<span class="badge muted" data-act="myshift-toggle" data-id="' + esc(r.staffId) + '" style="cursor:pointer">✎ ' + (isSelf ? '시간 바꾸기' : '대신 바꾸기') + '</span>' : kindBadge(r);
       html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + ' · ' + shiftHours(r) + (r.brk ? ' · <b style="color:var(--danger)">휴게 ' + esc(r.brk) + '</b>' : '') + (memo ? ' · <i>' + esc(memo) + '</i>' : '') + (r.note ? ' · <i>' + esc(r.note) + '</i>' : '') + '</div></div>' + badge + '</div>';
       if (canEdit){
@@ -1469,7 +1470,7 @@
             for (var ln = 0; ln < dl.lanes; ln++){
               var r = active.filter(function(x){ return x.lane === ln; })[0];
               if (!r){
-                var emptyAct = isOwner() ? ' data-act="chip-pick-empty" data-branch="' + esc(b) + '" data-date="' + esc(days[di]) + '" data-weekday="' + wdOf(days[di]) + '" data-start="' + esc(fromMin(rs)) + '" style="cursor:pointer"' : '';
+                var emptyAct = isManager() ? ' data-act="chip-pick-empty" data-branch="' + esc(b) + '" data-date="' + esc(days[di]) + '" data-weekday="' + wdOf(days[di]) + '" data-start="' + esc(fromMin(rs)) + '" style="cursor:pointer"' : '';
                 html += '<td' + (days[di] === day ? ' class="on"' : '') + emptyAct + '></td>';
                 continue;
               }
@@ -1477,7 +1478,7 @@
               var who = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId;
               var nm = r.kind === 'sub' ? r.subName : r.name;
               var bg = onBreak || r.kind === 'covering' || r.kind === 'work' ? '' : 'background:' + col(who) + ';';
-              var pick = isOwner() && r.kind === 'normal' && !onBreak;
+              var pick = isManager() && r.kind === 'normal' && !onBreak;
               var attrs = (bg || pick) ? ' style="' + bg + (pick ? 'cursor:pointer;' : '') + '"' : '';
               var act = pick ? ' data-act="chip-pick" data-pattern="' + esc(r.patternId) + '" data-slot-start="' + esc(fromMin(rs)) + '" data-slot-end="' + esc(fromMin(re)) + '"' : '';
               html += '<td' + (days[di] === day ? ' class="on"' : '') + '><span class="chip ' + (onBreak ? 'brk' : r.kind) + '"' + attrs + act + '>' + esc(onBreak ? '휴게' : nm.replace(/\s/g, '').slice(0, 4)) + '</span></td>';
@@ -1496,14 +1497,14 @@
         if (!dayRows.length) html += '<div class="empty">근무 없음</div>';
         dayRows.forEach(function(r){
           var who = r.kind === 'sub' ? '<span class="dot" style="background:' + col(r.req.sub_staff_id) + '"></span><s style="color:var(--ink-faint)">' + esc(r.name) + '</s> → ' + esc(r.subName) : '<span class="dot" style="background:' + col(r.staffId) + '"></span>' + esc(r.name);
-          var pick = isOwner() && r.kind === 'normal';
+          var pick = isManager() && r.kind === 'normal';
           var badge = pick ? '<span class="badge muted" data-act="chip-pick" data-pattern="' + esc(r.patternId) + '" style="cursor:pointer">✎ 바꾸기</span>' : kindBadge(r);
           html += '<div class="item"><div class="iname"><div class="t">' + who + '</div><div class="s">' + esc(tRange(r.start, r.end)) + ' · ' + shiftHours(r) + (r.brk ? ' · <b style="color:var(--danger)">휴게 ' + esc(r.brk) + '</b>' : '') + (r.note ? ' · <i>' + esc(r.note) + '</i>' : '') + '</div></div>' + badge + '</div>';
         });
         html += '</div>';
       });
     }
-    if (isOwner()){
+    if (isManager()){
       var pickPeople = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || (!s.branch_id && s.role !== 'owner') || pool.some(function(p){ return p.staff_id === s.id; })); });
       html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px" id="chip-panel-title">이 자리, 누구로 할까요?</div>' +
         '<div class="hidden" id="chip-endtime-wrap" style="margin-bottom:8px"><label class="muted">몇 시까지</label><select class="in" id="chip-endtime" style="width:auto">' + halfHourOptions('') + '</select></div>' +
@@ -1514,7 +1515,7 @@
         '<div class="inline" style="margin-top:4px"><select class="in" id="chip-delete-end" style="width:auto">' + halfHourOptions('') + '</select><button class="btn sm" id="chip-delete-btn" data-act="chip-delete-slot" style="color:var(--danger)">삭제</button></div></div>' +
         '<div class="inline" style="margin-top:8px"><button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
     }
-    html += '<div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 자리는 그날 시작 시간이 빠른 순 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게' + (isOwner() ? ' · 사장님은 눌러서 다른 사람으로 바로 바꿀 수 있어요' : '') + '</div>';
+    html += '<div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 자리는 그날 시작 시간이 빠른 순 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게' + (isManager() ? ' · 사장님·매니저는 눌러서 다른 사람으로 바로 바꿀 수 있어요' : '') + '</div>';
     // 매장 메모 (입사 예정·퇴사 예정·충원 예정 등)
     html += '<div class="group-title">매장 메모</div>';
     if (isManager()) html += '<div class="form"><textarea class="in" id="bn-text" rows="5" placeholder="입사 예정 · 퇴사 예정 · 충원 예정 · 기타">' + esc(note ? note.text : '') + '</textarea><div class="inline" style="justify-content:space-between"><span class="muted">' + (note ? esc(staffName(note.updated_by)) + ' · ' + md(note.updated_at) : '') + '</span><button class="btn sm primary" data-act="note-save" data-branch="' + esc(b) + '">메모 저장</button></div></div>';
@@ -1532,7 +1533,7 @@
   // 근무자 본인이 특정 날짜 시간만 직접 바꾸기 (신청·승인 절차 없음). 다른 사람·다른 날은 그대로 유지됨
   async function myShiftSave(branchId, date, weekday, staffId){
     staffId = staffId || session.staffId;
-    if (staffId !== session.staffId && !isOwner()){ toast('내 시간만 바꿀 수 있어요'); return; }
+    if (staffId !== session.staffId && !isManager()){ toast('내 시간만 바꿀 수 있어요'); return; }
     var st = document.getElementById('ms-start-' + staffId).value, en = document.getElementById('ms-end-' + staffId).value;
     var bs = document.getElementById('ms-bs-' + staffId).value || null, be = document.getElementById('ms-be-' + staffId).value || null;
     var nt = (document.getElementById('ms-note-' + staffId).value || '').trim() || null;
@@ -3126,7 +3127,7 @@
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
     var sel = pickBranch(params, true);
-    var all = (await db.select('ops_documents', { order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return'; });
+    var all = (await db.select('ops_documents', { order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return' && r.doc_key !== 'uniform_swap'; });
     var settings = await loadDocsSettings();
     var ids = isOwner() ? (sel === 'all' ? base.branches.map(function(b){ return b.id; }) : [sel]) : [session.branchId];
     var batches = docsByBatch(all), latest = {};
@@ -3313,7 +3314,7 @@
   routes['my-docs'] = async function(){
     if (!isOwner()){ toast('내 서류는 사장님만 볼 수 있어요'); nav('#/home'); return; }
     await loadBase();
-    var rows = (await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return'; });
+    var rows = (await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return' && r.doc_key !== 'uniform_swap'; });
     var html = topbar('내 서류', true);
     var batches = docsByBatch(rows);
     if (!batches.length) html += '<div class="empty">아직 서류가 없어요. 사장님·매니저가 준비하면 여기와 매장폰 "서류 서명"에 떠요.</div>';
@@ -3335,15 +3336,26 @@
 
   // --- 유니폼 반납 (퇴사자, 사장님·매니저 확인) ---
   var uretState = null;
+  // 지금 갖고 있는 유니폼 = 입사 지급대장 + 그 뒤 계절 교체(반납은 빼고 수령은 더함)
+  function sameUni(a, b){ return a.item === b.item && (a.size || '') === (b.size || ''); }
   async function loadIssuedUniform(staffId){
     var rows = await db.select('ops_documents', { eq: { staff_id: staffId, doc_key: 'uniform' }, order: { col: 'created_at', asc: false } });
+    var swaps = (await db.select('ops_documents', { eq: { staff_id: staffId, doc_key: 'uniform_swap' } })).sort(function(a, b){ return a.created_at < b.created_at ? -1 : 1; });
     var r = rows[0];
-    return r ? { items: (r.data && r.data.uniform) || [], branchId: r.branch_id, branchName: r.data && r.data.c && r.data.c.branchName, issuedAt: r.created_at } : null;
+    if (!r && !swaps.length) return null;
+    var items = ((r && r.data && r.data.uniform) || []).map(function(x){ return { item: x.item, size: x.size || '', qty: num(x.qty) || 1 }; });
+    swaps.filter(function(w){ return !r || w.created_at > r.created_at; }).forEach(function(w){
+      var d = w.data || {};
+      (d.returned || []).forEach(function(x){ var h = items.filter(function(y){ return sameUni(x, y); })[0]; if (h) h.qty = Math.max(0, h.qty - (num(x.qty) || 0)); });
+      (d.received || []).forEach(function(x){ var h = items.filter(function(y){ return sameUni(x, y); })[0]; if (h) h.qty += num(x.qty) || 0; else items.push({ item: x.item, size: x.size || '', qty: num(x.qty) || 0 }); });
+    });
+    var src = r || swaps[swaps.length - 1];
+    return { items: items.filter(function(x){ return x.qty > 0; }), branchId: src.branch_id, branchName: src.data && src.data.c && src.data.c.branchName, issuedAt: src.created_at };
   }
   routes['uniform-return'] = async function(){
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
-    var all = await db.select('ops_documents', { eq: { doc_key: 'uniform' } });
+    var all = (await db.select('ops_documents', { eq: { doc_key: 'uniform' } })).concat(await db.select('ops_documents', { eq: { doc_key: 'uniform_swap' } }));
     var returned = await db.select('ops_documents', { eq: { doc_key: 'uniform_return' } });
     var lastReturn = {}; returned.forEach(function(r){ if (!lastReturn[r.staff_id] || r.created_at > lastReturn[r.staff_id].created_at) lastReturn[r.staff_id] = r; });
     var issuedStaffIds = {}; all.forEach(function(r){ issuedStaffIds[r.staff_id] = true; });
@@ -3412,6 +3424,92 @@
       var sha = await sha256(blob);
       await db.insert('ops_documents', { batch_id: batchId, staff_id: st.staffId, branch_id: st.branchId, doc_key: 'uniform_return', doc_title: '유니폼 반납확인서', template_version: BND().version, data: { c: ctx.c, uniform: returnItems, staff: { name: s.name } }, status: 'signed', signature_path: sigPath, pdf_path: pdfPath, pdf_sha256: sha, signed_at: now, signed_ua: navigator.userAgent.slice(0, 300) });
       uretState = null; toast('반납확인서를 저장했어요'); nav('#/uniform-return');
+    } catch(e){ console.error(e); toast('실패: ' + (e.message || e)); }
+  }
+
+  // --- 유니폼 교체 (계절: 반팔 반납 + 긴팔 수령을 한 장에. 한시적, 기존 근무자용 — 종이 대장 대체) ---
+  var uswState = null;
+  function uswBlank(){ return { apron: { on: false, qty: 1 }, karate_short: { on: false, qty: 1 }, karate_long: { on: false, qty: 1 }, chef: { on: false, qty: 1 } }; }
+  routes['uniform-swap'] = async function(){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var swaps = await db.select('ops_documents', { eq: { doc_key: 'uniform_swap' } });
+    var last = {}; swaps.forEach(function(r){ if (!last[r.staff_id] || r.created_at > last[r.staff_id].created_at) last[r.staff_id] = r; });
+    var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
+    var html = topbar('유니폼 교체', true);
+    html += '<div class="muted" style="margin:4px 4px 10px">반팔을 돌려받고 긴팔을 나눠 줄 때, 이 폰으로 직원에게 바로 서명받아요. 반납과 수령이 한 장(유니폼 교체 확인서 PDF)으로 저장됩니다. 근로계약서와는 별개예요.</div>';
+    ids.forEach(function(b){
+      var people = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || (!s.branch_id && b === ids[0])); });
+      if (!people.length) return;
+      var done = people.filter(function(s){ return last[s.id]; }).length;
+      html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + ' <span class="muted" style="font-weight:400">· 완료 ' + done + ' / ' + people.length + '명</span></div>';
+      people.sort(function(a, c){ return (last[a.id] ? 1 : 0) - (last[c.id] ? 1 : 0) || a.name.localeCompare(c.name, 'ko'); }).forEach(function(s){
+        var lr = last[s.id];
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.name) + '</div><div class="s">' + (lr ? '✓ 교체 완료 ' + esc((lr.data && lr.data.swapDate) || fmtDT(lr.signed_at || lr.created_at)) : '아직 안 함') + '</div></div>' +
+          (lr ? '<a class="btn sm" data-act="docs-open-pdf" data-path="' + esc(lr.pdf_path || '') + '">PDF 보기</a>' : '') +
+          '<a class="btn sm' + (lr ? '' : ' primary') + '" href="#/uniform-swap-form/' + esc(s.id) + '">' + (lr ? '다시 하기' : '교체하기') + '</a></div>';
+      });
+      html += '</div>';
+    });
+    app.innerHTML = html;
+  };
+  routes['uniform-swap-form'] = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/home'); return; }
+    var s = base.staff.filter(function(x){ return x.id === params.arg; })[0];
+    if (!s){ toast('직원을 찾을 수 없어요'); nav('#/uniform-swap'); return; }
+    if (!uswState || uswState.staffId !== s.id){
+      // 입사 지급 기록이 있으면 갖고 있는 반팔 수량을 기본값으로, 없으면(종이로 받았던 기존 근무자) 1벌
+      var have = await loadIssuedUniform(s.id).catch(function(){ return null; });
+      var shortQty = 1; (have && have.items || []).forEach(function(x){ if (x.item === '카라티' && x.size === '반팔') shortQty = x.qty; });
+      var ret = uswBlank(), rec = uswBlank();
+      ret.karate_short = { on: true, qty: shortQty }; rec.karate_long = { on: true, qty: shortQty };
+      uswState = { staffId: s.id, branchId: s.branch_id || (have && have.branchId) || session.branchId, date: todayStr(), ret: ret, rec: rec, sig: null };
+    }
+    var st = uswState;
+    function side(key, title, hint){
+      var u = st[key], h = '<div class="card section"><div class="sec-h">' + title + '</div><div class="muted" style="padding:0 14px 8px">' + hint + '</div><div class="inline" style="flex-wrap:wrap;gap:6px;padding:0 14px 10px">';
+      UNI_KEYS.forEach(function(k){ h += '<button class="btn sm' + (u[k.key].on ? ' primary' : '') + '" data-act="usw-toggle" data-side="' + key + '" data-key="' + k.key + '">' + (u[k.key].on ? '✓ ' : '') + esc(k.label) + '</button>'; });
+      h += '</div>';
+      UNI_KEYS.forEach(function(k){ if (u[k.key].on) h += '<div class="item"><div class="iname"><div class="t">' + esc(k.label) + '</div></div><span class="muted">수량</span><input class="in usw-q" data-side="' + key + '" data-key="' + k.key + '" type="number" min="0" value="' + esc(u[k.key].qty) + '" style="width:64px"></div>'; });
+      return h + '</div>';
+    }
+    var html = topbar('유니폼 교체 · ' + s.name, true);
+    html += side('ret', '① 반납 (돌려받은 것)', '직원이 돌려준 품목·수량');
+    html += side('rec', '② 수령 (새로 받은 것)', '직원에게 나눠 준 품목·수량');
+    html += '<div class="form" style="margin-top:10px"><div><label>교체일 (숫자 8자리)</label><input class="in birth" id="usw-date" inputmode="numeric" maxlength="10" placeholder="예: 20260924" value="' + esc(st.date || '') + '"></div></div>';
+    html += st.sig ? '<div class="sigprev" style="margin-top:10px"><img src="' + st.sig + '" alt="서명"><div class="muted">이 서명이 교체 확인서에 들어가요 · <span data-act="usw-sig-redo" style="cursor:pointer;text-decoration:underline">다시 그리기</span></div></div>' : sigPadHtml('uswsig', s.name + ' 님 서명 (반납·수령 모두 확인)');
+    html += '<div class="stickybar"><div class="inner"><a class="btn" href="#/uniform-swap">취소</a><button class="btn primary block" data-act="usw-save">교체 확인서 만들기</button></div></div>';
+    app.innerHTML = html;
+    initSigPad('uswsig');
+  };
+  function uswRead(){
+    var st = uswState; if (!st) return;
+    app.querySelectorAll('.usw-q').forEach(function(el){ st[el.getAttribute('data-side')][el.getAttribute('data-key')].qty = num(el.value) || 0; });
+    var d = document.getElementById('usw-date'); if (d) st.date = normYmd(d.value, 2020, new Date().getFullYear() + 1) || st.date;
+    var sd = sigPadData('uswsig'); if (sd) st.sig = sd;
+  }
+  async function uswSave(){
+    uswRead();
+    var st = uswState, s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
+    var returned = uniformToArray(st.ret).filter(function(x){ return num(x.qty) > 0; }), received = uniformToArray(st.rec).filter(function(x){ return num(x.qty) > 0; });
+    if (!returned.length || !received.length){ toast('반납과 수령을 둘 다 골라 주세요'); return; }
+    if (!st.sig){ toast('서명을 그려 주세요'); return; }
+    var settings = await loadDocsSettings().catch(function(){ return {}; });
+    var now = nowIso(), batchId = uuid4();
+    var c = { branchName: branchName(st.branchId), confirmedBy: session.name };
+    var ctx = { staff: { name: s.name }, c: c, returned: returned, received: received, sig: st.sig, seal: settings.seal, signedAt: st.date, swapDate: st.date, docId: batchId };
+    toast('만드는 중…');
+    try {
+      var blob = await docPdf('uniform_swap', ctx);
+      var dir = st.staffId + '/' + batchId + '/';
+      var sigPath = dir + 'signature_' + Date.now() + '.png';
+      await db.upload(DOCS_BUCKET, sigPath, await (await fetch(st.sig)).blob(), 'image/png');
+      var pdfPath = dir + 'uniform_swap_' + Date.now() + '.pdf';
+      await db.upload(DOCS_BUCKET, pdfPath, blob, 'application/pdf');
+      var sha = await sha256(blob);
+      await db.insert('ops_documents', { batch_id: batchId, staff_id: st.staffId, branch_id: st.branchId, doc_key: 'uniform_swap', doc_title: '유니폼 교체 확인서', template_version: BND().version, data: { c: c, returned: returned, received: received, swapDate: st.date, staff: { name: s.name } }, status: 'signed', signature_path: sigPath, pdf_path: pdfPath, pdf_sha256: sha, signed_at: now, signed_ua: navigator.userAgent.slice(0, 300) });
+      uswState = null; toast('교체 확인서를 저장했어요'); nav('#/uniform-swap');
     } catch(e){ console.error(e); toast('실패: ' + (e.message || e)); }
   }
 
@@ -5188,6 +5286,9 @@
         case 'sign-restart': signReset(); render(); break;
         case 'uret-save': el.disabled = true; try { await uretSave(); } finally { el.disabled = false; } break;
         case 'uret-sig-redo': uretRead(); uretState.sig = null; render(); break;
+        case 'usw-toggle': { uswRead(); var us = uswState[el.getAttribute('data-side')][el.getAttribute('data-key')]; us.on = !us.on; render(); break; }
+        case 'usw-save': el.disabled = true; try { await uswSave(); } finally { el.disabled = false; } break;
+        case 'usw-sig-redo': uswRead(); uswState.sig = null; render(); break;
         // 보건증
         case 'hc-retake': hcState.photo = null; render(); break;
         case 'hc-submit': el.disabled = true; try { await hcSubmit(); } finally { el.disabled = false; } break;

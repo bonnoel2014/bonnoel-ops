@@ -297,7 +297,28 @@
   }
   function num2(n){ n = Number(n); return isNaN(n) ? 0 : n; }
 
-  var R = { contract: contract, privacy: privacy, pledge: pledge, cctv: cctv, uniform: uniform, guardian: guardian, uniform_return: uniformReturn };
+  // ---------- 유니폼 교체 확인서 (계절 교체: 반납 + 수령을 한 장에. 입사 서류와 별개, 한시적) ----------
+  function uniformSwap(ctx){
+    var s = ctx.staff || {};
+    function list(arr){ return (arr || []).filter(function(x){ return x && x.item && num2(x.qty) > 0; }); }
+    function rows(arr, empty){ return arr.length ? arr.map(function(x, i){ return '<tr><td class="c">' + (i + 1) + '</td><td>' + esc(x.item) + '</td><td class="c">' + esc(x.size || '-') + '</td><td class="c">' + esc(x.qty) + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="c muted">' + empty + '</td></tr>'; }
+    var head = '<tr><th style="width:10%">번호</th><th>품목</th><th style="width:16%">구분</th><th style="width:14%">수량</th></tr>';
+    return '<div class="page">' +
+      '<h1>유니폼 교체 확인서</h1>' +
+      '<table><tr><th style="width:18%">성명</th><td>' + v(s.name) + '</td><th style="width:18%">근무지</th><td>' + v(ctx.c && ctx.c.branchName) + '</td></tr>' +
+      '<tr><th>교체일</th><td colspan="3">' + kd(ctx.swapDate || ctx.signedAt) + '</td></tr></table>' +
+      '<h2>○ 반납한 물품</h2><table>' + head + rows(list(ctx.returned), '반납 물품 없음') + '</table>' +
+      '<h2>○ 새로 받은 물품</h2><table>' + head + rows(list(ctx.received), '수령 물품 없음') + '</table>' +
+      '<div class="box small"><p>1. 위 물품은 모두 ' + COMPANY.name + ' 소유이며, 근무 중 착용·사용합니다.</p>' +
+      '<p>2. 계절 유니폼 교체에 따라 위 물품을 반납하고, 새 물품을 수령하였음을 확인합니다. ' + box(true) + '</p>' +
+      '<p>3. 새로 받은 물품은 퇴사 시 반납합니다.</p></div>' +
+      '<div class="date">' + kd(ctx.swapDate || ctx.signedAt) + '</div>' +
+      '<div class="signrow kp"><span>확인자 : ' + COMPANY.name + ' ' + v(ctx.c && ctx.c.confirmedBy, 60) + ' ' + seal(ctx) + '</span>' + sig(ctx.sig, s.name, '직원 :') + '</div>' +
+      foot(ctx, '유니폼 교체 확인서') +
+      '</div>';
+  }
+
+  var R = { contract: contract, privacy: privacy, pledge: pledge, cctv: cctv, uniform: uniform, guardian: guardian, uniform_return: uniformReturn, uniform_swap: uniformSwap };
   window.BN_DOCS = {
     version: VERSION, company: COMPANY, list: LIST, css: CSS, age: age,
     byKey: function(k){ return LIST.filter(function(d){ return d.key === k; })[0]; },
