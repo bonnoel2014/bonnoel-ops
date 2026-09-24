@@ -750,7 +750,7 @@
     html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
     if (isManager()) html += row('#/prepay-admin', 'tile-gray', '📊', '선결제 관리', '매장별 충전·사용 합계 · 손님 잔액 · 옮기기 · 코드');
     html += tge();
-    html += grp('카드·급여');
+    html += grp(isManager() ? '카드·급여' : '법인카드·직원구매');
     html += row('#/expense', 'tile-orange', '🧾', '법인카드 영수증', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
     if (isManager()) html += row('#/expense-list', 'tile-purple', '💳', '법인카드 지출', '월별·지점별 지출 목록 · 합계 · 명세서 대조');
     if (isOwner()) html += row('#/expense-cards', 'tile-gray', '💳', '카드 설정', '법인카드 끝 4자리·지점 (사장님만)');
