@@ -5112,7 +5112,10 @@
     }
     if (!st.items.length) st.items.push({ cat: null, text: '' });
   }
-  function alogRead(){ app.querySelectorAll('.alog-text').forEach(function(el){ var i = +el.getAttribute('data-i'); if (alogState.items[i]) alogState.items[i].text = el.value; }); }
+  function alogRead(){
+    app.querySelectorAll('.alog-text').forEach(function(el){ var i = +el.getAttribute('data-i'); if (alogState.items[i]) alogState.items[i].text = el.value; });
+    app.querySelectorAll('.alog-selfdone').forEach(function(el){ var i = +el.getAttribute('data-i'); if (alogState.items[i]) alogState.items[i].self_done = el.checked; });
+  }
   function alogFormHtml(){
     var st = alogState, html = '';
     html += '<div class="group-title">어느 근무였어요?</div><div class="inline" style="gap:6px;flex-wrap:nowrap">';
@@ -5139,7 +5142,9 @@
       html += '<label class="btn sm" style="cursor:pointer">📷 ' + (x.photo || x.photo_path ? '사진 바꾸기' : '사진 붙이기 (선택)') + '<input type="file" accept="image/*" class="hidden alog-file" data-i="' + i + '"></label>';
       if (x.photo || x.photo_path) html += '<span class="muted" data-act="alog-unphoto" data-i="' + i + '" style="cursor:pointer">사진 빼기</span>';
       if (x.done_at) html += '<span class="badge ok">처리 완료</span>';
-      html += '</div></div>';
+      html += '</div>';
+      if (c && c.act && !x.done_at) html += '<label class="inline" style="cursor:pointer;font-size:14px"><input type="checkbox" class="alog-selfdone" data-i="' + i + '"' + (x.self_done ? ' checked' : '') + ' style="width:20px;height:20px"> 제가 이미 처리했어요 <span class="muted">(안 누르면 매니저 할 일로 올라가요)</span></label>';
+      html += '</div>';
     });
     html += '<button class="btn block" data-act="alog-add">+ 한 가지 더 적기</button>';
     html += '<div style="margin-top:14px;display:grid;gap:8px"><button class="btn primary block" style="padding:14px" data-act="alog-save">저장</button>';
@@ -5170,10 +5175,11 @@
     var key = session.staffId + '|' + date;
     var mine = await db.select('ops_shift_logs', { eq: { staff_id: session.staffId }, gte: { log_date: addDays(todayStr(), -30) }, order: { col: 'log_date', asc: false } });
     if (alogState.key !== key){
+      var keep = alogState.keepShift && alogState.keepDate === date ? alogState.keepShift : null;   // 방금 저장한 조는 그대로 보여 줌
       var guess = await alogGuessShift(b, session.staffId, date);
       var todays = mine.filter(function(r){ return r.log_date === date; });
       alogState = { key: key, date: date, mine: mine, guess: guess, items: [] };
-      alogLoadShift(guess || (todays[0] ? todays[0].shift : null));
+      alogLoadShift(keep || guess || (todays[0] ? todays[0].shift : null));
     } else alogState.mine = mine;
     var html = topbar('알바 로그북', true, whoChip());
     html += '<div class="muted" style="margin:4px 4px 0">근무 중 손님 요청, 클레임, 품절, 고장, 다음 조에 알릴 것을 적어 주세요. 다이어리·카톡 대신 여기에 쓰면 매니저·사장님이 바로 봐요.</div>';
@@ -5222,10 +5228,11 @@
     for (var i = 0; i < items.length; i++){
       var x = items[i], path = x.photo_path || null;
       if (x.photo && x.photo.blob){ path = 'alog/' + session.branchId + '/' + st.date.slice(0, 7) + '/' + Date.now() + '-' + i + '.jpg'; await db.upload(ALOG_BUCKET, path, x.photo.blob, 'image/jpeg'); }
-      out.push({ cat: x.cat, text: (x.text || '').trim(), photo_path: path, done_at: x.done_at || null, done_by: x.done_by || null, done_note: x.done_note || null });
+      var self = !x.done_at && x.self_done && alogCat(x.cat) && alogCat(x.cat).act;
+      out.push({ cat: x.cat, text: (x.text || '').trim(), photo_path: path, done_at: self ? nowIso() : (x.done_at || null), done_by: self ? session.staffId : (x.done_by || null), done_note: self ? '근무자가 바로 처리' : (x.done_note || null) });
     }
     await db.upsert('ops_shift_logs', [{ log_date: st.date, branch_id: session.branchId, staff_id: session.staffId, shift: st.shift, nothing: !!nothing, items: out, mgr_checked_by: null, mgr_checked_at: null, owner_checked_at: null, updated_at: nowIso() }], 'log_date,staff_id,shift');
-    alogState.key = null;   // 저장한 걸 다시 읽어서 보여 줌
+    alogState = { key: null, keepShift: st.shift, keepDate: st.date };   // 저장한 걸 다시 읽어서 보여 줌
     toast(nothing ? '"특이사항 없음"으로 제출했어요' : '저장했어요. 매니저·사장님이 바로 볼 수 있어요');
     render();
   }
