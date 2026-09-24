@@ -373,6 +373,9 @@
       ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
       ops_pay_profiles: [ { staff_id: 'm1', hourly_wage: 12000, pay_type: 'insured', dependents: 1 }, { staff_id: 's2', hourly_wage: 10320, pay_type: 'insured', dependents: 1 }, { staff_id: 's1', hourly_wage: 10320, pay_type: 'freelance', dependents: 1 } ],
       ops_settings: [], ops_pay_runs: [], ops_merchant_rules: [], ops_documents: [],
+      managers: [ { id: 'lm1', name: '매니저 M', branch_slug: 'wangsimni', active: true, off_dates: [] }, { id: 'lm2', name: '매니저 K', branch_slug: 'junggye', active: true, off_dates: [] } ],
+      branches: [ { slug: 'seongsu', name: '성수점', order_idx: 1 }, { slug: 'junggye', name: '중계점', order_idx: 3 }, { slug: 'wangsimni', name: '왕십리점', order_idx: 4 } ],
+      reports: [ { id: addDays(todayStr(), -1).replace(/-/g, '') + '_junggye_lm2', date: addDays(todayStr(), -1), branch: '중계점', branch_slug: 'junggye', manager: '매니저 K', manager_id: 'lm2', items: ['쇼케이스 AS 기사님 방문 (오후 2시)', '신입 알바 교육 2일차'], photos: [], updated_at: Date.now() - 86400000, read: false, read_by: null, read_comment: null } ],
       ops_shift_logs: [
         { id: 'al1', log_date: addDays(todayStr(), -1), branch_id: 'b2', staff_id: 's2', shift: 'close', nothing: false, items: [
           { cat: 'request', text: '내일 오후 3시 소금빵 20개 예약 문의 (전화 주신다고 함)', photo_path: null },
@@ -638,9 +641,11 @@
         var alToday = alLogs.filter(function(r){ return r.log_date === todayStr(); }).length;
         var alUnchk = alLogs.filter(function(r){ return r.log_date >= addDays(todayStr(), -7) && !(isOwner() ? r.owner_checked_at : r.mgr_checked_at); }).length;
         var alOpen = 0; alLogs.forEach(function(r){ (r.items || []).forEach(function(x){ if (alogNeedsDone(x)) alOpen++; }); });
-        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #795548"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">📒 알바 로그북</div><div class="summary" style="margin-top:0"><a href="#/alog-admin"><div class="n">' + alToday + '</div><div class="l">오늘 쓴 일지</div></a>' +
+        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #795548"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">📒 로그북(업무일지)</div><div class="summary" style="margin-top:0"><a href="#/alog-admin"><div class="n">' + alToday + '</div><div class="l">오늘 쓴 일지</div></a>' +
           '<a href="#/alog-admin"><div class="n' + (alUnchk ? ' danger' : '') + '">' + alUnchk + '</div><div class="l">확인 전 (7일)</div></a>' +
-          '<a href="#/alog-admin"><div class="n' + (alOpen ? ' danger' : '') + '">' + alOpen + '</div><div class="l">처리 안 된 것</div></a></div></div>';
+          '<a href="#/alog-admin"><div class="n' + (alOpen ? ' danger' : '') + '">' + alOpen + '</div><div class="l">처리 안 된 것</div></a></div>';
+        try { var mUn = (await db.select('reports', { gte: { date: addDays(todayStr(), -7) } })).filter(function(r){ return r.date <= todayStr() && !r.read && !((r.items || []).length === 1 && r.items[0] === '휴무'); }).length; if (mUn) html += '<a href="#/alog-admin" style="display:block;margin-top:6px;font-size:13px">👔 매니저 일지 확인 전 <b>' + mUn + '</b>장 (7일)</a>'; } catch(e2){ console.warn('매니저 일지 없음', e2); }
+        html += '</div>';
       }
     } catch(e){ console.warn('알바 로그북 표 없음', e); }
     if (isManager()){
@@ -721,9 +726,11 @@
     if (isOwner()) html += row('#/extra-approve', 'tile-green', '✅', '추가 근무 승인', extraPend ? '⚠ 승인 대기 ' + extraPend + '건' : '직원이 올린 조기 출근·연장 수락');
     html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '근무표보다 더 일했을 때 직접 올리기');
     html += tge();
-    html += grp('알바 로그북');
-    html += row('#/alog', 'tile-yellow', '✍️', '로그북 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
-    if (isManager()) html += row('#/alog-admin', 'tile-orange', '📒', '로그북 확인', '매장별 일지 · 확인 체크 · 처리 안 된 것 · 종류별 모아보기');
+    html += grp('로그북(업무일지)');
+    html += row('#/alog', 'tile-yellow', '✍️', '근무자 일지 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
+    if (isManager()) html += row('#/mlog', 'tile-blue', '👔', '매니저 일지 쓰기', '매니저 로그북과 같은 일지 · 어디서 써도 양쪽에 보임 (알바는 못 봄)');
+    if (isManager()) html += row('#/alog-admin', 'tile-orange', '📒', '로그북 확인', '근무자·매니저 일지 · 확인 체크 · 처리 안 된 것 · 종류별 모아보기');
+    if (isManager()) html += row(LINKS.logbook, 'tile-gray', '📣', '공지·행사·업무요청', '아직 매니저 로그북에 있어요 (새 창)');
     html += tge();
     html += grp('근무표·휴무·대타');
     html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
@@ -5169,7 +5176,7 @@
   routes.alog = async function(params){
     await loadBase();
     var b = session.branchId;
-    if (!b){ app.innerHTML = topbar('알바 로그북', true) + '<div class="note">매장을 골라서 들어와야 쓸 수 있어요. 오른쪽 위 이름을 눌러 매장을 골라 다시 들어와 주세요.</div>'; return; }
+    if (!b){ app.innerHTML = topbar('로그북(업무일지)', true) + '<div class="note">매장을 골라서 들어와야 쓸 수 있어요. 오른쪽 위 이름을 눌러 매장을 골라 다시 들어와 주세요.</div>'; return; }
     var date = /^\d{4}-\d{2}-\d{2}$/.test(params.arg || '') ? params.arg : todayStr();
     if (date > todayStr()) date = todayStr();
     var key = session.staffId + '|' + date;
@@ -5181,7 +5188,7 @@
       alogState = { key: key, date: date, mine: mine, guess: guess, items: [] };
       alogLoadShift(keep || guess || (todays[0] ? todays[0].shift : null));
     } else alogState.mine = mine;
-    var html = topbar('알바 로그북', true, whoChip());
+    var html = topbar('로그북(업무일지)', true, whoChip());
     html += '<div class="muted" style="margin:4px 4px 0">근무 중 손님 요청, 클레임, 품절, 고장, 다음 조에 알릴 것을 적어 주세요. 다이어리·카톡 대신 여기에 쓰면 매니저·사장님이 바로 봐요.</div>';
     html += '<div class="inline" style="margin-top:10px;justify-content:space-between"><b>' + esc(branchName(b)) + ' · ' + esc(fmtDateK(date)) + (date === todayStr() ? ' 오늘' : '') + '</b><input class="in" type="date" id="alog-date" value="' + esc(date) + '" max="' + todayStr() + '" style="width:auto"></div>';
     html += '<div id="alog-form">' + alogFormHtml() + '</div>';
@@ -5314,7 +5321,8 @@
       else html += (r.mgr_checked_at ? '<span class="muted" style="font-size:12px">매니저 ' + esc(staffName(r.mgr_checked_by)) + ' 확인함</span>' : '') + (r.owner_checked_at ? '<span class="muted" style="font-size:12px">· 사장님 확인 ' + esc(fmtDT(r.owner_checked_at)) + '</span>' : '<button class="btn sm primary" data-act="alog-check" data-id="' + esc(r.id) + '">사장님 확인</button>');
       html += '</div></div>';
     });
-    html += '<div style="text-align:center;margin-top:12px"><a class="btn sm" href="#/alog">✍️ 내 일지 쓰기 ›</a></div>';
+    html += await mlogAdminHtml(scope, date);
+    html += '<div style="text-align:center;margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><a class="btn sm" href="#/alog">✍️ 근무자 일지 쓰기 ›</a><a class="btn sm" href="#/mlog">👔 매니저 일지 쓰기 ›</a></div>';
     app.innerHTML = html;
   };
   function alogDoneBtn(r, x, i){
@@ -5349,6 +5357,128 @@
     toast(rows.length + '장 확인했어요'); render();
   }
 
+  // ===== 매니저 업무일지: 예전 매니저 로그북(logbook.bonnoel.com)과 같은 표(reports)를 같이 씀 =====
+  // 어느 쪽에서 써도 양쪽에 똑같이 보임. 매니저·사장님만 열 수 있음(알바 화면엔 안 나옴)
+  var MLOG_ITEMS = 5, MLOG_PHOTOS = 3;
+  var mlogState = { key: null };
+  var mlogBase = null, mlogPickAgain = false;
+  async function loadMlogBase(){
+    var r = await Promise.all([db.select('managers'), db.select('branches', { order: { col: 'order_idx' } })]);
+    mlogBase = { managers: r[0], branches: r[1] };
+    return mlogBase;
+  }
+  function mlogBranchName(slug){ var b = (mlogBase ? mlogBase.branches : []).filter(function(x){ return x.slug === slug; })[0]; return b ? b.name : (slug || ''); }
+  function mlogDocId(dateStr, slug, managerId){ return dateStr.replace(/-/g, '') + '_' + slug + '_' + managerId; }
+  var MLOG_ME_KEY = 'bonnoel_mlog_me_';
+  function mlogMe(){   // 운영 앱 로그인 사람 = 매니저 로그북의 누구? (이름이 같으면 자동, 아니면 한 번 골라 둔 것)
+    if (mlogPickAgain) return null;
+    var list = mlogBase.managers.filter(function(m){ return m.active !== false; });
+    var saved = null; try { saved = localStorage.getItem(MLOG_ME_KEY + session.staffId); } catch(e){}
+    return list.filter(function(m){ return m.id === saved; })[0] || list.filter(function(m){ return m.name === session.name; })[0] || null;
+  }
+  function mlogReadForm(){
+    var st = mlogState; st.items = [];
+    app.querySelectorAll('.mlog-item').forEach(function(el){ st.items.push(el.value); });
+  }
+  function mlogFormHtml(){
+    var st = mlogState, html = '';
+    html += '<div class="form">';
+    st.items.forEach(function(v, i){ html += '<input class="in mlog-item" data-i="' + i + '" value="' + esc(v || '') + '" placeholder="' + (i === 0 ? '예) 왕십리 배달 이즈니버터 수정' : (i + 1) + '번째 할 일·있었던 일') + '">'; });
+    html += '<div class="inline"><button class="btn sm" data-act="mlog-more">+ 줄 추가</button><button class="btn sm" data-act="mlog-off">🌴 오늘 휴무로</button></div>';
+    if (st.photos.length){
+      html += '<div class="inline">';
+      st.photos.forEach(function(p, i){ html += '<span style="position:relative;display:inline-block"><img src="' + p + '" alt="사진" style="width:84px;height:84px;object-fit:cover;border-radius:8px"><span data-act="mlog-unphoto" data-i="' + i + '" style="position:absolute;top:-6px;right:-6px;background:var(--danger);color:#fff;border-radius:50%;width:22px;height:22px;text-align:center;line-height:22px;cursor:pointer">✕</span></span>'; });
+      html += '</div>';
+    }
+    if (st.photos.length < MLOG_PHOTOS) html += '<label class="btn sm" style="cursor:pointer;justify-self:start">📷 사진 붙이기 (' + st.photos.length + '/' + MLOG_PHOTOS + ')<input type="file" accept="image/*" class="hidden" id="mlog-file"></label>';
+    html += '<button class="btn primary block" style="padding:14px" data-act="mlog-save">저장</button></div>';
+    return html;
+  }
+  function mlogRedraw(){ var f = document.getElementById('mlog-form'); if (f) f.innerHTML = mlogFormHtml(); }
+
+  routes.mlog = async function(params){
+    await loadBase();
+    if (!isManager()){ nav('#/alog'); return; }
+    await loadMlogBase();
+    var date = /^\d{4}-\d{2}-\d{2}$/.test(params.arg || '') ? params.arg : todayStr();
+    var me = mlogMe();
+    var html = topbar('매니저 업무일지', true, whoChip());
+    if (!me){
+      html += '<div class="note">매니저 로그북에서 내 이름을 한 번만 골라 주세요. 다음부터는 자동으로 들어가요.</div><div class="card">';
+      mlogBase.managers.filter(function(m){ return m.active !== false; }).forEach(function(m){ html += '<div class="row" data-act="mlog-pick" data-id="' + esc(m.id) + '"><div class="rt"><div class="rtitle">' + esc(m.name) + '</div><div class="rsub">' + esc(mlogBranchName(m.branch_slug)) + '</div></div><div class="chev">›</div></div>'; });
+      html += '</div>';
+      app.innerHTML = html; return;
+    }
+    var id = mlogDocId(date, me.branch_slug, me.id);
+    var rep = (await db.select('reports', { eq: { id: id } }))[0] || null;
+    if (mlogState.key !== id){
+      var items = rep && rep.items && rep.items.length ? rep.items.slice() : [];
+      while (items.length < MLOG_ITEMS) items.push('');
+      mlogState = { key: id, date: date, me: me, rep: rep, items: items, photos: rep && rep.photos ? rep.photos.slice() : [] };
+    }
+    html += '<div class="muted" style="margin:4px 4px 0">예전 매니저 로그북과 같은 일지예요. 여기서 써도, 매니저 로그북에서 써도 양쪽에 똑같이 보여요. 알바는 볼 수 없어요.</div>';
+    html += '<div class="inline" style="margin:10px 0 4px;justify-content:space-between"><b>' + esc(me.name) + ' · ' + esc(mlogBranchName(me.branch_slug)) + '</b><input class="in" type="date" id="mlog-date" value="' + esc(date) + '" style="width:auto"></div>';
+    html += '<div class="muted" style="margin:0 4px 8px">' + esc(fmtDateK(date)) + (date === todayStr() ? ' 오늘' : '') + (rep ? ' · 저장됨 ' + esc(fmtDT(rep.updated_at)) + (rep.read ? ' · ✓ ' + esc(rep.read_by || '') + '님 확인' + (rep.read_comment ? ' "' + esc(rep.read_comment) + '"' : '') : ' · 확인 전') : ' · 아직 안 씀') + ' <span data-act="mlog-unpick" style="cursor:pointer;text-decoration:underline">(내 이름 다시 고르기)</span></div>';
+    html += '<div id="mlog-form">' + mlogFormHtml() + '</div>';
+    var mine = (await db.select('reports', { eq: { manager_id: me.id }, gte: { date: addDays(todayStr(), -14) }, order: { col: 'date', asc: false } })).filter(function(r){ return r.id !== id; });
+    if (mine.length){
+      html += '<div class="group-title">내 지난 일지 (2주)</div><div class="card">';
+      mine.forEach(function(r){ html += mlogCardInner(r, false); });
+      html += '</div>';
+    }
+    html += '<div style="text-align:center;margin-top:12px;display:grid;gap:8px;justify-items:center"><a class="btn sm" href="#/alog-admin">📒 로그북 확인 ›</a><a class="btn sm" href="' + LINKS.logbook + '" target="_blank" rel="noopener">공지·행사·업무요청은 매니저 로그북에서 ›</a></div>';
+    app.innerHTML = html;
+  };
+  function mlogCardInner(r, withRead){
+    var items = (r.items || []).filter(function(x){ return String(x || '').trim(); });
+    var html = '<div class="item" style="display:block"><div class="inline" style="justify-content:space-between"><b>' + esc(fmtDateK(r.date)) + ' · ' + esc(r.manager || '') + ' <span class="badge muted">' + esc(r.branch || '') + '</span></b><span class="muted" style="font-size:12px">' + esc(fmtDT(r.updated_at)) + '</span></div>';
+    html += items.length ? '<ol style="margin:6px 0 0 18px;padding:0">' + items.map(function(x){ return '<li style="white-space:pre-wrap">' + (x === '휴무' ? '🌴 휴무' : esc(x)) + '</li>'; }).join('') + '</ol>' : '<div class="muted">(내용 없음)</div>';
+    if (r.photos && r.photos.length) html += '<div class="inline" style="margin-top:6px">' + r.photos.map(function(p){ return '<img src="' + p + '" alt="사진" data-act="mlog-photo" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer">'; }).join('') + '</div>';
+    html += '<div style="margin-top:6px">' + (r.read ? '<span class="badge ok">✓ ' + esc(r.read_by || '') + '님 확인</span>' + (r.read_comment ? ' <span class="muted">"' + esc(r.read_comment) + '"</span>' : '') : (withRead ? '<button class="btn sm primary" data-act="mlog-read" data-id="' + esc(r.id) + '">확인</button>' : '<span class="badge warn">확인 전</span>')) + '</div>';
+    return html + '</div>';
+  }
+  async function mlogPhotoPicked(file){
+    if (!file) return;
+    mlogReadForm();
+    if (mlogState.photos.length >= MLOG_PHOTOS){ toast('사진은 ' + MLOG_PHOTOS + '장까지예요'); return; }
+    try { var ph = await resizeImage(file, 1000); mlogState.photos.push(ph.dataUrl); } catch(e){ toast(e.message || '사진을 열 수 없어요'); return; }
+    mlogRedraw();
+  }
+  async function mlogSave(){
+    mlogReadForm();
+    var st = mlogState, me = st.me;
+    var items = st.items.map(function(x){ return String(x || '').trim(); }).filter(Boolean);
+    if (!items.length && !st.photos.length){ toast('적은 내용이 없어요'); return; }
+    await db.upsert('reports', [{ id: st.key, date: st.date, branch: mlogBranchName(me.branch_slug), branch_slug: me.branch_slug, manager: me.name, manager_id: me.id, items: items, photos: st.photos, updated_at: Date.now() }], 'id');
+    // 매니저 로그북처럼 "휴무" 줄이 있으면 휴무일에도 넣고, 없어지면 뺌
+    var m = (await db.select('managers', { eq: { id: me.id } }))[0];
+    if (m){
+      var dates = (m.off_dates || []).slice(), has = items.indexOf('휴무') >= 0, k = dates.indexOf(st.date);
+      if (has && k < 0){ dates.push(st.date); await db.update('managers', { id: me.id }, { off_dates: dates }); }
+      else if (!has && k >= 0){ dates.splice(k, 1); await db.update('managers', { id: me.id }, { off_dates: dates }); }
+    }
+    mlogState.key = null;
+    toast('저장했어요. 매니저 로그북에도 똑같이 보여요');
+    render();
+  }
+  async function mlogRead(id){
+    var c = window.prompt('한마디 남기기 (선택 — 칭찬, 질문 등. 비워도 돼요)', ''); if (c === null) return;
+    await db.update('reports', { id: id }, { read: true, read_by: isOwner() ? '대표' : session.name, read_comment: c.trim() || null });
+    toast('확인했어요'); render();
+  }
+  async function mlogAdminHtml(scope, date){   // 로그북 확인 화면 아래쪽: 그날 매니저 일지
+    try {
+      await loadMlogBase();
+      var bname = scope === 'all' ? null : branchName(scope);
+      var reps = (await db.select('reports', { eq: { date: date } })).filter(function(r){ return !bname || r.branch === bname; });
+      reps.sort(function(a, b){ return String(a.branch).localeCompare(String(b.branch), 'ko') || String(a.manager).localeCompare(String(b.manager), 'ko'); });
+      var html = '<div class="group-title">👔 ' + esc(fmtDateK(date)) + ' 매니저 업무일지 ' + reps.length + '장 <span class="muted">(알바는 못 봐요)</span></div><div class="card">';
+      if (!reps.length) html += '<div class="empty">이 날 쓴 매니저 일지가 없어요</div>';
+      reps.forEach(function(r){ html += mlogCardInner(r, true); });
+      return html + '</div>';
+    } catch(e){ console.warn('매니저 일지 없음', e); return ''; }
+  }
+
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
     var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
@@ -5373,7 +5503,16 @@
         case 'pp-import': el.disabled = true; try { await ppImport(); } finally { el.disabled = false; } break;
         case 'pp-set-code': await ppSetCode(id); break;
         case 'pp-set-bonus': await ppSetBonus(); break;
-        // 알바 로그북
+        // 매니저 업무일지 (매니저 로그북과 같은 표)
+        case 'mlog-pick': try { localStorage.setItem(MLOG_ME_KEY + session.staffId, id); } catch(err){} mlogPickAgain = false; mlogState.key = null; render(); break;
+        case 'mlog-unpick': mlogPickAgain = true; mlogState.key = null; render(); break;
+        case 'mlog-more': mlogReadForm(); mlogState.items.push(''); mlogRedraw(); break;
+        case 'mlog-off': mlogReadForm(); if (mlogState.items.indexOf('휴무') < 0) mlogState.items.unshift('휴무'); mlogRedraw(); break;
+        case 'mlog-unphoto': mlogReadForm(); mlogState.photos.splice(+el.getAttribute('data-i'), 1); mlogRedraw(); break;
+        case 'mlog-save': el.disabled = true; try { await mlogSave(); } finally { el.disabled = false; } break;
+        case 'mlog-read': await mlogRead(id); break;
+        case 'mlog-photo': { var mw = window.open(''); if (mw) mw.document.write('<img src="' + el.getAttribute('src') + '" style="max-width:100%">'); break; }
+        // 로그북(업무일지)
         case 'alog-shift': alogRead(); alogLoadShift(id); alogRedraw(); break;
         case 'alog-cat': { alogRead(); var ai = +el.getAttribute('data-i'); if (alogState.items[ai]) alogState.items[ai].cat = id; alogRedraw(); var ta = app.querySelector('.alog-text[data-i="' + ai + '"]'); if (ta) ta.focus(); break; }
         case 'alog-add': alogRead(); alogState.items.push({ cat: null, text: '' }); alogRedraw(); break;
@@ -5661,6 +5800,8 @@
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'pp-use-file'){ await ppUsePhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('alog-file')){ await alogPhotoPicked(+e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'mlog-file'){ await mlogPhotoPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.id === 'mlog-date'){ if (e.target.value) nav('#/mlog/' + e.target.value); return; }
     if (e.target.id === 'alog-date'){ if (e.target.value) nav('#/alog/' + e.target.value); return; }
     if (e.target.id === 'alog-adate'){ if (e.target.value) nav('#/alog-admin/' + (isOwner() ? (current.params.arg || 'all') : session.branchId) + '/' + e.target.value); return; }
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
