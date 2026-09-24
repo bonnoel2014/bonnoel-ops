@@ -1,4 +1,5 @@
 {
+  "id": "/prepay",
   "name": "본노엘 선결제",
   "short_name": "선결제",
   "start_url": "./#/prepay",
