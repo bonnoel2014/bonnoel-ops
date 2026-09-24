@@ -728,9 +728,8 @@
     html += tge();
     html += grp('로그북(업무일지)');
     html += row('#/alog', 'tile-yellow', '✍️', '근무자 일지 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
-    if (isManager()) html += row('#/mlog', 'tile-blue', '👔', '매니저 일지 쓰기', '매니저 로그북과 같은 일지 · 어디서 써도 양쪽에 보임 (알바는 못 봄)');
     if (isManager()) html += row('#/alog-admin', 'tile-orange', '📒', '로그북 확인', '근무자·매니저 일지 · 확인 체크 · 처리 안 된 것 · 종류별 모아보기');
-    if (isManager()) html += row(LINKS.logbook, 'tile-gray', '📣', '공지·행사·업무요청', '아직 매니저 로그북에 있어요 (새 창)');
+    if (isManager()) html += row(LINKS.logbook, 'tile-blue', '👔', '매니저 일지 쓰기', '매니저 로그북 · 업무일지·공지사항·행사·업무요청 (새 창, 알바는 안 보임)');
     html += tge();
     html += grp('근무표·휴무·대타');
     html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
@@ -5346,7 +5345,7 @@
       html += '</div></div>';
     });
     html += await mlogAdminHtml(scope, date);
-    html += '<div style="text-align:center;margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><a class="btn sm" href="#/alog">✍️ 근무자 일지 쓰기 ›</a><a class="btn sm" href="#/mlog">👔 매니저 일지 쓰기 ›</a></div>';
+    html += '<div style="text-align:center;margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><a class="btn sm" href="#/alog">✍️ 근무자 일지 쓰기 ›</a><a class="btn sm" href="' + LINKS.logbook + '" target="_blank" rel="noopener">👔 매니저 일지 쓰기 ›</a></div>';
     app.innerHTML = html;
   };
   function alogDoneBtn(r, x, i){
