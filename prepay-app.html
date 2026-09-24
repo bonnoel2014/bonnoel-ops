@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>본노엘 선결제</title>
+<meta name="theme-color" content="#af4c60">
+<link rel="manifest" href="manifest-prepay.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="본노엘 선결제">
+<style>
+  html,body{ margin:0; height:100%; background:#fffdfd; display:flex; align-items:center; justify-content:center; font-family:"Noto Sans KR",-apple-system,sans-serif; color:#9b8b8a; }
+</style>
+</head>
+<body>
+불러오는 중…
+<script>
+  // 이 페이지는 "선결제" 전용 홈 화면 아이콘의 시작 주소예요.
+  // 실제 화면은 운영 앱 안(#/prepay)에 있어서, 여기서는 바로 그리로 넘겨줘요.
+  location.replace('index.html' + location.search + '#/prepay');
+</script>
+</body>
+</html>

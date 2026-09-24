@@ -513,13 +513,6 @@
     var h = location.hash.replace(/^#\/?/, '') || 'home';
     var parts = h.split('/');
     var route = parts[0]; var params = { arg: parts[1], arg2: parts[2] };
-    // 선결제(#/prepay)를 열어 둔 상태에서 "홈 화면에 추가"하면, 그 아이콘이 매번 선결제로 바로 열리게
-    // (매니페스트의 start_url로 열리기 때문에 route에 따라 매니페스트 자체를 바꿔치기 해야 함)
-    try {
-      var mf = document.getElementById('app-manifest');
-      var wantMf = (route === 'prepay' || route === 'prepay-c') ? 'manifest-prepay.json' : 'manifest.json';
-      if (mf && mf.getAttribute('href') !== wantMf) mf.setAttribute('href', wantMf);
-    } catch(e){}
     if (!session && route !== 'login' && route !== 'clock' && route !== 'sign'){
       if (route === 'prepay' || route === 'prepay-c') loginReturnTo = '#/' + h;   // 매장폰 바로가기로 들어오면 로그인 뒤 홈 말고 여기로
       nav('#/login'); return;

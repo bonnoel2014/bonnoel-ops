@@ -1,9 +1,9 @@
 {
-  "id": "/prepay",
+  "id": "/prepay-app.html",
   "name": "본노엘 선결제",
   "short_name": "선결제",
-  "start_url": "./#/prepay",
-  "scope": "./",
+  "start_url": "./prepay-app.html",
+  "scope": "./prepay-app.html",
   "display": "standalone",
   "background_color": "#fffdfd",
   "theme_color": "#af4c60",
