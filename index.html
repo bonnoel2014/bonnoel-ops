@@ -610,6 +610,7 @@
   }
 
   // ===== 화면: 홈 =====
+  var homeGroupOpen = {};   // 폴더(그룹)별 펼침 상태. 기본은 접힘 — 스크롤을 줄이려고. 탭 하나 펼치면 이 세션 동안은 유지됨.
   routes.home = async function(){
     await loadBase();
     var html = topbar('본노엘 운영', false, whoChip());
@@ -694,20 +695,6 @@
                 '<a href="#/buy-list"><div class="n" style="font-size:18px">' + won(bs.disc) + '<span style="font-size:12px">원</span></div><div class="l">할인 합계</div></a></div>' +
                 (buysToday.length ? '<a href="#/buy-list" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">' + buysToday.slice(0, 6).map(function(x){ return esc(branchName(x.branch_id)) + ' ' + esc(buyerLabel(x)); }).join(' · ') + (buysToday.length > 6 ? ' 외 ' + (buysToday.length - 6) + '건' : '') + '</a>' : '') + '</div>';
       } catch(e){ console.warn('직원 구매 테이블 없음', e); }
-      try { // 청년지원금 표(supabase-migration-subsidy.sql)가 아직 없어도 홈은 열리게
-        if (isOwner()){
-          var scEmp = await db.select('ops_subsidy_employees'), scCases = await db.select('ops_subsidy_cases');
-          var scActive = {}; scEmp.forEach(function(e){ if (e.active !== false) scActive[e.id] = true; });
-          var scDue = 0, scRevision = 0, scYm = monthOf(todayStr());
-          scCases.forEach(function(c){
-            if (!scActive[c.employee_id]) return;
-            if (c.status === 'revision') scRevision++;
-            else if ((c.status === 'waiting' || c.status === 'submitted') && c.due_on && monthOf(c.due_on) === scYm) scDue++;
-          });
-          html += '<div class="summary" style="grid-template-columns:1fr 1fr;margin-top:8px"><a href="#/subsidy"><div class="n' + (scDue ? ' danger' : '') + '">' + scDue + '</div><div class="l">🧑‍💼 이번 달 청년지원금 신청 예정</div></a>' +
-                  '<a href="#/subsidy"><div class="n' + (scRevision ? ' danger' : '') + '">' + scRevision + '</div><div class="l">수정요청 중</div></a></div>';
-        }
-      } catch(e){ console.warn('청년지원금 표 없음', e); }
     }
     // 묶음 안에 보이는 줄이 하나도 없으면(권한 때문에 다 숨겨지면) 제목만 남지 않게 통째로 안 그림
     // → 묶음 제목은 들고 있다가 첫 줄이 생길 때 같이 붙인다
@@ -716,7 +703,7 @@
       var head = grpPend || ''; grpPend = null;
       return head + '<a class="row' + (disabled ? ' disabled' : '') + '" href="' + href + '"' + (disabled ? ' data-act="soon"' : '') + (href.indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + tileBg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">' + (disabled ? '<span class="badge muted">준비 중</span>' : '›') + '</div></a>';
     }
-    function grp(title){ grpPend = '<div class="tg"><div class="group-title" data-act="tg" style="cursor:pointer">▼ ' + title + '</div><div class="card">'; return ''; }
+    function grp(title){ var open = !!homeGroupOpen[title]; grpPend = '<div class="tg"><div class="group-title" data-act="tg" data-grp="' + esc(title) + '" style="cursor:pointer">' + (open ? '▼' : '▶') + ' ' + esc(title) + '</div><div class="card' + (open ? '' : ' hidden') + '">'; return ''; }
     function tge(){ if (grpPend){ grpPend = null; return ''; } return '</div></div>'; }
     var extraPend = 0;
     if (isOwner()){ try { extraPend = (await db.select('ops_attendance_extras', { eq: { status: 'requested' } })).length + (await db.select('ops_attendance', { eq: { fill_status: 'requested' } })).length; } catch(e){ console.warn('추가 근무 표 없음', e); } }
@@ -3831,8 +3818,9 @@
     { id: 'transfer', name: '계좌이체', rate: 30 },
     { id: 'card', name: '카드', rate: 20 },
     { id: 'stale50', name: '할인빵(전날) 50%', rate: 50 },
-    { id: 'farewell', name: '퇴사빵', rate: 0 },
-    { id: 'other', name: '기타 (할인 없음)', rate: 0 }
+    { id: 'farewell', name: '퇴사빵', rate: 100 },
+    { id: 'gift', name: '실장님 선물', rate: 100 },
+    { id: 'other', name: '기타 (100% 할인)', rate: 100 }
   ];
   function buyMethod(id){ return BUY_METHODS.filter(function(m){ return m.id === id; })[0] || null; }
   function buyMethodName(id){ var m = buyMethod(id); return m ? m.name : (id || '?'); }
@@ -3939,7 +3927,7 @@
     var html = topbar('직원 구매', true, whoChip());
     html += '<div class="form">';
     if (!st.photo){
-      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 <b>30%</b><br>카드 <b>20%</b><br>전날 남은 할인빵 <b>50%</b></div>';
+      html += '<div class="note ok" style="margin-top:0">직원 할인 (전 매장 공통)<br>현금 · 계좌이체 <b>30%</b><br>카드 <b>20%</b><br>전날 남은 할인빵 <b>50%</b><br>퇴사빵 · 실장님 선물 · 기타 <b>100%</b> (무료)</div>';
       html += '<label class="btn primary block" style="padding:18px;font-size:17px">📷 영수증 사진 찍기 / 고르기<input type="file" accept="image/*" id="buy-file" class="hidden"></label>';
       html += '<div class="muted">계산한 영수증 사진을 올리면 날짜·정가·할인·낸 금액을 자동으로 읽어요. 틀리면 고치고 저장하면 돼요. 사진이 있으면 증빙으로 남아요. 영수증 한 장에 한 번.</div>';
       html += '<div class="muted">화면 캡처(스크린샷)를 복사해 뒀으면 파일로 안 저장해도 돼요. 이 화면에서 <b>Ctrl+V</b> 눌러서 바로 붙여넣기 하세요.</div>';
@@ -5710,7 +5698,7 @@
         case 'exp-toggle': document.getElementById('ex-' + id).classList.toggle('hidden'); break;
         case 'exp-photo': { var pu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(pu, '_blank'); break; }
         case 'exp-update': await expUpdate(id); break;
-        case 'tg': { var tg = el.closest('.tg'); if (tg) { tg.querySelector('.card').classList.toggle('hidden'); el.textContent = el.textContent.replace(/^▼|^▶/, el.textContent[0] === '▼' ? '▶' : '▼'); } break; }
+        case 'tg': { var gname = el.getAttribute('data-grp') || el.textContent.replace(/^[▼▶]\s*/, ''); var nowOpen = !homeGroupOpen[gname]; homeGroupOpen[gname] = nowOpen; var tg = el.closest('.tg'); if (tg) { tg.querySelector('.card').classList.toggle('hidden', !nowOpen); el.textContent = (nowOpen ? '▼ ' : '▶ ') + gname; } break; }
         case 'exp-del': if (!isManager()){ toast('삭제할 권한이 없어요'); } else if (window.confirm('이 지출을 지울까요? (사진도 같이 지워져요)')){ var pp = el.getAttribute('data-path'); await db.remove('ops_expenses', { id: id }); if (pp) db.removeFile('receipts', pp).catch(function(){}); toast('지웠어요'); render(); } break;
         case 'exp-csv': downloadCsv(); break;
         // 직원 구매
