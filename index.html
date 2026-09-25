@@ -3878,7 +3878,12 @@
   }
   async function buyProofPicked(file){
     if (!file) return;
-    try { buyState.payProof = await resizeImage(file, 1200); toast('결제 증빙 사진을 담았어요'); render(); }
+    try {
+      buyState.payProof = await resizeImage(file, 1200); toast('결제 증빙 사진을 담았어요');
+      // 화면 전체를 다시 그리면 이미 적은 금액·날짜·이름이 지워지므로 증빙 칸만 바꿔 끼움
+      var box = document.getElementById('buy-payproof-box'), methodEl = document.getElementById('buy-method');
+      if (box && methodEl) box.outerHTML = buyProofHtml(methodEl.value); else render();
+    }
     catch(e){ toast(e.message || '사진을 열 수 없어요'); }
   }
   function buyProofHtml(methodId){
