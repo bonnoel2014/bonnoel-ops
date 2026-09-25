@@ -327,7 +327,7 @@
     items.forEach(function(it){ ['b1','b2','b3','b4'].forEach(function(b){ ib.push({ item_id: it.id, branch_id: b, target_qty: targets[it.id], active: true }); }); });
     var wk = daysAgo(2);
     return {
-      manual_branches: [ {id:'b1',name:'성수점',sort_order:1}, {id:'b2',name:'왕십리점',sort_order:2}, {id:'b3',name:'중계점',sort_order:3}, {id:'b4',name:'답십리점',sort_order:4} ],
+      manual_branches: [ {id:'b1',name:'성수점',sort_order:1}, {id:'b4',name:'답십리점',sort_order:2}, {id:'b3',name:'중계점',sort_order:3}, {id:'b2',name:'왕십리점',sort_order:4} ],
       manual_staff: [
         {id:'o1',name:'사장님',branch_id:null,role:'owner',pin:'0000',active:true},
         {id:'m1',name:'매니저 M',branch_id:'b2',role:'manager',pin:'1111',active:true},
@@ -3869,7 +3869,15 @@
     if (current.route === 'buy') render();
   }
   // 계좌이체·카드는 "이체했다/카드로 냈다"는 거짓말을 막기 위해 결제 증빙(이체 완료 화면·카드 승인 문자 캡처)을 따로 받음
+  // 알바만 필수 — 사장님·매니저는 자기가 직접 확인하고 넣는 것이므로 증빙 없이도 등록 가능
   function buyNeedsProof(methodId){ return methodId === 'transfer' || methodId === 'card'; }
+  function buyProofRequired(methodId){ return buyNeedsProof(methodId) && !isManager(); }
+  // 내역 화면에서 증빙 없음 경고: 그 건을 실제로 입력한 사람(entered_by)이 매니저·사장님이면 증빙 없어도 경고 안 함
+  function buyProofMissing(x){
+    if (!buyNeedsProof(x.pay_method) || x.pay_proof_path) return false;
+    var enteredStaff = base.staff.filter(function(s){ return s.id === x.entered_by; })[0];
+    return !(enteredStaff && (enteredStaff.role === 'manager' || enteredStaff.role === 'owner'));
+  }
   async function buyProofPicked(file){
     if (!file) return;
     try { buyState.payProof = await resizeImage(file, 1200); toast('결제 증빙 사진을 담았어요'); render(); }
@@ -3877,10 +3885,10 @@
   }
   function buyProofHtml(methodId){
     var p = buyState.payProof;
-    var html = '<div style="margin-top:8px"' + (buyNeedsProof(methodId) ? '' : ' class="hidden"') + ' id="buy-payproof-box"><label>결제 증빙 (이체 완료 화면 · 카드 승인 문자 캡처) <span style="color:var(--danger)">필수</span></label>';
+    var html = '<div style="margin-top:8px"' + (buyNeedsProof(methodId) ? '' : ' class="hidden"') + ' id="buy-payproof-box"><label>결제 증빙 (이체 완료 화면 · 카드 승인 문자 캡처) ' + (isManager() ? '<span class="muted">(사장님·매니저는 선택)</span>' : '<span style="color:var(--danger)">필수</span>') + '</label>';
     if (p && p.dataUrl) html += '<img src="' + p.dataUrl + '" alt="결제 증빙" style="width:100%;max-height:180px;object-fit:contain;border-radius:8px;background:var(--surface-sunken);margin-bottom:6px">';
     html += '<label class="btn sm' + (p ? '' : ' primary') + '" style="cursor:pointer">' + (p ? '📷 다른 사진으로' : '📷 증빙 사진 올리기') + '<input type="file" accept="image/*" id="buy-proof-file" class="hidden"></label>';
-    html += '<div class="muted">계좌이체 완료 화면 또는 카드 결제 승인 문자를 캡처해서 올려 주세요.</div></div>';
+    html += '<div class="muted">계좌이체 완료 화면 또는 카드 결제 승인 문자를 캡처해서 올려 주세요. 화면 캡처를 복사해 뒀으면 파일로 안 저장해도 돼요 — 이 칸이 보이는 상태에서 <b>Ctrl+V</b>로 바로 붙여넣기 하세요.</div></div>';
     return html;
   }
   // 자동으로 읽은 값 → 결제 방식·매장 추정
@@ -3998,7 +4006,7 @@
     if (paid < 0 || disc < 0){ toast('금액이 이상해요. 정가·할인·낸 금액을 확인해 주세요'); return; }
     var typedName = isManager() ? v('buy-staff-name').trim() : '';
     if (isManager() && !typedName){ toast('구매한 사람 이름을 넣어 주세요'); return; }
-    if (buyNeedsProof(method.id) && !(buyState.payProof && buyState.payProof.blob)){ toast('계좌이체·카드는 결제 증빙 사진을 올려 주세요'); return; }
+    if (buyProofRequired(method.id) && !(buyState.payProof && buyState.payProof.blob)){ toast('계좌이체·카드는 결제 증빙 사진을 올려 주세요'); return; }
     var path = null;
     if (buyState.photo && buyState.photo.blob){
       path = 'staff/' + branchId + '/' + date.slice(0, 7) + '/' + uid() + '.jpg';
@@ -4051,7 +4059,7 @@
       var rows = list.filter(function(x){ return x.bought_on === d; }), ds = buySums(rows);
       html += '<div class="item" style="background:var(--surface-sunken)"><div class="iname"><div class="t">' + esc(fmtDateK(d)) + (d === todayStr() ? ' <span class="badge ok">오늘</span>' : '') + '</div><div class="s">' + ds.n + '건 · 정가 ' + won(ds.list) + '원</div></div><span class="badge danger">−' + won(ds.disc) + '</span><b style="white-space:nowrap">' + won(ds.paid) + '</b></div>';
       rows.forEach(function(x){
-        html += '<div class="item" data-act="buy-toggle" data-id="' + esc(x.id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(buyerLabel(x)) + (scope === 'all' ? ' · ' + esc(branchName(x.branch_id)) : '') + '</div><div class="s">' + esc(x.items || '(품목 없음)') + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '</div></div><span class="badge muted">−' + won(x.discount) + '</span>' + (x.photo_path ? '<span title="영수증 사진 있음">📷</span>' : '') + (x.pay_proof_path ? '<span title="결제 증빙 있음">💳</span>' : (buyNeedsProof(x.pay_method) ? '<span title="결제 증빙 없음">⚠️</span>' : '')) + '<b style="white-space:nowrap">' + won(x.paid) + '</b></div>';
+        html += '<div class="item" data-act="buy-toggle" data-id="' + esc(x.id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(buyerLabel(x)) + (scope === 'all' ? ' · ' + esc(branchName(x.branch_id)) : '') + '</div><div class="s">' + esc(x.items || '(품목 없음)') + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '</div></div><span class="badge muted">−' + won(x.discount) + '</span>' + (x.photo_path ? '<span title="영수증 사진 있음">📷</span>' : '') + (x.pay_proof_path ? '<span title="결제 증빙 있음">💳</span>' : (buyProofMissing(x) ? '<span title="결제 증빙 없음">⚠️</span>' : '')) + '<b style="white-space:nowrap">' + won(x.paid) + '</b></div>';
         html += '<div class="expand hidden" id="bx-' + esc(x.id) + '" style="padding-left:14px">' +
           '<div class="grid2"><div><label class="muted">날짜</label><input class="in" type="date" id="bd-' + esc(x.id) + '" value="' + esc(x.bought_on) + '"></div><div><label class="muted">매장</label><select class="in" id="bb-' + esc(x.id) + '">' + buyBranchOptions(x.branch_id) + '</select></div></div>' +
           '<div style="margin-top:8px"><label class="muted">구매한 사람</label><input class="in" id="bn-' + esc(x.id) + '" list="bndl-' + esc(x.id) + '" value="' + esc(buyerLabel(x)) + '"><datalist id="bndl-' + esc(x.id) + '">' + base.staff.filter(function(s){ return s.active !== false; }).map(function(s){ return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist><div class="muted">등록 안 된 사람(베이커 등)은 이름만 써도 돼요.</div></div>' +
@@ -4060,7 +4068,7 @@
           '<div class="grid2" style="margin-top:8px"><div><label class="muted">낸 금액</label><input class="in" type="number" id="bp-' + esc(x.id) + '" value="' + esc(x.paid) + '"></div><div><label class="muted">산 것</label><input class="in" id="bi-' + esc(x.id) + '" value="' + esc(x.items || '') + '"></div></div>' +
           '<div class="note danger hidden" id="bw-' + esc(x.id) + '"></div>' +
           '<div style="margin-top:8px"><label class="muted">메모</label><input class="in" id="bo-' + esc(x.id) + '" value="' + esc(x.memo || '') + '"></div>' +
-          '<div class="inline" style="margin-top:10px">' + (x.photo_path ? '<button class="btn sm" data-act="buy-photo" data-path="' + esc(x.photo_path) + '">📷 영수증 보기</button>' : '') + (x.pay_proof_path ? '<button class="btn sm" data-act="buy-photo" data-path="' + esc(x.pay_proof_path) + '">💳 결제 증빙 보기</button>' : (buyNeedsProof(x.pay_method) ? '<span class="badge danger">결제 증빙 없음</span>' : '')) + '<button class="btn sm primary" data-act="buy-update" data-id="' + esc(x.id) + '">저장</button><span style="flex:1"></span><button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">삭제</button></div></div>';
+          '<div class="inline" style="margin-top:10px">' + (x.photo_path ? '<button class="btn sm" data-act="buy-photo" data-path="' + esc(x.photo_path) + '">📷 영수증 보기</button>' : '') + (x.pay_proof_path ? '<button class="btn sm" data-act="buy-photo" data-path="' + esc(x.pay_proof_path) + '">💳 결제 증빙 보기</button>' : (buyProofMissing(x) ? '<span class="badge danger">결제 증빙 없음</span>' : '')) + '<button class="btn sm primary" data-act="buy-update" data-id="' + esc(x.id) + '">저장</button><span style="flex:1"></span><button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">삭제</button></div></div>';
       });
     });
       html += '</div>';
@@ -4092,7 +4100,7 @@
     }
     html += '<div class="muted" style="margin-top:10px">직원 할인: 현금·계좌이체 30%, 카드 20%. 계좌이체·카드는 결제 증빙(💳)이 있어야 해요 — ⚠️는 증빙이 없는 건이에요. 줄을 누르면 고칠 수 있어요. CSV는 이 달 구매가 한 줄씩 다 들어가요.</div>';
     app.innerHTML = html;
-    app._csv = [['날짜', '매장', '이름', '결제 방식', '할인율', '정가', '할인', '낸 금액', '산 것', '메모', '영수증', '결제증빙']].concat(list.slice().sort(function(a, b){ return a.bought_on < b.bought_on ? -1 : 1; }).map(function(x){ return [x.bought_on, branchName(x.branch_id), buyerLabel(x), buyMethodName(x.pay_method), x.discount_rate + '%', x.list_total, x.discount, x.paid, x.items || '', x.memo || '', x.photo_path ? 'Y' : '', x.pay_proof_path ? 'Y' : (buyNeedsProof(x.pay_method) ? '없음' : '')]; }));
+    app._csv = [['날짜', '매장', '이름', '결제 방식', '할인율', '정가', '할인', '낸 금액', '산 것', '메모', '영수증', '결제증빙']].concat(list.slice().sort(function(a, b){ return a.bought_on < b.bought_on ? -1 : 1; }).map(function(x){ return [x.bought_on, branchName(x.branch_id), buyerLabel(x), buyMethodName(x.pay_method), x.discount_rate + '%', x.list_total, x.discount, x.paid, x.items || '', x.memo || '', x.photo_path ? 'Y' : '', x.pay_proof_path ? 'Y' : (buyProofMissing(x) ? '없음' : '')]; }));
     app._csvName = '직원구매_' + (scope === 'all' ? '전체' : branchName(scope)) + '_' + ym + '.csv';
   };
   async function buyUpdate(id){
@@ -5862,7 +5870,7 @@
     else if (route === 'expense') await expPhotoPicked(file);
     else if (route === 'transfer') await tfPhotoPicked(file);
     else if (route === 'prepay-c') await ppUsePhotoPicked(file);
-    else await buyPhotoPicked(file);
+    else if (route === 'buy'){ if (buyState.photo) await buyProofPicked(file); else await buyPhotoPicked(file); }
   });
   app.addEventListener('input', function(e){
     if (e.target.classList.contains('birth')){ fmtBirthTyping(e.target); return; }
