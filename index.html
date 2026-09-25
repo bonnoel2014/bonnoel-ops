@@ -684,7 +684,7 @@
         var ymNow = monthOf(todayStr()), mr = monthRange(ymNow);
         var exps = (await db.select('ops_expenses', { gte: { spent_on: mr.from } })).filter(function(x){ return x.spent_on <= mr.to && (isOwner() || x.branch_id === session.branchId); });
         var expSum = 0; exps.forEach(function(x){ expSum += num(x.amount) || 0; });
-        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #9C27B0"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">💳 카드·급여</div><div class="summary" style="grid-template-columns:1fr 1fr;margin-top:0"><a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n" style="font-size:20px">' + won(expSum) + '<span style="font-size:13px">원</span></div><div class="l">이번 달 카드 지출' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
+        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #9C27B0"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">💳 법인카드</div><div class="summary" style="grid-template-columns:1fr 1fr;margin-top:0"><a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n" style="font-size:20px">' + won(expSum) + '<span style="font-size:13px">원</span></div><div class="l">이번 달 카드 지출' + (isOwner() ? '' : ' (우리 매장)') + '</div></a>' +
                 '<a href="#/expense-list/' + (isOwner() ? 'all' : session.branchId) + '/' + ymNow + '"><div class="n">' + exps.length + '</div><div class="l">영수증 ' + exps.filter(function(x){ return !x.statement_key; }).length + '장 미대조</div></a></div></div>';
       } catch(e){ console.warn('카드 지출 테이블 없음', e); }
       try { // 직원 구매 테이블(supabase-migration-staffbuy.sql)이 아직 없어도 홈은 열리게
@@ -732,7 +732,7 @@
     html += row('#/transfer', 'tile-purple', '🔁', '점간 이동', '매장끼리 물건 주고받기');
     if (isManager()) html += row('#/items', 'tile-gray', '⚙️', '비품 설정', '품목·단위·적정재고');
     html += tge();
-    html += grp(isManager() ? '카드·급여' : '법인카드·직원구매');
+    html += grp('법인카드·직원구매');
     html += row('#/expense', 'tile-orange', '🧾', '법인카드 영수증', '법인카드 영수증 사진 → 자동으로 읽어서 정리');
     if (isManager()) html += row('#/expense-list', 'tile-purple', '💳', '법인카드 지출', '월별·지점별 지출 목록 · 합계 · 명세서 대조');
     if (isOwner()) html += row('#/expense-cards', 'tile-gray', '💳', '카드 설정', '법인카드 끝 4자리·지점 (사장님만)');
