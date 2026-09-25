@@ -4025,7 +4025,15 @@
     var buyerMatch = typedName ? base.staff.filter(function(s){ return s.active !== false && s.name === typedName; })[0] : null;
     var buyerId = isManager() ? (buyerMatch ? buyerMatch.id : null) : session.staffId;
     var buyerName = isManager() ? typedName : null;
-    await db.insert('ops_staff_purchases', { bought_on: date, staff_id: buyerId, buyer_name: buyerName, branch_id: branchId, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: v('buy-items').trim() || null, memo: v('buy-memo').trim() || null, photo_path: path, pay_proof_path: proofPath, ocr: buyState.ocr || null, entered_by: session.staffId, created_at: nowIso(), updated_at: nowIso() });
+    var buyRow = { bought_on: date, staff_id: buyerId, buyer_name: buyerName, branch_id: branchId, pay_method: method.id, discount_rate: method.rate, list_total: list, discount: disc, paid: paid, items: v('buy-items').trim() || null, memo: v('buy-memo').trim() || null, photo_path: path, pay_proof_path: proofPath, ocr: buyState.ocr || null, entered_by: session.staffId, created_at: nowIso(), updated_at: nowIso() };
+    try { await db.insert('ops_staff_purchases', buyRow); }
+    catch(e){
+      // supabase-migration-staffbuy3.sql을 아직 안 돌려서 pay_proof_path 칸이 없으면, 증빙 경로는 메모에 붙여서라도 저장
+      if (!/pay_proof_path/.test(e.message || '')) throw e;
+      delete buyRow.pay_proof_path;
+      if (proofPath) buyRow.memo = (buyRow.memo ? buyRow.memo + ' / ' : '') + '결제증빙: ' + proofPath;
+      await db.insert('ops_staff_purchases', buyRow);
+    }
     buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null, payProof: null };
     toast('저장했어요 · ' + (buyerName && buyerName !== session.name ? buyerName + ' · ' : '') + branchName(branchId) + ' · 할인 ' + won(disc) + '원, 낸 금액 ' + won(paid) + '원');
     render();
