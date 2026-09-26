@@ -51,7 +51,7 @@ function encodeSubject(s: string): string {
   return " " + words.map((w) => `=?UTF-8?B?${btoa(String.fromCharCode(...enc.encode(w)))}?=`).join(" ");
 }
 // 첨부파일 이름은 영문만 (라이브러리가 파일명을 따옴표 없이 써서 한글·공백이 깨짐)
-const FILE_NAMES: Record<string, string> = { contract: "1_contract", privacy: "2_privacy_consent", pledge: "3_pledge", cctv: "4_cctv_consent", uniform: "5_uniform", guardian: "6_guardian_consent" };
+const FILE_NAMES: Record<string, string> = { contract: "1_contract", privacy: "2_privacy_consent", pledge: "3_pledge", cctv: "4_cctv_consent", uniform: "5_uniform", guardian: "6_guardian_consent", cert_employment: "employment_certificate", cert_career: "career_certificate" };
 function kst(d = new Date()): string {
   const t = new Date(d.getTime() + 9 * 3600 * 1000);
   return t.toISOString().slice(0, 16).replace("T", " ");
@@ -101,9 +101,17 @@ Deno.serve(async (req) => {
     attachments.push({ filename: `bonnoel_${FILE_NAMES[r.doc_key] || r.doc_key}_${dateK}.pdf`, content: b64(bytes), contentType: "application/pdf", encoding: "base64" });
   }
 
-  const subject = `[본노엘] 근로계약서 등 입사 서류 교부 - ${staffName} (${dateK})`;
+  // 재직·경력증명서(법인 서류)는 제목·본문을 따로
+  const isCert = sendable.every((r) => String(r.doc_key).startsWith("cert_"));
+  const certTitle = sendable.map((r) => r.doc_title).join(", ");
+  const subject = isCert ? `[본노엘] ${certTitle} 발급 - ${staffName}` : `[본노엘] 근로계약서 등 입사 서류 교부 - ${staffName} (${dateK})`;
   const list = sendable.map((r) => `<li>${esc(r.doc_title)}${r.signed_at ? ` <span style="color:#777">(서명 ${kst(new Date(r.signed_at))})</span>` : ""}</li>`).join("");
-  const html = `<div style="font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:15px;line-height:1.6;color:#222;max-width:560px">
+  const html = isCert ? `<div style="font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:15px;line-height:1.6;color:#222;max-width:560px">
+<p><b>${esc(staffName)}</b> 님, 안녕하세요. 주식회사 본노엘입니다.</p>
+<p>신청하신 <b>${esc(certTitle)}</b>를 PDF로 첨부해 드립니다. 서류 아래의 QR을 찍으면 제출처에서 진짜 서류인지 확인할 수 있어요.</p>
+<p style="font-size:13px;color:#666">발급 일시: ${esc(kst())} (한국 시간)<br>내용이 틀렸으면 매장 매니저나 대표(${esc(cc || "본노엘")})에게 말씀해 주세요.</p>
+<p style="font-size:13px;color:#666">주식회사 본노엘 · 서울시 동대문구 전농로75-18 · 대표 손성필</p>
+</div>` : `<div style="font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:15px;line-height:1.6;color:#222;max-width:560px">
 <p><b>${esc(staffName)}</b> 님, 안녕하세요. 주식회사 본노엘입니다.</p>
 <p>오늘 전자서명하신 아래 서류를 PDF로 첨부해 드립니다. 이 메일은 근로기준법 제17조 제2항에 따른 근로계약서의 서면(전자문서) 교부입니다. 파일을 잘 보관해 주세요.</p>
 <ul>${list}</ul>
@@ -111,7 +119,7 @@ Deno.serve(async (req) => {
 내용에 궁금한 점이 있으면 매장 매니저나 대표(${esc(cc || "본노엘")})에게 말씀해 주세요.</p>
 <p style="font-size:13px;color:#666">주식회사 본노엘 · 서울시 동대문구 전농로75-18 · 대표 손성필</p>
 </div>`;
-  const text = `${staffName} 님, 주식회사 본노엘입니다. 오늘 전자서명하신 입사 서류를 PDF로 첨부해 드립니다 (근로기준법 제17조에 따른 서면 교부). 서류: ${sendable.map((r) => r.doc_title).join(", ")}`;
+  const text = isCert ? `${staffName} 님, 주식회사 본노엘입니다. 신청하신 ${certTitle}를 PDF로 첨부해 드립니다.` : `${staffName} 님, 주식회사 본노엘입니다. 오늘 전자서명하신 입사 서류를 PDF로 첨부해 드립니다 (근로기준법 제17조에 따른 서면 교부). 서류: ${sendable.map((r) => r.doc_title).join(", ")}`;
 
   try {
     const provider = (Deno.env.get("MAIL_PROVIDER") || "gmail").toLowerCase();

@@ -195,6 +195,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="docs-templates.js"></script>
+<script src="corp-templates.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script>
 (function(){
   'use strict';
@@ -248,7 +250,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error('선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -298,7 +300,7 @@
       update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
       upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
       remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); },
-      rpc: async function(fn, args){ return clone(ppMemRpc(tables, fn, args || {})); },
+      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
@@ -330,10 +332,10 @@
       manual_branches: [ {id:'b1',name:'성수점',sort_order:1}, {id:'b4',name:'답십리점',sort_order:2}, {id:'b3',name:'중계점',sort_order:3}, {id:'b2',name:'왕십리점',sort_order:4} ],
       manual_staff: [
         {id:'o1',name:'사장님',branch_id:null,role:'owner',pin:'0000',active:true},
-        {id:'m1',name:'매니저 M',branch_id:'b2',role:'manager',pin:'1111',active:true},
+        {id:'m1',name:'매니저 M',branch_id:'b2',role:'manager',pin:'1111',active:true,hire_on:'2023-04-03'},
         {id:'s1',name:'알바 E',branch_id:'b2',role:'staff',pin:null,active:true},
-        {id:'s2',name:'알바 F',branch_id:'b2',role:'staff',pin:'2222',active:true},
-        {id:'s3',name:'알바 A',branch_id:'b1',role:'staff',pin:'3333',active:true},
+        {id:'s2',name:'알바 F',branch_id:'b2',role:'staff',pin:'2222',active:true,hire_on:'2025-11-10'},
+        {id:'s3',name:'알바 A',branch_id:'b1',role:'staff',pin:'3333',active:true,hire_on:'2024-08-19'},
         {id:'m2',name:'매니저 K',branch_id:'b3',role:'manager',pin:'1111',active:true}
       ],
       ops_categories: cats, ops_items: items, ops_item_branch: ib,
@@ -373,6 +375,7 @@
       ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
       ops_pay_profiles: [ { staff_id: 'm1', hourly_wage: 12000, pay_type: 'insured', dependents: 1 }, { staff_id: 's2', hourly_wage: 10320, pay_type: 'insured', dependents: 1 }, { staff_id: 's1', hourly_wage: 10320, pay_type: 'freelance', dependents: 1 } ],
       ops_settings: [], ops_pay_runs: [], ops_merchant_rules: [], ops_documents: [],
+      ops_cert_requests: [ { id: 'cr1', staff_id: 's2', kind: 'employment', purpose: '은행 제출용', recipient: '(시연) ○○은행', email: 'demo-f@example.com', status: 'requested', created_at: daysAgo(0) } ],
       managers: [ { id: 'lm1', name: '매니저 M', branch_slug: 'wangsimni', active: true, off_dates: [] }, { id: 'lm2', name: '매니저 K', branch_slug: 'junggye', active: true, off_dates: [] } ],
       branches: [ { slug: 'seongsu', name: '성수점', order_idx: 1 }, { slug: 'junggye', name: '중계점', order_idx: 3 }, { slug: 'wangsimni', name: '왕십리점', order_idx: 4 } ],
       reports: [ { id: addDays(todayStr(), -1).replace(/-/g, '') + '_junggye_lm2', date: addDays(todayStr(), -1), branch: '중계점', branch_slug: 'junggye', manager: '매니저 K', manager_id: 'lm2', items: ['쇼케이스 AS 기사님 방문 (오후 2시)', '신입 알바 교육 2일차'], photos: [], updated_at: Date.now() - 86400000, read: false, read_by: null, read_comment: null } ],
@@ -527,7 +530,7 @@
     var h = location.hash.replace(/^#\/?/, '') || 'home';
     var parts = h.split('/');
     var route = parts[0]; var params = { arg: parts[1], arg2: parts[2] };
-    if (!session && route !== 'login' && route !== 'clock' && route !== 'sign'){
+    if (!session && route !== 'login' && route !== 'clock' && route !== 'sign' && route !== 'verify' && route !== 'share'){
       if (route === 'prepay' || route === 'prepay-c') loginReturnTo = '#/' + h;   // 매장폰 바로가기로 들어오면 로그인 뒤 홈 말고 여기로
       nav('#/login'); return;
     }
@@ -749,9 +752,15 @@
     if (isManager()) html += row('#/uniform-swap', 'tile-orange', '🔄', '유니폼 교체 (반팔 → 긴팔)', '계절 교체 · 반팔 반납 + 긴팔 수령 · 날짜 · 서명 PDF');
     if (isManager()) html += row('#/uniform-return', 'tile-purple', '👕', '유니폼 반납', '퇴사자 반납 확인 · 서명 · 반납확인서 PDF');
     if (isOwner()) html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
+    if (!isOwner()) html += row('#/cert', 'tile-blue', '📃', '재직·경력증명서 신청', '은행·관공서 제출용 · 사장님 승인 후 메일로 받기');
     html += row('#/health', 'tile-red', '🩺', '보건증', '내 보건증 만료일 · 새 보건증 사진 올리기');
     if (isManager()) html += row('#/health-admin', 'tile-red', '🩺', '보건증 관리', '만료 임박 빨간 표시 · 제출 확인(완료)');
     if (isManager()) html += row('#/roster-sync', 'tile-purple', '📋', '명부 동기화', '근무자 현황 시트 붙여넣기 한 번으로 신입·퇴사·보건증 정리');
+    html += tge();
+    var certPend = 0;
+    if (isOwner()){ try { certPend = (await db.select('ops_cert_requests', { eq: { status: 'requested' } })).length; } catch(e){ console.warn('증명서 신청 표 없음', e); } }
+    html += grp('법인');
+    if (isOwner()) html += row('#/corp', 'tile-purple', '🏛️', '법인 서류', certPend ? '⚠ 증명서 신청 ' + certPend + '건 · 재직·경력증명서 · 주주명부 · 서류함' : '재직·경력증명서 · 주주명부 · 서류함 · 발급 대장 (사장님만)');
     html += tge();
     html += grp('보안');
     if (isManager()) html += row('#/staff', 'tile-gray', '👥', '직원·비밀번호', '역할 정하기·비밀번호 초기화');
@@ -3112,14 +3121,15 @@
     return Object.assign({ staff: d.staff || {}, c: d.c || {}, uniform: d.uniform || [], guardian: d.guardian || {}, checks: (d.checks || {}), sig: null, gsig: null, seal: null, signedAt: row.signed_at ? row.signed_at.slice(0, 10) : null, docId: row.id }, extra || {});
   }
   async function sha256(blob){ if (!(window.crypto && crypto.subtle)) return null; try { var h = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); return Array.prototype.map.call(new Uint8Array(h), function(b){ return (b < 16 ? '0' : '') + b.toString(16); }).join(''); } catch(e){ return null; } }
-  async function docPdf(key, ctx){
+  async function docPdf(key, ctx){ return pdfFromHtml(BND().render(key, ctx)); }
+  async function pdfFromHtml(html){
     if (!window.html2pdf) throw new Error('PDF 도구(html2pdf)를 못 불러왔어요. 인터넷을 확인하고 새로고침해 주세요');
     // 화면 밖 멀리(-10000px) 또는 position:fixed + 가짜 창 크기는 폰 기종·브라우저에 따라 오른쪽이 잘리거나 내용이 줄어드는 문제가 있었음.
     // 안전한 방법: 문서 맨 위 "보통 위치"에 그대로 넣고, 감싸는 상자만 높이 0 + overflow:hidden으로 화면에서 숨긴다.
     // (position:fixed/absolute를 안 쓰므로 화면 너비·스크롤 위치가 달라도 캡처 좌표가 항상 같다.)
     var stage = document.getElementById('pdf-stage');
     if (!stage){ stage = document.createElement('div'); stage.id = 'pdf-stage'; stage.style.cssText = 'height:0;overflow:hidden;'; document.body.insertBefore(stage, document.body.firstChild); }
-    stage.innerHTML = '<div id="pdf-inner" style="width:190mm;background:#fff">' + BND().render(key, ctx) + '</div>';
+    stage.innerHTML = '<div id="pdf-inner" style="width:190mm;background:#fff">' + html + '</div>';
     var inner = document.getElementById('pdf-inner');
     window.scrollTo(0, 0);
     var opt = { margin: [10, 10, 10, 10], image: { type: 'jpeg', quality: 0.9 }, html2canvas: { scale: 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.kp'] } };
@@ -3152,7 +3162,7 @@
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
     var sel = pickBranch(params, true);
-    var all = (await db.select('ops_documents', { order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return' && r.doc_key !== 'uniform_swap'; });
+    var all = (await db.select('ops_documents', { order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return' && r.doc_key !== 'uniform_swap' && String(r.doc_key).indexOf('cert_') !== 0; });
     var settings = await loadDocsSettings();
     var ids = isOwner() ? (sel === 'all' ? base.branches.map(function(b){ return b.id; }) : [sel]) : [session.branchId];
     var batches = docsByBatch(all), latest = {};
@@ -3339,7 +3349,7 @@
   routes['my-docs'] = async function(){
     if (!isOwner()){ toast('내 서류는 사장님만 볼 수 있어요'); nav('#/home'); return; }
     await loadBase();
-    var rows = (await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return' && r.doc_key !== 'uniform_swap'; });
+    var rows = (await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return' && r.doc_key !== 'uniform_swap' && String(r.doc_key).indexOf('cert_') !== 0; });
     var html = topbar('내 서류', true);
     var batches = docsByBatch(rows);
     if (!batches.length) html += '<div class="empty">아직 서류가 없어요. 사장님·매니저가 준비하면 여기와 매장폰 "서류 서명"에 떠요.</div>';
@@ -5865,7 +5875,7 @@
   app.addEventListener('keydown', function(e){
     if (e.key === 'Enter' && e.target.id === 'pp-code'){ e.preventDefault(); ppLogin().catch(function(err){ toast('실패했어요: ' + (err.message || err)); }); return; }
     if (e.key === 'Enter' && e.target.id === 'pp-q'){ e.preventDefault(); ppSearch().catch(function(err){ toast('실패했어요: ' + (err.message || err)); }); return; }
-    if (e.key === 'Enter' && e.target.classList.contains('pin')){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
+    if (e.key === 'Enter' && e.target.classList.contains('pin') && e.target.id !== 'corp-code'){ e.preventDefault(); if (current.route === 'sign') signPin(); else if (current.route === 'clock') clockPin(); else pinGo(); } });
   // 화면 캡처(스크린샷)를 파일로 안 저장하고 바로 붙여넣기(Ctrl+V) — 직원 구매·영수증 올리기 사진 올리기 화면에서만
   document.addEventListener('paste', async function(e){
     if (!current) return;
@@ -5917,6 +5927,601 @@
     e.target.classList.toggle('filled', e.target.value !== '');
     checkUpdateCount();
   });
+
+  // ===== 법인 서류 (재직·경력증명서 · 주주명부 · 법인 서류함 · 발급 대장·진위 확인) =====
+  // corp_ 표는 서버에서 잠겨 있고, 사장님 코드(선결제와 같은 6자리)를 넣어야 함수가 열어 줌.
+  // 코드는 이 탭 메모리에만 들고 있음(새로고침하면 다시 물어봄). 직원의 "신청"만 ops_cert_requests(열린 표)에 들어감.
+  var corpSt = { code: null, data: null, asOf: null, issued: null, certForm: null, holderEdit: null, eventFor: null, fileForm: false, linkFor: null, lastLink: null, shared: null };
+  var CORP_FILE_KINDS = ['사업자등록증', '법인등기사항증명서', '정관', '법인인감증명서', '통장사본', '주주명부', '기타'];
+  var CERT_PURPOSES = ['은행 제출용', '관공서 제출용', '비자·여권 발급용', '학교 제출용', '대출 신청용', '기타'];
+  var CERT_KIND = { employment: '재직증명서', career: '경력증명서' };
+  var SHARE_REASONS = ['설립', '증자', '양수', '양도', '증여', '상속', '기타'];
+  function BNC(){ if (!window.BN_CORP) throw new Error('법인 서류 양식(corp-templates.js)을 못 불러왔어요. 새로고침해 주세요'); return window.BN_CORP; }
+  function appBase(){ return location.origin + location.pathname + (DEMO ? '?demo=1' : ''); }
+  function corpVerifyUrl(no, key){ return appBase() + '#/verify/' + no + '/' + key; }
+  function qrDataUrl(text){ if (!window.qrcode) return null; var q = window.qrcode(0, 'M'); q.addData(text); q.make(); return q.createDataURL(6, 2); }
+  function won0(n){ return (Number(n) || 0).toLocaleString('ko-KR'); }
+  function corpVal(id){ var el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; }
+  function crow(href, bg, icon, title, sub){ return '<a class="row" href="' + href + '"><div class="tile" style="background:var(--' + bg + ')">' + icon + '</div><div class="rt"><div class="rtitle">' + esc(title) + '</div><div class="rsub">' + esc(sub) + '</div></div><div class="chev">›</div></a>'; }
+  function daysSince(d){ if (!d) return null; return Math.floor((new Date(todayStr() + 'T00:00:00') - new Date(String(d).slice(0, 10) + 'T00:00:00')) / 86400000); }
+
+  async function corpCall(fn, args){
+    var r = await db.rpc(fn, Object.assign({ p_code: corpSt.code }, args || {}));
+    if (r && r.ok === false){ if (/사장님 코드/.test(r.error || '')) corpSt.code = null; throw new Error(r.error || '실패했어요'); }
+    return r;
+  }
+  // 사장님이 아니거나 코드가 없으면 화면을 대신 그리고 true
+  async function corpNeedCode(title){
+    if (!isOwner()){ toast('사장님만 볼 수 있어요'); nav('#/home'); return true; }
+    if (corpSt.code) return false;
+    var st = await db.rpc('corp_status', {});
+    var html = topbar(title, true);
+    if (!st || !st.ready){
+      html += '<div class="note">법인 서류는 <b>선결제 사장님 코드(숫자 6자리)</b>로 잠가요. 아직 코드를 안 정하셨어요.</div><a class="btn primary block" href="#/prepay">선결제에서 사장님 코드 정하기</a>';
+      app.innerHTML = html; return true;
+    }
+    html += '<div class="pin-wrap"><div style="font-size:18px;font-weight:600;margin-bottom:6px">사장님 코드</div><div class="muted" style="margin-bottom:14px">선결제 사장님 코드와 같은 6자리예요</div>' +
+      '<input class="pin" id="corp-code" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" style="width:240px;letter-spacing:10px">' +
+      '<div style="margin-top:18px"><button class="btn primary" data-act="corp-login">들어가기</button></div></div>' +
+      '<div class="muted" style="text-align:center;margin-top:8px">주주명부·서류함은 이 코드가 맞아야만 서버가 보여줘요.<br>앱 비밀번호(4자리)만으로는 못 열어요.</div>';
+    app.innerHTML = html;
+    var ci = document.getElementById('corp-code'); if (ci) ci.focus();
+    return true;
+  }
+  async function corpLogin(){
+    var v = corpVal('corp-code');
+    if (!/^[0-9]{6}$/.test(v)){ toast('숫자 6자리를 넣어 주세요'); return; }
+    var r = await db.rpc('corp_login', { p_code: v });
+    if (!r || !r.ok){ toast((r && r.error) || '코드가 틀려요'); return; }
+    corpSt.code = v; render();
+  }
+  async function corpLoad(){ corpSt.data = await corpCall('corp_get', { p_date: corpSt.asOf || todayStr() }); return corpSt.data; }
+
+  // PDF 공유·내려받기·열기
+  function pdfFile(blob, name){ try { return new File([blob], name, { type: blob.type || 'application/pdf' }); } catch(e){ return null; } }
+  async function shareBlob(blob, name, title){
+    var f = pdfFile(blob, name);
+    if (f && navigator.canShare && navigator.canShare({ files: [f] })){
+      try { await navigator.share({ files: [f], title: title || name }); return; } catch(e){ if (e && e.name === 'AbortError') return; }
+    }
+    downloadBlob(blob, name); toast('이 기기는 바로 공유가 안 돼서 내려받았어요');
+  }
+  function downloadBlob(blob, name){ var u = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(u); }, 60000); }
+  function openBlob(blob, name){ var u = URL.createObjectURL(blob); var w = window.open(u, '_blank'); if (!w) downloadBlob(blob, name); }
+  function b64ToBlob(b64, mime){ var bin = atob(b64), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return new Blob([arr], { type: mime || 'application/octet-stream' }); }
+  function blobToB64(blob){ return new Promise(function(res, rej){ var r = new FileReader(); r.onload = function(){ res(String(r.result).split(',')[1] || ''); }; r.onerror = function(){ rej(new Error('파일을 읽지 못했어요')); }; r.readAsDataURL(blob); }); }
+
+  // 방금 만든 PDF 결과 카드 (증명서·주주명부 공통)
+  function issuedCard(){
+    var x = corpSt.issued; if (!x) return '';
+    var mail = x.mail === 'sent' ? '<div class="note ok" style="margin:8px 0 0">' + esc(x.email) + ' 로 메일을 보냈어요 (사장님 메일 참조)</div>' : x.mail ? '<div class="note danger" style="margin:8px 0 0">메일은 못 보냈어요: ' + esc(x.mail) + '<br>아래 [공유하기]로 카톡·메일에 직접 보내 주세요.</div>' : '';
+    return '<div class="card section" style="border:2px solid var(--ok)"><div class="sec-h"><span class="sp">✅ ' + esc(x.type) + ' 발급 완료</span><span class="badge ok">' + esc(x.issueNo) + '</span></div>' +
+      '<div style="padding:10px 14px"><div class="muted">' + esc(x.fileName) + '</div>' + mail +
+      '<div class="inline" style="margin-top:10px;flex-wrap:wrap;gap:6px"><button class="btn primary" data-act="corp-issued-share">📤 공유하기 (카톡·메일)</button><button class="btn" data-act="corp-issued-open">PDF 열기</button><button class="btn" data-act="corp-issued-down">내려받기</button>' +
+      (x.type === '주주명부' && !x.savedFileId ? '<button class="btn" data-act="corp-issued-save">서류함에 보관</button>' : '') +
+      (x.savedFileId ? '<span class="badge ok">서류함에 보관됨</span>' : '') +
+      '<button class="btn sm" data-act="corp-issued-close">닫기</button></div></div></div>';
+  }
+
+  // --- 법인 서류 홈 (사장님만) ---
+  routes.corp = async function(){
+    await loadBase();
+    if (await corpNeedCode('법인 서류')) return;
+    var d = await corpLoad();
+    var pend = []; try { pend = await db.select('ops_cert_requests', { eq: { status: 'requested' } }); } catch(e){ console.warn('증명서 신청 표 없음', e); }
+    var c = (d.settings && d.settings.company) || {};
+    var sum = (d.holdings || []).reduce(function(s, h){ return s + (Number(h.shares) || 0); }, 0);
+    var html = topbar('법인 서류', true, '<span class="who" data-act="corp-lock">🔒 잠그기</span>');
+    html += '<div class="note ok" style="margin-top:0"><b>' + esc(c.name || '(회사 이름 없음)') + '</b>' + (c.reg_no ? ' · ' + esc(c.reg_no) : '') + '<br><span class="muted">' + esc(c.address || '') + (c.ceo ? ' · 대표이사 ' + esc(c.ceo) : '') + '</span></div>';
+    html += '<div class="group-title">증명서</div><div class="card">' +
+      crow('#/corp-certs', 'tile-blue', '📨', '증명서 신청 확인', pend.length ? '⚠ 승인 대기 ' + pend.length + '건' : '직원이 신청한 재직·경력증명서 승인') +
+      crow('#/corp-cert-new', 'tile-green', '📃', '재직·경력증명서 바로 발급', '신청 없이 사장님이 직접 (퇴사자 경력증명서 포함)') + '</div>';
+    html += '<div class="group-title">회사 서류</div><div class="card">' +
+      crow('#/corp-holders', 'tile-purple', '📊', '주주명부', (d.holdings || []).filter(function(h){ return Number(h.shares) > 0; }).length + '명 · ' + won0(sum) + '주 · 기준일 골라서 PDF') +
+      crow('#/corp-files', 'tile-orange', '🗄️', '법인 서류함', (d.files || []).length + '개 · 등본·사업자등록증·정관 보관 · 기한 링크로 보내기') +
+      crow('#/corp-issues', 'tile-gray', '📒', '발급 대장', (d.issues || []).length + '건 · 발급번호·용도·진위 확인') +
+      crow('#/corp-info', 'tile-gray', '⚙️', '회사 정보', '상호·법인등록번호·주소·대표·발행주식') + '</div>';
+    html += '<div class="note" style="margin-top:14px"><b>해외·외부에서 급하게 필요할 때</b><br>① 주주명부 → [PDF 만들기] → [공유하기]로 카톡·메일에 바로 첨부<br>② 등본·사업자등록증은 서류함 → [링크] → 3일짜리 주소를 상대에게 보내기<br><span class="muted">등기부등본 원본은 법원 서류라 새로 떼려면 <a href="https://www.iros.go.kr" target="_blank" rel="noopener" style="text-decoration:underline">인터넷등기소</a>(앱도 있음)에서 발급해요.</span></div>';
+    app.innerHTML = html;
+  };
+
+  // --- 회사 정보 ---
+  routes['corp-info'] = async function(){
+    await loadBase();
+    if (await corpNeedCode('회사 정보')) return;
+    var d = await corpLoad(), s = d.settings || {}, c = s.company || {};
+    function f(id, label, v, ph, extra){ return '<div><label>' + label + '</label><input class="in" id="' + id + '" value="' + esc(v == null ? '' : v) + '" placeholder="' + esc(ph || '') + '"' + (extra || '') + '></div>'; }
+    var html = topbar('회사 정보', true);
+    html += '<div class="form">' + f('ci-name', '상호', c.name, '주식회사 ○○') + '<div class="grid2">' + f('ci-reg', '법인등록번호', c.reg_no, '000000-0000000') + f('ci-biz', '사업자등록번호 (선택)', c.biz_no, '000-00-00000') + '</div>' +
+      f('ci-addr', '본점 주소', c.address) + '<div class="grid2">' + f('ci-ceo', '대표이사', c.ceo) + f('ci-phone', '대표 전화 (선택)', c.phone) + '</div>' +
+      '<div class="grid2">' + f('ci-total', '발행주식 총수 (주)', s.total_shares, '예: 10000', ' type="number" inputmode="numeric"') + f('ci-par', '1주의 금액 (원)', s.par_value, '예: 5000', ' type="number" inputmode="numeric"') + '</div>' +
+      '<div class="muted">발행주식 총수·1주 금액은 법인등기부등본 "발행주식의 총수" 칸에 있어요. 주주명부 합계와 다르면 경고가 떠요.</div>' +
+      '<button class="btn primary block" data-act="corp-info-save">저장</button></div>';
+    html += '<div class="note">직인(사용인감)은 나중에 넣기로 해서 지금은 서류에 <b>빈 도장 자리</b>만 있어요.</div>';
+    app.innerHTML = html;
+  };
+  async function corpInfoSave(){
+    var tot = num(corpVal('ci-total')), par = num(corpVal('ci-par'));
+    var company = { name: corpVal('ci-name'), reg_no: corpVal('ci-reg'), biz_no: corpVal('ci-biz'), address: corpVal('ci-addr'), ceo: corpVal('ci-ceo'), phone: corpVal('ci-phone') };
+    if (!company.name){ toast('상호를 넣어 주세요'); return; }
+    await corpCall('corp_save_settings', { p_company: company, p_total_shares: tot ? Math.round(tot) : null, p_par_value: par ? Math.round(par) : null });
+    toast('저장했어요'); nav('#/corp');
+  }
+
+  // --- 주주명부 ---
+  routes['corp-holders'] = async function(){
+    await loadBase();
+    if (await corpNeedCode('주주명부')) return;
+    var asOf = corpSt.asOf || todayStr();
+    var d = await corpLoad(), s = d.settings || {};
+    var hs = d.holdings || [], sum = hs.reduce(function(t, h){ return t + (Number(h.shares) || 0); }, 0), total = Number(s.total_shares) || 0;
+    var html = topbar('주주명부', true);
+    html += issuedCard();
+    html += '<div class="form" style="margin-top:0"><div class="grid2"><div><label>기준일</label><input class="in" type="date" id="corp-asof" value="' + esc(asOf) + '"></div><div><label>합계</label><div style="padding:10px 0;font-weight:600">' + won0(sum) + '주' + (total ? ' / 발행 ' + won0(total) + '주' : '') + '</div></div></div>' +
+      (total && sum !== total ? '<div class="note danger" style="margin:0">주주 합계(' + won0(sum) + '주)와 발행주식 총수(' + won0(total) + '주)가 달라요. 변동 기록을 확인해 주세요.</div>' : '') +
+      (!total ? '<div class="muted"><a href="#/corp-info" style="text-decoration:underline">회사 정보</a>에 발행주식 총수를 넣으면 합계를 맞춰 볼 수 있어요.</div>' : '') + '</div>';
+    html += '<div class="group-title">주주 (' + esc(asOf) + ' 기준)</div><div class="card">';
+    if (!hs.length) html += '<div class="empty">아직 주주가 없어요. 아래 [주주 추가]로 넣고, 각 주주에 "설립" 같은 변동 기록으로 주식 수를 넣어 주세요.</div>';
+    hs.forEach(function(h){
+      var sh = Number(h.shares) || 0;
+      html += '<div class="item" style="flex-wrap:wrap' + (sh ? '' : ';opacity:.6') + '"><div class="iname"><div class="t">' + esc(h.name) + (h.relation ? ' <span class="muted" style="font-weight:400">(' + esc(h.relation) + ')</span>' : '') + '</div><div class="s">' + esc(h.share_kind || '보통주') + ' ' + won0(sh) + '주 · ' + (total || sum ? (Math.round(sh / (total || sum) * 10000) / 100) + '%' : '-') + (h.first_date ? ' · 취득 ' + esc(h.first_date) : '') + '</div></div>' +
+        '<button class="btn sm" data-act="corp-event-open" data-id="' + esc(h.id) + '">변동 기록</button><button class="btn sm" data-act="corp-holder-edit" data-id="' + esc(h.id) + '">고치기</button></div>';
+      if (corpSt.eventFor === h.id){
+        html += '<div class="form" style="margin:0 10px 10px;background:var(--surface-sunken)"><b>' + esc(h.name) + ' 주식 변동</b><div class="grid2"><div><label>날짜</label><input class="in" type="date" id="ce-date" value="' + esc(todayStr()) + '"></div><div><label>사유</label><select class="in" id="ce-reason">' + SHARE_REASONS.map(function(r){ return '<option>' + r + '</option>'; }).join('') + '</select></div></div>' +
+          '<div class="grid2"><div><label>늘어남/줄어듦</label><select class="in" id="ce-dir"><option value="1">+ 늘어남 (받음·설립·증자)</option><option value="-1">− 줄어듦 (넘김)</option></select></div><div><label>주식 수</label><input class="in" type="number" inputmode="numeric" id="ce-qty" placeholder="예: 7000"></div></div>' +
+          '<div><label>메모 (선택)</label><input class="in" id="ce-memo" placeholder="예: 김○○에게 1,000주 양도"></div>' +
+          '<div class="inline"><button class="btn primary" data-act="corp-event-save" data-id="' + esc(h.id) + '">기록</button><button class="btn" data-act="corp-event-close">닫기</button></div>' +
+          '<div class="muted">주식을 다른 주주에게 넘기면 두 사람 모두 기록해요 (넘긴 사람 −, 받은 사람 +).</div></div>';
+      }
+    });
+    html += '</div>';
+    var he = corpSt.holderEdit;
+    if (he){
+      html += '<div class="form"><b>' + (he.id ? '주주 고치기' : '주주 추가') + '</b><div class="grid2"><div><label>이름</label><input class="in" id="ch-name" value="' + esc(he.name || '') + '"></div><div><label>생년월일 (숫자 8자리)</label><input class="in birth" id="ch-birth" inputmode="numeric" maxlength="10" placeholder="예: 19830115" value="' + esc(he.birth || '') + '"></div></div>' +
+        '<div><label>주소</label><input class="in" id="ch-addr" value="' + esc(he.address || '') + '"></div><div class="grid2"><div><label>관계 메모 (선택)</label><input class="in" id="ch-rel" placeholder="예: 대표, 배우자" value="' + esc(he.relation || '') + '"></div><div><label>주식 종류</label><input class="in" id="ch-kind" value="' + esc(he.share_kind || '보통주') + '"></div></div>' +
+        '<div class="muted">주민등록번호는 저장하지 않아요. 제출처가 꼭 요구하면 PDF에 직접 적어 주세요.</div>' +
+        '<div class="inline"><button class="btn primary" data-act="corp-holder-save">저장</button><button class="btn" data-act="corp-holder-cancel">닫기</button>' + (he.id ? '<button class="btn danger sm" data-act="corp-holder-del" data-id="' + esc(he.id) + '">주주 삭제</button>' : '') + '</div></div>';
+    } else html += '<button class="btn block" data-act="corp-holder-new" style="margin-top:8px">+ 주주 추가</button>';
+    html += '<div class="group-title">PDF 만들기</div><div class="form"><div class="grid2"><div><label>용도</label><input class="in" id="chp-purpose" placeholder="예: 은행 제출용"></div><div><label>제출처 (선택)</label><input class="in" id="chp-recipient" placeholder="예: ○○은행"></div></div>' +
+      '<button class="btn primary block" data-act="corp-holders-pdf"' + (sum ? '' : ' disabled') + '>📄 ' + esc(asOf) + ' 기준 주주명부 PDF 만들기</button><div class="muted">발급번호와 진위 확인 QR이 같이 찍히고, 발급 대장에 남아요.</div></div>';
+    var ev = d.events || [];
+    if (ev.length){
+      var nm = {}; hs.forEach(function(h){ nm[h.id] = h.name; });
+      html += '<div class="group-title">변동 기록</div><div class="card">' + ev.map(function(e){ return '<div class="item"><div class="iname"><div class="t">' + esc(e.event_date) + ' · ' + esc(nm[e.shareholder_id] || '?') + ' <span class="badge ' + (e.delta > 0 ? 'ok' : 'danger') + '">' + (e.delta > 0 ? '+' : '') + won0(e.delta) + '주</span></div><div class="s">' + esc(e.reason) + (e.memo ? ' · ' + esc(e.memo) : '') + '</div></div><button class="btn sm danger" data-act="corp-event-del" data-id="' + esc(e.id) + '">지우기</button></div>'; }).join('') + '</div>';
+    }
+    app.innerHTML = html;
+    var ai = document.getElementById('corp-asof'); if (ai) ai.addEventListener('change', function(){ corpSt.asOf = ai.value || null; render(); });
+  };
+  async function corpHolderSave(){
+    var he = corpSt.holderEdit || {};
+    var birth = corpVal('ch-birth'); var nb = birth ? normBirth(birth) : '';
+    if (birth && !nb){ toast('생년월일을 숫자 8자리로 넣어 주세요'); return; }
+    await corpCall('corp_save_holder', { p_holder: { id: he.id || '', name: corpVal('ch-name'), birth: nb, address: corpVal('ch-addr'), relation: corpVal('ch-rel'), share_kind: corpVal('ch-kind') } });
+    corpSt.holderEdit = null; toast('저장했어요'); render();
+  }
+  async function corpEventSave(holderId){
+    var qty = Math.round(num(corpVal('ce-qty')) || 0), dir = +corpVal('ce-dir') || 1, date = corpVal('ce-date');
+    if (qty <= 0){ toast('주식 수를 넣어 주세요'); return; }
+    if (!date){ toast('날짜를 넣어 주세요'); return; }
+    await corpCall('corp_add_event', { p_event: { shareholder_id: holderId, event_date: date, delta: qty * dir, reason: corpVal('ce-reason'), memo: corpVal('ce-memo') } });
+    corpSt.eventFor = null; toast('기록했어요'); render();
+  }
+  async function corpHoldersPdf(){
+    var d = corpSt.data, asOf = corpSt.asOf || todayStr();
+    var purpose = corpVal('chp-purpose'), recipient = corpVal('chp-recipient');
+    var rows = (d.holdings || []).filter(function(h){ return Number(h.shares) > 0; });
+    if (!rows.length){ toast('주식을 가진 주주가 없어요'); return; }
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    var iss = await corpCall('corp_issue', { p_doc: { doc_type: '주주명부', subject_name: '기준일 ' + asOf, purpose: purpose, recipient: recipient, data: { asOf: asOf, rows: rows, total_shares: d.settings.total_shares, par_value: d.settings.par_value } } });
+    var vurl = corpVerifyUrl(iss.issue_no, iss.verify_key);
+    var blob = await pdfFromHtml(BNC().render('주주명부', { company: iss.company || d.settings.company, issueNo: iss.issue_no, verifyKey: iss.verify_key, verifyUrl: vurl, qr: qrDataUrl(vurl), issuedOn: todayStr(), asOf: asOf, rows: rows, totalShares: d.settings.total_shares, parValue: d.settings.par_value, purpose: purpose, recipient: recipient, seal: null }));
+    var sha = await sha256(blob); if (sha) await corpCall('corp_issue_set_sha', { p_issue_no: iss.issue_no, p_sha: sha });
+    corpSt.issued = { type: '주주명부', blob: blob, fileName: 'bonnoel_shareholders_' + asOf + '_' + iss.issue_no + '.pdf', issueNo: iss.issue_no, asOf: asOf };
+    render();
+  }
+
+  // --- 증명서 신청 확인 (사장님) ---
+  routes['corp-certs'] = async function(){
+    await loadBase();
+    if (await corpNeedCode('증명서 신청')) return;
+    var all = await db.select('ops_cert_requests', { order: { col: 'created_at', asc: false }, limit: 200 });
+    var pend = all.filter(function(r){ return r.status === 'requested'; }), done = all.filter(function(r){ return r.status !== 'requested'; }).slice(0, 30);
+    var html = topbar('증명서 신청', true);
+    html += '<div class="group-title">승인 대기 ' + pend.length + '건</div><div class="card">';
+    if (!pend.length) html += '<div class="empty">대기 중인 신청이 없어요.</div>';
+    pend.forEach(function(r){
+      var s = base.staff.filter(function(x){ return x.id === r.staff_id; })[0] || {};
+      html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t">' + esc(s.name || '?') + ' · ' + esc(CERT_KIND[r.kind] || r.kind) + '</div><div class="s">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + ' · ' + esc(r.purpose || '') + (r.recipient ? ' → ' + esc(r.recipient) : '') + ' · ' + fmtDT(r.created_at) + ' 신청</div></div>' +
+        '<a class="btn sm primary" href="#/corp-cert-new/' + esc(r.id) + '">확인·발급</a><button class="btn sm" data-act="corp-cert-reject" data-id="' + esc(r.id) + '">반려</button></div>';
+    });
+    html += '</div>';
+    if (done.length){
+      html += '<div class="group-title">처리한 신청</div><div class="card">' + done.map(function(r){
+        return '<div class="item"><div class="iname"><div class="t">' + esc(staffName(r.staff_id) || '?') + ' · ' + esc(CERT_KIND[r.kind] || r.kind) + ' <span class="badge ' + (r.status === 'issued' ? 'ok' : 'muted') + '">' + (r.status === 'issued' ? '발급' : r.status === 'rejected' ? '반려' : '취소') + '</span></div><div class="s">' + esc(r.issue_no || r.note || '') + ' · ' + fmtDT(r.decided_at || r.created_at) + '</div></div>' +
+          (r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">PDF</button>' : '') + '</div>';
+      }).join('') + '</div>';
+    }
+    app.innerHTML = html;
+  };
+
+  // --- 재직·경력증명서 발급 (신청 확인 또는 바로 발급) ---
+  async function certFormFor(staffId, req){
+    var s = base.staff.filter(function(x){ return x.id === staffId; })[0] || {};
+    var docs = []; try { docs = await db.select('ops_documents', { eq: { staff_id: staffId }, order: { col: 'created_at', asc: false } }); } catch(e){}
+    var info = {}; docs.forEach(function(r){ var st = (r.data && r.data.staff) || {}; ['birth', 'address'].forEach(function(k){ if (!info[k] && st[k]) info[k] = st[k]; }); if (!info.email && r.email_to) info.email = r.email_to; });
+    if (!info.email){ try { var pp = (await db.select('ops_pay_profiles', { eq: { staff_id: staffId } }))[0]; if (pp && pp.email) info.email = pp.email; } catch(e){} }
+    var kind = (req && req.kind) || (s.active === false ? 'career' : 'employment');
+    var purpose = (req && req.purpose) || '은행 제출용';
+    return { reqId: req ? req.id : null, staffId: staffId, kind: kind, name: s.name || '', birth: info.birth || '', address: info.address || '', withAddr: false,
+      branch: s.branch_id ? branchName(s.branch_id) : '본사', branchId: s.branch_id || null, position: s.role === 'manager' ? '매니저' : s.role === 'owner' ? '대표이사' : '사원',
+      duty: '매장 운영 및 제과·판매', hireOn: s.hire_on || '', leaveOn: '', purpose: CERT_PURPOSES.indexOf(purpose) >= 0 ? purpose : '기타', purposeEtc: CERT_PURPOSES.indexOf(purpose) >= 0 ? '' : purpose,
+      recipient: (req && req.recipient) || '', email: (req && req.email) || info.email || '', sendMail: true };
+  }
+  function certRead(){
+    var f = corpSt.certForm; if (!f || !document.getElementById('cf-name')) return f;
+    f.kind = corpVal('cf-kind') || f.kind; f.name = corpVal('cf-name'); f.birth = normBirth(corpVal('cf-birth')) || corpVal('cf-birth');
+    f.address = corpVal('cf-addr'); var wa = document.getElementById('cf-withaddr'); f.withAddr = !!(wa && wa.checked);
+    f.branch = corpVal('cf-branch'); f.position = corpVal('cf-pos'); f.duty = corpVal('cf-duty'); f.hireOn = corpVal('cf-hire'); f.leaveOn = corpVal('cf-leave');
+    f.purpose = corpVal('cf-purpose'); f.purposeEtc = corpVal('cf-purpose-etc'); f.recipient = corpVal('cf-recipient'); f.email = corpVal('cf-email').toLowerCase();
+    var sm = document.getElementById('cf-send'); f.sendMail = !!(sm && sm.checked);
+    return f;
+  }
+  function certCtx(f, extra){
+    var purpose = f.purpose === '기타' ? (f.purposeEtc || '기타') : f.purpose;
+    return Object.assign({ company: (corpSt.data && corpSt.data.settings && corpSt.data.settings.company) || {}, issuedOn: todayStr(), person: { name: f.name, birth: f.birth, address: f.withAddr ? f.address : '' },
+      job: { branch: f.branch, position: f.position, duty: f.duty, hireOn: f.hireOn, leaveOn: f.leaveOn }, purpose: purpose, recipient: f.recipient, seal: null }, extra || {});
+  }
+  routes['corp-cert-new'] = async function(params){
+    await loadBase();
+    if (await corpNeedCode('증명서 발급')) return;
+    if (!corpSt.data) await corpLoad();
+    var reqId = params.arg || null, req = null;
+    if (reqId){ req = (await db.select('ops_cert_requests', { eq: { id: reqId } }))[0]; if (!req){ toast('신청을 못 찾았어요'); nav('#/corp-certs'); return; } }
+    var f = corpSt.certForm;
+    if (!f || f.reqId !== reqId){
+      var sid = req ? req.staff_id : (f && !f.reqId ? f.staffId : null);
+      f = corpSt.certForm = sid ? await certFormFor(sid, req) : { reqId: null, staffId: null };
+    }
+    var html = topbar(req ? '증명서 신청 확인' : '증명서 바로 발급', true);
+    html += issuedCard();
+    if (req && req.status !== 'requested'){ html += '<div class="note">이미 처리한 신청이에요 (' + esc(req.status === 'issued' ? '발급 ' + (req.issue_no || '') : req.status === 'rejected' ? '반려' : '직원이 취소') + ')</div><a class="btn block" href="#/corp-certs">신청 목록으로</a>'; app.innerHTML = html; return; }
+    var people = base.staff.filter(function(s){ return s.role !== 'owner'; }).sort(function(a, b){ return (a.active === false) - (b.active === false) || (a.name > b.name ? 1 : -1); });
+    if (!req) html += '<div class="form" style="margin-top:0"><div><label>누구 증명서예요?</label><select class="in" id="cf-staff"><option value="">사람 고르기</option>' + people.map(function(s){ return '<option value="' + esc(s.id) + '"' + (f.staffId === s.id ? ' selected' : '') + '>' + esc(s.name) + ' · ' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + (s.active === false ? ' (퇴사)' : '') + '</option>'; }).join('') + '</select></div></div>';
+    if (!f.staffId){ app.innerHTML = html; certBind(); return; }
+    function inp(id, label, v, ph, t){ return '<div><label>' + label + '</label><input class="in" id="' + id + '"' + (t ? ' type="' + t + '"' : '') + ' value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></div>'; }
+    html += '<div class="form">' +
+      '<div><label>종류</label><select class="in" id="cf-kind"><option value="employment"' + (f.kind === 'employment' ? ' selected' : '') + '>재직증명서 (지금 다니는 사람)</option><option value="career"' + (f.kind === 'career' ? ' selected' : '') + '>경력증명서 (퇴사한 사람)</option></select></div>' +
+      '<div class="grid2">' + inp('cf-name', '성명', f.name) + '<div><label>생년월일 (숫자 8자리)</label><input class="in birth" id="cf-birth" inputmode="numeric" maxlength="10" placeholder="예: 19990101" value="' + esc(f.birth || '') + '"></div></div>' +
+      inp('cf-addr', '주소', f.address, '근로계약서에 적은 주소가 있으면 자동으로 채워져요') +
+      '<label class="inline" style="gap:6px"><input type="checkbox" id="cf-withaddr"' + (f.withAddr ? ' checked' : '') + '> 증명서에 주소도 넣기 (은행이 요구할 때만)</label>' +
+      '<div class="grid2">' + inp('cf-branch', '소속', f.branch) + inp('cf-pos', '직위', f.position) + '</div>' +
+      inp('cf-duty', '담당업무', f.duty) +
+      '<div class="grid2">' + inp('cf-hire', '입사일', f.hireOn, '', 'date') + (f.kind === 'career' ? inp('cf-leave', '퇴사일', f.leaveOn, '', 'date') : '<div></div>') + '</div>' +
+      (!f.hireOn ? '<div class="note danger" style="margin:0">입사일이 비어 있어요. 직원 명부에 입사일이 없어서 그래요 — 직접 넣어 주세요.</div>' : '') +
+      '<div class="grid2"><div><label>용도</label><select class="in" id="cf-purpose">' + CERT_PURPOSES.map(function(p){ return '<option' + (f.purpose === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') + '</select></div>' + inp('cf-purpose-etc', '기타 용도', f.purposeEtc, '용도가 "기타"일 때') + '</div>' +
+      inp('cf-recipient', '제출처 (선택)', f.recipient, '예: ○○은행') +
+      inp('cf-email', '받을 이메일', f.email, '직원 이메일', 'email') +
+      '<label class="inline" style="gap:6px"><input type="checkbox" id="cf-send"' + (f.sendMail ? ' checked' : '') + '> 발급하면 이 메일로 PDF 보내기 (사장님 메일 참조)</label>' +
+      '<div class="inline"><button class="btn" data-act="corp-cert-preview">미리보기</button><button class="btn primary" data-act="corp-cert-issue" style="flex:1">발급하기</button></div>' +
+      '<div class="muted">직인(사용인감)은 나중에 넣기로 해서 도장 자리는 비어 있어요.</div></div>';
+    html += '<div id="cf-preview"></div>';
+    app.innerHTML = html;
+    certBind();
+  };
+  function certBind(){
+    var ss = document.getElementById('cf-staff');
+    if (ss) ss.addEventListener('change', async function(){ corpSt.issued = null; corpSt.certForm = ss.value ? await certFormFor(ss.value, null) : { reqId: null, staffId: null }; render(); });
+    var k = document.getElementById('cf-kind');
+    if (k) k.addEventListener('change', function(){ certRead(); render(); });
+  }
+  function certPreview(){
+    var f = certRead(); var type = CERT_KIND[f.kind];
+    var box = document.getElementById('cf-preview'); if (!box) return;
+    box.innerHTML = '<div class="group-title">미리보기 (발급번호·QR은 발급할 때 붙어요)</div><div style="overflow:auto;background:#fff;border-radius:8px;padding:6px"><div style="width:190mm;transform:scale(.5);transform-origin:0 0;height:150mm">' + BNC().render(type, certCtx(f, { issueNo: '(발급 시 부여)' })) + '</div></div>';
+    box.scrollIntoView({ behavior: 'smooth' });
+  }
+  async function certIssue(){
+    var f = certRead(); var type = CERT_KIND[f.kind];
+    if (!f.name){ toast('성명을 넣어 주세요'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.hireOn || '')){ toast('입사일을 넣어 주세요'); return; }
+    if (f.kind === 'career' && !/^\d{4}-\d{2}-\d{2}$/.test(f.leaveOn || '')){ toast('퇴사일을 넣어 주세요'); return; }
+    if (f.purpose === '기타' && !f.purposeEtc){ toast('기타 용도를 적어 주세요'); return; }
+    if (f.sendMail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email || '')){ toast('이메일 주소를 확인해 주세요 (안 보내려면 체크 해제)'); return; }
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    var ctx0 = certCtx(f);
+    var iss = await corpCall('corp_issue', { p_doc: { doc_type: type, subject_name: f.name, staff_id: f.staffId, purpose: ctx0.purpose, recipient: f.recipient, data: { person: ctx0.person, job: ctx0.job, email: f.email || null, request_id: f.reqId } } });
+    var vurl = corpVerifyUrl(iss.issue_no, iss.verify_key);
+    var blob = await pdfFromHtml(BNC().render(type, certCtx(f, { company: iss.company || ctx0.company, issueNo: iss.issue_no, verifyKey: iss.verify_key, verifyUrl: vurl, qr: qrDataUrl(vurl) })));
+    var sha = await sha256(blob); if (sha) await corpCall('corp_issue_set_sha', { p_issue_no: iss.issue_no, p_sha: sha });
+    // 직원이 "증명서 신청" 화면에서 다시 받을 수 있게 입사 서류와 같은 저장소에도 둠
+    var path = 'cert/' + f.staffId + '/' + iss.issue_no + '.pdf', now = nowIso(), batchId = uuid4();
+    await db.upload(DOCS_BUCKET, path, blob, 'application/pdf');
+    await db.insert('ops_documents', { batch_id: batchId, staff_id: f.staffId, branch_id: f.branchId || null, doc_key: 'cert_' + f.kind, doc_title: type + ' (' + iss.issue_no + ')', template_version: BNC().version, data: { issue_no: iss.issue_no, purpose: ctx0.purpose, recipient: f.recipient }, status: 'signed', pdf_path: path, pdf_sha256: sha, signed_at: now, email_to: f.email || null, prepared_by: session.staffId });
+    if (f.reqId) await db.update('ops_cert_requests', { id: f.reqId }, { status: 'issued', issue_no: iss.issue_no, pdf_path: path, decided_at: now });
+    var mail = null;
+    if (f.sendMail && f.email){ try { await db.sendDocs(batchId); mail = 'sent'; } catch(e){ mail = e.message || String(e); } }
+    corpSt.issued = { type: type, blob: blob, fileName: 'bonnoel_' + f.kind + '_' + iss.issue_no + '.pdf', issueNo: iss.issue_no, mail: mail, email: f.email };
+    corpSt.certForm = f.reqId ? f : null;
+    render();
+  }
+
+  // --- 직원: 재직·경력증명서 신청 ---
+  routes.cert = async function(){
+    await loadBase();
+    var mine = await db.select('ops_cert_requests', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } });
+    var email = ''; try { var dd = await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } }); dd.some(function(r){ if (r.email_to){ email = r.email_to; return true; } return false; }); } catch(e){}
+    var html = topbar('재직·경력증명서', true);
+    html += '<div class="form" style="margin-top:0"><div class="grid2"><div><label>종류</label><select class="in" id="cr-kind"><option value="employment">재직증명서</option><option value="career">경력증명서</option></select></div><div><label>용도</label><select class="in" id="cr-purpose">' + CERT_PURPOSES.map(function(p){ return '<option>' + p + '</option>'; }).join('') + '</select></div></div>' +
+      '<div><label>기타 용도 (용도가 "기타"일 때)</label><input class="in" id="cr-etc"></div>' +
+      '<div><label>제출처 (선택)</label><input class="in" id="cr-recipient" placeholder="예: ○○은행"></div>' +
+      '<div><label>받을 이메일</label><input class="in" id="cr-email" type="email" value="' + esc(email) + '" placeholder="PDF를 받을 메일 주소"></div>' +
+      '<button class="btn primary block" data-act="cert-request">신청하기</button><div class="muted">사장님이 확인하고 발급하면 메일로 PDF가 오고, 여기서도 다시 받을 수 있어요.</div></div>';
+    html += '<div class="group-title">내 신청</div><div class="card">';
+    if (!mine.length) html += '<div class="empty">아직 신청한 증명서가 없어요.</div>';
+    mine.forEach(function(r){
+      var badge = r.status === 'issued' ? '<span class="badge ok">발급됨</span>' : r.status === 'rejected' ? '<span class="badge danger">반려</span>' : r.status === 'canceled' ? '<span class="badge muted">취소</span>' : '<span class="badge warn">승인 대기</span>';
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(CERT_KIND[r.kind] || r.kind) + ' ' + badge + '</div><div class="s">' + esc(r.purpose || '') + (r.recipient ? ' → ' + esc(r.recipient) : '') + ' · ' + fmtDT(r.created_at) + (r.status === 'rejected' && r.note ? ' · 사유: ' + esc(r.note) : '') + '</div></div>' +
+        (r.status === 'issued' && r.pdf_path ? '<button class="btn sm primary" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">PDF</button>' : '') +
+        (r.status === 'requested' ? '<button class="btn sm" data-act="cert-cancel" data-id="' + esc(r.id) + '">취소</button>' : '') + '</div>';
+    });
+    html += '</div>';
+    app.innerHTML = html;
+  };
+  async function certRequest(){
+    var kind = corpVal('cr-kind') || 'employment', purpose = corpVal('cr-purpose'), etc = corpVal('cr-etc'), email = corpVal('cr-email').toLowerCase();
+    if (purpose === '기타'){ if (!etc){ toast('기타 용도를 적어 주세요'); return; } purpose = etc; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast('이메일 주소를 확인해 주세요'); return; }
+    await db.insert('ops_cert_requests', { staff_id: session.staffId, kind: kind, purpose: purpose, recipient: corpVal('cr-recipient') || null, email: email, status: 'requested' });
+    toast('신청했어요. 사장님이 확인하면 메일로 와요'); render();
+  }
+
+  // --- 발급 대장 ---
+  routes['corp-issues'] = async function(){
+    await loadBase();
+    if (await corpNeedCode('발급 대장')) return;
+    var d = await corpLoad(), list = d.issues || [];
+    var html = topbar('발급 대장', true);
+    html += '<div class="muted" style="margin:0 4px 8px">서류마다 발급번호와 QR이 찍혀요. 받은 곳에서 QR을 찍으면 "본노엘이 발급한 진짜 서류"인지 확인돼요. 잘못 발급했으면 [무효]를 누르면 확인 화면에 "취소된 서류"로 나와요.</div><div class="card">';
+    if (!list.length) html += '<div class="empty">아직 발급한 서류가 없어요.</div>';
+    list.forEach(function(i){
+      html += '<div class="item" style="flex-wrap:wrap' + (i.revoked ? ';opacity:.55' : '') + '"><div class="iname"><div class="t">' + esc(i.issue_no) + ' · ' + esc(i.doc_type) + (i.revoked ? ' <span class="badge danger">무효</span>' : '') + '</div><div class="s">' + esc(i.subject_name || '') + (i.purpose ? ' · ' + esc(i.purpose) : '') + (i.recipient ? ' → ' + esc(i.recipient) : '') + ' · ' + fmtDT(i.created_at) + '</div></div>' +
+        '<a class="btn sm" href="#/verify/' + esc(i.issue_no) + '/' + esc(i.verify_key) + '">확인 화면</a>' + (i.revoked ? '' : '<button class="btn sm danger" data-act="corp-issue-revoke" data-id="' + esc(i.issue_no) + '">무효</button>') + '</div>';
+    });
+    html += '</div>';
+    app.innerHTML = html;
+  };
+
+  // --- 법인 서류함 ---
+  routes['corp-files'] = async function(){
+    await loadBase();
+    if (await corpNeedCode('법인 서류함')) return;
+    var d = await corpLoad(), files = d.files || [], links = d.links || [];
+    var html = topbar('법인 서류함', true);
+    html += issuedCard();
+    if (corpSt.lastLink){
+      html += '<div class="card section" style="border:2px solid var(--ok)"><div class="sec-h"><span class="sp">🔗 링크를 만들었어요</span></div><div style="padding:10px 14px"><div style="word-break:break-all;font-size:14px">' + esc(corpSt.lastLink.url) + '</div><div class="muted">' + esc(corpSt.lastLink.until) + '까지 열려요. 기한이 지나면 자동으로 안 열려요.</div>' +
+        '<div class="inline" style="margin-top:8px"><button class="btn primary" data-act="corp-link-share">📤 보내기</button><button class="btn" data-act="corp-link-copy">복사</button><button class="btn sm" data-act="corp-link-close">닫기</button></div></div></div>';
+    }
+    if (corpSt.fileForm){
+      html += '<div class="form" style="margin-top:0"><b>서류 올리기</b><div class="grid2"><div><label>종류</label><select class="in" id="cfl-kind">' + CORP_FILE_KINDS.map(function(k){ return '<option>' + k + '</option>'; }).join('') + '</select></div><div><label>발급일 (선택)</label><input class="in" type="date" id="cfl-issued"></div></div>' +
+        '<div><label>이름 (선택)</label><input class="in" id="cfl-title" placeholder="예: 법인등기부등본 (말소사항 포함)"></div>' +
+        '<label class="btn block" style="justify-content:flex-start;gap:8px">📎 파일 고르기 (사진·PDF, 8MB까지)<input type="file" id="cfl-file" accept="image/*,application/pdf" class="hidden"></label><div class="muted" id="cfl-picked">아직 안 골랐어요</div>' +
+        '<div class="inline"><button class="btn primary" data-act="corp-file-upload">올리기</button><button class="btn" data-act="corp-file-form">닫기</button></div>' +
+        '<div class="muted">파일은 DB 안에 잠가 두고, 사장님 코드로만 열려요.</div></div>';
+    } else html += '<button class="btn primary block" data-act="corp-file-form">+ 서류 올리기</button>';
+    html += '<div class="muted" style="margin:8px 4px">등기부등본·법인인감증명서는 보통 <b>발급 3개월 이내</b>만 받아줘요. 새로 떼려면 <a href="https://www.iros.go.kr" target="_blank" rel="noopener" style="text-decoration:underline">인터넷등기소</a>(등본) · 인감증명서는 등기소 방문.</div>';
+    html += '<div class="group-title">보관 중 ' + files.length + '개</div><div class="card">';
+    if (!files.length) html += '<div class="empty">아직 올린 서류가 없어요.</div>';
+    files.forEach(function(f){
+      var age = daysSince(f.issued_on), old = age != null && age > 90 && /등기|인감/.test(f.kind);
+      html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t"><span class="badge muted">' + esc(f.kind) + '</span> ' + esc(f.title) + '</div><div class="s">' + (f.issued_on ? '발급 ' + esc(f.issued_on) + (age != null ? ' (' + age + '일 전)' : '') + ' · ' : '') + Math.max(1, Math.round(f.size / 1024)) + 'KB' + (old ? ' · <span style="color:var(--danger)">3개월 지남 — 새로 떼야 할 수 있어요</span>' : '') + '</div></div>' +
+        '<button class="btn sm" data-act="corp-file-open" data-id="' + esc(f.id) + '">열기</button><button class="btn sm" data-act="corp-file-share" data-id="' + esc(f.id) + '">공유</button><button class="btn sm primary" data-act="corp-link-open" data-id="' + esc(f.id) + '">링크</button><button class="btn sm danger" data-act="corp-file-del" data-id="' + esc(f.id) + '">삭제</button></div>';
+      if (corpSt.linkFor === f.id){
+        html += '<div class="form" style="margin:0 10px 10px;background:var(--surface-sunken)"><b>기한 링크 만들기</b><div class="grid2"><div><label>누구에게 (메모)</label><input class="in" id="cl-memo" placeholder="예: ○○은행 김대리"></div><div><label>열리는 기간</label><select class="in" id="cl-days"><option value="1">1일</option><option value="3" selected>3일</option><option value="7">7일</option></select></div></div>' +
+          '<div class="inline"><button class="btn primary" data-act="corp-link-make" data-id="' + esc(f.id) + '">링크 만들기</button><button class="btn" data-act="corp-link-cancel">닫기</button></div><div class="muted">링크를 아는 사람은 기간 안에 이 파일 하나만 볼 수 있어요. 언제든 [끊기] 가능.</div></div>';
+      }
+    });
+    html += '</div>';
+    var nm = {}; files.forEach(function(f){ nm[f.id] = f.title; });
+    if (links.length){
+      html += '<div class="group-title">보낸 링크 (최근 60일)</div><div class="card">' + links.map(function(l){
+        var live = !l.revoked && new Date(l.expires_at) > new Date();
+        return '<div class="item"><div class="iname"><div class="t">' + esc(nm[l.file_id] || '(지운 파일)') + (l.memo ? ' → ' + esc(l.memo) : '') + ' ' + (live ? '<span class="badge ok">열림</span>' : '<span class="badge muted">' + (l.revoked ? '끊김' : '기한 지남') + '</span>') + '</div><div class="s">' + fmtDT(l.expires_at) + '까지 · 열어 본 횟수 ' + (l.open_count || 0) + (l.last_opened_at ? ' (마지막 ' + fmtDT(l.last_opened_at) + ')' : '') + '</div></div>' +
+          (live ? '<button class="btn sm danger" data-act="corp-link-revoke" data-id="' + esc(l.token) + '">끊기</button>' : '') + '</div>';
+      }).join('') + '</div>';
+    }
+    app.innerHTML = html;
+    var fi = document.getElementById('cfl-file');
+    if (fi) fi.addEventListener('change', function(){ var file = fi.files && fi.files[0]; var p = document.getElementById('cfl-picked'); if (p) p.textContent = file ? file.name + ' (' + Math.round(file.size / 1024) + 'KB)' : '아직 안 골랐어요'; var t = document.getElementById('cfl-title'); if (file && t && !t.value) t.value = file.name.replace(/\.[^.]+$/, ''); });
+  };
+  async function corpFileUpload(){
+    var fi = document.getElementById('cfl-file'), file = fi && fi.files && fi.files[0];
+    if (!file){ toast('파일을 골라 주세요'); return; }
+    var blob = file, mime = file.type || 'application/octet-stream', name = file.name;
+    if (/^image\//.test(mime)){ var r = await resizeImage(file, 2200); blob = r.blob; mime = 'image/jpeg'; name = name.replace(/\.[^.]+$/, '') + '.jpg'; }
+    if (blob.size > 8 * 1024 * 1024){ toast('파일이 너무 커요 (8MB까지)'); return; }
+    toast('올리는 중…');
+    await corpCall('corp_file_put', { p_meta: { kind: corpVal('cfl-kind'), title: corpVal('cfl-title') || name, file_name: name, mime: mime, issued_on: corpVal('cfl-issued') }, p_b64: await blobToB64(blob) });
+    corpSt.fileForm = false; toast('올렸어요'); render();
+  }
+  async function corpFileBlob(id){ var r = await corpCall('corp_file_get', { p_id: id }); return { blob: b64ToBlob(r.b64, r.mime), name: r.file_name }; }
+  async function corpIssuedSave(){
+    var x = corpSt.issued; if (!x) return;
+    var r = await corpCall('corp_file_put', { p_meta: { kind: '주주명부', title: '주주명부 (' + (x.asOf || todayStr()) + ' 기준, ' + x.issueNo + ')', file_name: x.fileName, mime: 'application/pdf', issued_on: todayStr() }, p_b64: await blobToB64(x.blob) });
+    x.savedFileId = r.id; toast('서류함에 보관했어요 — 서류함에서 기한 링크도 만들 수 있어요'); render();
+  }
+  async function corpLinkMake(fileId){
+    var days = +corpVal('cl-days') || 3;
+    var r = await corpCall('corp_share_create', { p_file: fileId, p_days: days, p_memo: corpVal('cl-memo') });
+    corpSt.linkFor = null; corpSt.lastLink = { url: appBase() + '#/share/' + r.token, until: fmtDT(r.expires_at), title: '' };
+    render();
+  }
+
+  // --- 누구나: 진위 확인 (QR) ---
+  routes.verify = async function(params){
+    var no = params.arg ? decodeURIComponent(params.arg) : '', key = params.arg2 ? decodeURIComponent(params.arg2) : '';
+    var html = topbar('서류 진위 확인', !!session);
+    if (!no || !key){
+      html += '<div class="form" style="margin-top:0"><div class="muted">서류 아래쪽의 발급번호와 확인 글자를 넣어 주세요.</div><div class="grid2"><div><label>발급번호</label><input class="in" id="vf-no" placeholder="BN-2026-0001"></div><div><label>확인 글자</label><input class="in" id="vf-key" placeholder="8글자"></div></div><button class="btn primary block" data-act="verify-go">확인</button></div>';
+      app.innerHTML = html; return;
+    }
+    var r = await db.rpc('corp_verify', { p_no: no, p_key: key });
+    if (!r || !r.ok){
+      html += '<div class="note danger" style="font-size:16px"><b>❌ 확인되지 않는 서류예요</b><br>발급번호나 확인 글자가 맞지 않아요. 서류를 준 회사에 직접 확인해 주세요.</div>';
+    } else if (r.revoked){
+      html += '<div class="note danger" style="font-size:16px"><b>⚠ 취소(무효)된 서류예요</b><br>' + esc(r.company || '') + '에서 발급했지만 나중에 무효 처리했어요.</div>';
+    } else {
+      html += '<div class="note ok" style="font-size:16px"><b>✅ ' + esc(r.company || '') + '에서 발급한 진짜 서류예요</b></div>';
+    }
+    if (r && r.ok){
+      html += '<div class="card"><div class="item"><div class="iname"><div class="s">서류</div><div class="t">' + esc(r.doc_type) + '</div></div></div>' +
+        '<div class="item"><div class="iname"><div class="s">발급번호</div><div class="t">' + esc(r.issue_no) + '</div></div></div>' +
+        '<div class="item"><div class="iname"><div class="s">' + (r.doc_type === '주주명부' ? '내용' : '대상자') + '</div><div class="t">' + esc(r.subject || '') + '</div></div></div>' +
+        (r.purpose ? '<div class="item"><div class="iname"><div class="s">용도</div><div class="t">' + esc(r.purpose) + '</div></div></div>' : '') +
+        '<div class="item"><div class="iname"><div class="s">발급 일시</div><div class="t">' + esc(new Date(r.issued_at).toLocaleString('ko-KR')) + '</div></div></div></div>' +
+        '<div class="muted" style="margin:8px 4px">가지고 계신 서류의 발급번호·내용이 위와 같은지 확인해 주세요. 이름은 개인정보 보호를 위해 가운데를 가렸어요.</div>';
+    }
+    app.innerHTML = html;
+  };
+
+  // --- 누구나: 기한 링크로 받은 서류 ---
+  routes.share = async function(params){
+    var token = params.arg || '';
+    var html = topbar('서류 받기', !!session);
+    var x = corpSt.shared && corpSt.shared.token === token ? corpSt.shared : null;
+    if (!x){
+      html += '<div class="note" style="margin-top:0">보내 준 회사가 이 링크로 서류를 공유했어요. 아래 버튼을 누르면 파일을 받아요.<br><span class="muted">링크는 정해진 기간이 지나면 자동으로 닫혀요.</span></div><button class="btn primary block" data-act="share-get" data-id="' + esc(token) + '">서류 받기</button>';
+    } else if (x.error){
+      html += '<div class="note danger">' + esc(x.error) + '</div><div class="muted" style="margin:6px 4px">필요하면 보내 준 분께 새 링크를 요청해 주세요.</div>';
+    } else {
+      html += '<div class="note ok" style="margin-top:0"><b>' + esc(x.company || '') + '</b> · ' + esc(x.title) + '<br><span class="muted">' + esc(fmtDT(x.expires_at)) + '까지 열 수 있어요</span></div>' +
+        (/^image\//.test(x.mime) ? '<img src="' + x.url + '" alt="" style="width:100%;border-radius:8px;background:#fff">' : '') +
+        '<div class="inline" style="margin-top:10px"><a class="btn primary" href="' + x.url + '" target="_blank" rel="noopener">열기</a><a class="btn" href="' + x.url + '" download="' + esc(x.file_name) + '">내려받기</a></div>';
+    }
+    app.innerHTML = html;
+  };
+  async function shareGet(token){
+    var r = await db.rpc('corp_share_open', { p_token: token });
+    if (!r || !r.ok){ corpSt.shared = { token: token, error: (r && r.error) || '열 수 없는 링크예요' }; render(); return; }
+    var blob = b64ToBlob(r.b64, r.mime);
+    corpSt.shared = { token: token, title: r.title, file_name: r.file_name, mime: r.mime, expires_at: r.expires_at, company: r.company, url: URL.createObjectURL(blob) };
+    render();
+  }
+
+  // --- 법인 서류 버튼들 ---
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act]'); if (!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    if (!/^(corp-|cert-|verify-|share-)/.test(act)) return;
+    if (el.disabled) return;
+    el.disabled = true;
+    try {
+      switch (act){
+        case 'corp-login': await corpLogin(); break;
+        case 'corp-lock': corpSt = { code: null, data: null, asOf: null, issued: null, certForm: null, holderEdit: null, eventFor: null, fileForm: false, linkFor: null, lastLink: null, shared: null }; toast('잠갔어요'); nav('#/home'); break;
+        case 'corp-info-save': await corpInfoSave(); break;
+        case 'corp-holder-new': corpSt.holderEdit = {}; corpSt.eventFor = null; render(); break;
+        case 'corp-holder-edit': corpSt.holderEdit = (corpSt.data.holdings || []).filter(function(h){ return h.id === id; })[0] || null; corpSt.eventFor = null; render(); break;
+        case 'corp-holder-cancel': corpSt.holderEdit = null; render(); break;
+        case 'corp-holder-save': await corpHolderSave(); break;
+        case 'corp-holder-del': if (confirm('이 주주와 변동 기록을 모두 지울까요? (잘못 넣은 경우에만)')){ await corpCall('corp_delete_holder', { p_id: id }); corpSt.holderEdit = null; toast('지웠어요'); render(); } break;
+        case 'corp-event-open': corpSt.eventFor = corpSt.eventFor === id ? null : id; corpSt.holderEdit = null; render(); break;
+        case 'corp-event-close': corpSt.eventFor = null; render(); break;
+        case 'corp-event-save': await corpEventSave(id); break;
+        case 'corp-event-del': if (confirm('이 변동 기록을 지울까요?')){ await corpCall('corp_delete_event', { p_id: id }); toast('지웠어요'); render(); } break;
+        case 'corp-holders-pdf': toast('PDF 만드는 중…'); await corpHoldersPdf(); break;
+        case 'corp-issued-share': if (corpSt.issued) await shareBlob(corpSt.issued.blob, corpSt.issued.fileName, corpSt.issued.type); break;
+        case 'corp-issued-open': if (corpSt.issued) openBlob(corpSt.issued.blob, corpSt.issued.fileName); break;
+        case 'corp-issued-down': if (corpSt.issued) downloadBlob(corpSt.issued.blob, corpSt.issued.fileName); break;
+        case 'corp-issued-save': await corpIssuedSave(); break;
+        case 'corp-issued-close': corpSt.issued = null; if (current.route === 'corp-cert-new' && corpSt.certForm && corpSt.certForm.reqId){ corpSt.certForm = null; nav('#/corp-certs'); } else render(); break;
+        case 'corp-cert-preview': certPreview(); break;
+        case 'corp-cert-issue': toast('발급하는 중…'); await certIssue(); break;
+        case 'corp-cert-reject': { var why = prompt('반려 사유 (직원에게 보여요)', ''); if (why === null) break; await db.update('ops_cert_requests', { id: id }, { status: 'rejected', note: why || null, decided_at: nowIso() }); toast('반려했어요'); render(); break; }
+        case 'corp-issue-revoke': if (confirm(id + ' 서류를 무효로 할까요? QR 확인 화면에 "취소된 서류"로 나와요.')){ await corpCall('corp_issue_revoke', { p_issue_no: id }); toast('무효로 했어요'); render(); } break;
+        case 'corp-file-form': corpSt.fileForm = !corpSt.fileForm; render(); break;
+        case 'corp-file-upload': await corpFileUpload(); break;
+        case 'corp-file-open': { var fo = await corpFileBlob(id); openBlob(fo.blob, fo.name); break; }
+        case 'corp-file-share': { var fs = await corpFileBlob(id); await shareBlob(fs.blob, fs.name); break; }
+        case 'corp-file-del': if (confirm('이 서류를 지울까요? 이 서류로 만든 링크도 같이 끊겨요.')){ await corpCall('corp_file_delete', { p_id: id }); toast('지웠어요'); render(); } break;
+        case 'corp-link-open': corpSt.linkFor = corpSt.linkFor === id ? null : id; render(); break;
+        case 'corp-link-cancel': corpSt.linkFor = null; render(); break;
+        case 'corp-link-make': await corpLinkMake(id); break;
+        case 'corp-link-close': corpSt.lastLink = null; render(); break;
+        case 'corp-link-copy': try { await navigator.clipboard.writeText(corpSt.lastLink.url); toast('복사했어요'); } catch(err){ prompt('아래 주소를 길게 눌러 복사하세요', corpSt.lastLink.url); } break;
+        case 'corp-link-share': if (navigator.share){ try { await navigator.share({ title: '서류 링크', text: '요청하신 서류입니다. (' + corpSt.lastLink.until + '까지 열려요)', url: corpSt.lastLink.url }); } catch(err){} } else { try { await navigator.clipboard.writeText(corpSt.lastLink.url); toast('복사했어요'); } catch(err2){} } break;
+        case 'corp-link-revoke': if (confirm('이 링크를 끊을까요? 받은 사람이 더 이상 못 열어요.')){ await corpCall('corp_share_revoke', { p_token: id }); toast('끊었어요'); render(); } break;
+        case 'cert-request': await certRequest(); break;
+        case 'cert-cancel': await db.update('ops_cert_requests', { id: id }, { status: 'canceled', decided_at: nowIso() }); toast('취소했어요'); render(); break;
+        case 'verify-go': { var vn = corpVal('vf-no').toUpperCase(), vk = corpVal('vf-key').toUpperCase(); if (!vn || !vk){ toast('둘 다 넣어 주세요'); break; } nav('#/verify/' + encodeURIComponent(vn) + '/' + encodeURIComponent(vk)); break; }
+        case 'share-get': await shareGet(id); break;
+      }
+    } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); if (!corpSt.code && /^corp-/.test(act)) render(); }
+    finally { el.disabled = false; }
+  });
+  app.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && e.target.id === 'corp-code'){ e.preventDefault(); corpLogin().catch(function(err){ toast('실패했어요: ' + (err.message || err)); }); }
+  });
+
+  // 시연 모드: 법인 서류 서버 함수 흉내 (코드 000000, 가짜 회사)
+  function corpMemRpc(T, fn, a){
+    if (!T.__corp){
+      var hid = ['ch1', 'ch2', 'ch3'];
+      T.__corp = {
+        settings: { company: { name: '주식회사 데모베이커리', reg_no: '110111-0000000', address: '서울시 ○○구 ○○로 12, 1층', ceo: '홍길동' }, total_shares: 10000, par_value: 5000 },
+        holders: [ { id: hid[0], name: '홍길동', birth: '1980-01-15', address: '서울시 ○○구 ○○로 1', relation: '대표', share_kind: '보통주', sort_order: 1 },
+          { id: hid[1], name: '김영희', birth: '1982-05-20', address: '서울시 ○○구 ○○로 1', relation: '배우자', share_kind: '보통주', sort_order: 2 },
+          { id: hid[2], name: '홍하나', birth: '2005-03-02', address: '서울시 ○○구 ○○로 1', relation: '자녀', share_kind: '보통주', sort_order: 3 } ],
+        events: [ { id: 'ce1', shareholder_id: hid[0], event_date: '2019-03-04', delta: 8000, reason: '설립', memo: null, created_at: daysAgo(900) },
+          { id: 'ce2', shareholder_id: hid[1], event_date: '2019-03-04', delta: 2000, reason: '설립', memo: null, created_at: daysAgo(900) },
+          { id: 'ce3', shareholder_id: hid[0], event_date: '2024-12-20', delta: -1000, reason: '증여', memo: '홍하나에게 1,000주', created_at: daysAgo(300) },
+          { id: 'ce4', shareholder_id: hid[2], event_date: '2024-12-20', delta: 1000, reason: '증여', memo: '홍길동에게서', created_at: daysAgo(300) } ],
+        files: [], links: [], issues: []
+      };
+    }
+    var C = T.__corp, owner = (T.__pp && T.__pp.owner) || '000000';
+    var err = function(m){ return { ok: false, error: m }; };
+    if (fn === 'corp_status') return { ready: true };
+    if (fn === 'corp_verify'){
+      var vi = C.issues.filter(function(i){ return i.issue_no === String(a.p_no || '').toUpperCase() && i.verify_key === String(a.p_key || '').toUpperCase(); })[0];
+      if (!vi) return { ok: false };
+      var nm = vi.subject_name || ''; if (vi.doc_type !== '주주명부' && nm.length >= 2) nm = nm[0] + new Array(Math.max(nm.length - 2, 1) + 1).join('*') + (nm.length > 2 ? nm[nm.length - 1] : '');
+      return { ok: true, issue_no: vi.issue_no, doc_type: vi.doc_type, subject: nm, purpose: vi.purpose, issued_at: vi.created_at, revoked: vi.revoked, company: C.settings.company.name };
+    }
+    if (fn === 'corp_share_open'){
+      var l = C.links.filter(function(x){ return x.token === a.p_token; })[0];
+      if (!l || l.revoked) return err('없거나 끊긴 링크예요');
+      if (new Date(l.expires_at) < new Date()) return err('기한이 지난 링크예요');
+      var sf = C.files.filter(function(f){ return f.id === l.file_id; })[0]; if (!sf) return err('파일이 지워졌어요');
+      l.open_count++; l.last_opened_at = new Date().toISOString();
+      return { ok: true, title: sf.title, file_name: sf.file_name, mime: sf.mime, b64: sf.b64, expires_at: l.expires_at, company: C.settings.company.name };
+    }
+    if (a.p_code !== owner) return err('사장님 코드가 틀려요 (시연 모드: 000000)');
+    if (fn === 'corp_login') return { ok: true };
+    if (fn === 'corp_get'){
+      var dt = a.p_date || todayStr();
+      var hs = C.holders.map(function(h){ var ev = C.events.filter(function(e){ return e.shareholder_id === h.id && e.event_date <= dt; }); var pos = ev.filter(function(e){ return e.delta > 0; }).map(function(e){ return e.event_date; }).sort();
+        return Object.assign({}, h, { shares: ev.reduce(function(s, e){ return s + e.delta; }, 0), first_date: pos[0] || null }); }).sort(function(x, y){ return x.sort_order - y.sort_order; });
+      return { ok: true, settings: C.settings, holdings: hs, events: C.events.slice().sort(function(x, y){ return x.event_date < y.event_date ? 1 : -1; }),
+        files: C.files.map(function(f){ var o = Object.assign({}, f); delete o.b64; return o; }).reverse(), links: C.links.slice().reverse(), issues: C.issues.slice().reverse() };
+    }
+    if (fn === 'corp_save_settings'){ C.settings = { company: a.p_company, total_shares: a.p_total_shares, par_value: a.p_par_value }; return { ok: true }; }
+    if (fn === 'corp_save_holder'){ var h = a.p_holder; if (!h.name) return err('이름을 넣어 주세요'); if (h.id){ Object.assign(C.holders.filter(function(x){ return x.id === h.id; })[0] || {}, h); return { ok: true, id: h.id }; } var nh = Object.assign({ id: uid(), sort_order: C.holders.length + 1 }, h); C.holders.push(nh); return { ok: true, id: nh.id }; }
+    if (fn === 'corp_delete_holder'){ C.holders = C.holders.filter(function(x){ return x.id !== a.p_id; }); C.events = C.events.filter(function(x){ return x.shareholder_id !== a.p_id; }); return { ok: true }; }
+    if (fn === 'corp_add_event'){ var e = a.p_event, have = C.events.filter(function(x){ return x.shareholder_id === e.shareholder_id && x.event_date <= e.event_date; }).reduce(function(s, x){ return s + x.delta; }, 0); if (have + e.delta < 0) return err('그 날짜에 가진 주식보다 많이 줄일 수 없어요'); C.events.push(Object.assign({ id: uid(), created_at: new Date().toISOString() }, e)); return { ok: true }; }
+    if (fn === 'corp_delete_event'){ C.events = C.events.filter(function(x){ return x.id !== a.p_id; }); return { ok: true }; }
+    if (fn === 'corp_file_put'){ var m = a.p_meta, nf = { id: uid(), kind: m.kind || '기타', title: m.title || m.file_name, file_name: m.file_name, mime: m.mime, size: Math.round(a.p_b64.length * 3 / 4), issued_on: m.issued_on || null, memo: m.memo || null, uploaded_at: new Date().toISOString(), b64: a.p_b64 }; C.files.push(nf); return { ok: true, id: nf.id }; }
+    if (fn === 'corp_file_get'){ var gf = C.files.filter(function(f){ return f.id === a.p_id; })[0]; if (!gf) return err('파일이 없어요'); return { ok: true, file_name: gf.file_name, mime: gf.mime, b64: gf.b64 }; }
+    if (fn === 'corp_file_delete'){ C.files = C.files.filter(function(f){ return f.id !== a.p_id; }); C.links = C.links.filter(function(x){ return x.file_id !== a.p_id; }); return { ok: true }; }
+    if (fn === 'corp_share_create'){ var tk = uid().slice(1, 25), ex = new Date(Date.now() + (a.p_days || 3) * 86400000).toISOString(); C.links.push({ token: tk, file_id: a.p_file, memo: a.p_memo || null, expires_at: ex, revoked: false, open_count: 0, last_opened_at: null, created_at: new Date().toISOString() }); return { ok: true, token: tk, expires_at: ex }; }
+    if (fn === 'corp_share_revoke'){ C.links.forEach(function(x){ if (x.token === a.p_token) x.revoked = true; }); return { ok: true }; }
+    if (fn === 'corp_issue'){ var y = String(new Date().getFullYear()), n = C.issues.filter(function(i){ return i.issue_no.indexOf('BN-' + y) === 0; }).length + 1, d = a.p_doc;
+      var row = { id: uid(), issue_no: 'BN-' + y + '-' + ('000' + n).slice(-4), verify_key: Math.random().toString(16).slice(2, 10).toUpperCase(), doc_type: d.doc_type, subject_name: d.subject_name, staff_id: d.staff_id || null, purpose: d.purpose || null, recipient: d.recipient || null, revoked: false, created_at: new Date().toISOString() };
+      C.issues.push(row); return { ok: true, id: row.id, issue_no: row.issue_no, verify_key: row.verify_key, company: C.settings.company }; }
+    if (fn === 'corp_issue_set_sha'){ C.issues.forEach(function(i){ if (i.issue_no === a.p_issue_no) i.pdf_sha256 = a.p_sha; }); return { ok: true }; }
+    if (fn === 'corp_issue_revoke'){ C.issues.forEach(function(i){ if (i.issue_no === a.p_issue_no){ i.revoked = true; i.revoked_at = new Date().toISOString(); } }); return { ok: true }; }
+    return err('알 수 없는 함수: ' + fn);
+  }
 
   // ===== 시작 =====
   if (DEMO) db = makeMemoryDb(demoSeed());
