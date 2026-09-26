@@ -710,8 +710,8 @@
     html += grp('출퇴근 관리');
     html += row('#/clock', 'tile-green', '⏱', '출퇴근', '매장폰에서 이름·비밀번호로 출근·퇴근');
     if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 근무시간 (근무표 기준, 급여 근거)');
-    if (isOwner()) html += row('#/extra-approve', 'tile-green', '✅', '추가 근무 승인', extraPend ? '⚠ 승인 대기 ' + extraPend + '건' : '직원이 올린 조기 출근·연장 수락');
-    html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '근무표보다 더 일했을 때 직접 올리기');
+    if (isOwner()) html += row('#/extra-approve', 'tile-green', '✅', '추가 근무 승인', extraPend ? '⚠ 승인 대기 ' + extraPend + '건' : '직원이 올린 조기 출근·연장·조기 퇴근 수락');
+    html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '더 일했거나 일찍 마쳤을 때 직접 올리기');
     html += tge();
     html += grp('로그북(업무일지)');
     html += row('#/alog', 'tile-yellow', '✍️', '근무자 일지 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
@@ -1934,7 +1934,7 @@
   // ===== 근무표 기준 출퇴근 + 추가 근무 (12차, 기획/출퇴근_근무표기준_설계.md) =====
   // 인정 = 근무표(지각만 1분 단위 자동 차감) + 사장님이 수락한 추가 근무. 실제 누른 시각은 clock_in/out에 그대로 보관.
   // 직원 화면엔 근무표 시간만 보이고, 조기·연장을 먼저 권하지 않는다(사장님 결정).
-  var EXTRA_KIND = { early: '조기 출근', late: '연장(늦게 끝남)', other: '기타' };
+  var EXTRA_KIND = { early: '조기 출근', late: '연장(늦게 끝남)', earlyLeave: '조기 퇴근(일찍 마침)', other: '기타' };
   var EXTRA_STEP = 5; // 분 단위
   function hm5(t){ return t ? String(t).slice(0, 5) : ''; }
   function myShift(sch, b, staffId, dateStr, refMin){ // 그 날 이 사람 근무표 칸(대타로 들어간 칸 포함), 여러 개면 refMin에 가장 가까운 시작
@@ -1951,7 +1951,7 @@
     var early = r.clock_out && new Date(r.clock_out).getTime() < tse ? Math.floor((tse - new Date(r.clock_out).getTime()) / 60000) : 0;
     return { ss: ss, se: se, late: late, early: early, from: new Date(Math.min(tss + late * 60000, tse)).toISOString() };
   }
-  function extraOf(r){ var m = 0, n = 0; (r._extras || []).forEach(function(x){ if (x.status !== 'approved') return; var am = x.approved_minutes != null ? x.approved_minutes : x.minutes; m += am; if (x.start_at && x.end_at) n += Math.min(am, nightMinutes(x.start_at, x.end_at)); }); return { min: m, night: n }; }
+  function extraOf(r){ var m = 0, n = 0; (r._extras || []).forEach(function(x){ if (x.status !== 'approved') return; var am = x.approved_minutes != null ? x.approved_minutes : x.minutes, sign = x.kind === 'earlyLeave' ? -1 : 1; m += sign * am; if (x.start_at && x.end_at) n += sign * Math.min(am, nightMinutes(x.start_at, x.end_at)); }); return { min: m, night: n }; }
   async function attachExtras(recs, branchId, fromDate){
     var ex = [];
     try { ex = await db.select('ops_attendance_extras', { eq: { branch_id: branchId }, gte: { work_date: fromDate } }); } catch(e){ console.warn('추가 근무 표 없음(supabase-migration-extras.sql)', e); }
@@ -2017,10 +2017,11 @@
     toast(status === 'approved' ? '근무표대로 인정했어요' : '거절했어요'); render();
   }
   function extraBadge(x){
-    if (x.status === 'approved') return '<span class="badge ok">수락 ' + (x.approved_minutes != null ? x.approved_minutes : x.minutes) + '분</span>';
+    if (x.status === 'approved') return '<span class="badge ok">수락 ' + (x.kind === 'earlyLeave' ? '-' : '+') + (x.approved_minutes != null ? x.approved_minutes : x.minutes) + '분</span>';
     if (x.status === 'rejected') return '<span class="badge muted">거절</span>';
     return '<span class="badge warn">승인 대기</span>';
   }
+  function extraMinLabel(x){ return (x.kind === 'earlyLeave' ? '-' : '+') + x.minutes + '분'; }
   async function extraFormHtml(staffId){
     var from = addDays(todayStr(), -62);
     var recs = (await db.select('ops_attendance', { eq: { staff_id: staffId }, gte: { work_date: from }, order: { col: 'work_date', asc: false } })).filter(function(r){ return r.clock_in; });
@@ -2032,13 +2033,13 @@
       html += '<div class="form" style="box-shadow:none;margin:0"><label>어느 근무</label><select class="in" id="ex-rec">' + recs.map(function(r){ return '<option value="' + esc(r.id) + '">' + esc(fmtDateK(r.work_date)) + ' ' + esc(branchName(r.branch_id)) + ' · ' + esc(attShow(r)) + '</option>'; }).join('') + '</select>';
       html += '<label>종류</label><select class="in" id="ex-kind">' + Object.keys(EXTRA_KIND).map(function(k){ return '<option value="' + k + '">' + EXTRA_KIND[k] + '</option>'; }).join('') + '</select>';
       html += '<div class="grid2"><div><label>시작</label><input class="in" id="ex-start" type="time"></div><div><label>끝</label><input class="in" id="ex-end" type="time"></div></div>';
-      html += '<label>추가 시간 (분, ' + EXTRA_STEP + '분 단위)</label><input class="in" id="ex-min" type="number" min="' + EXTRA_STEP + '" step="' + EXTRA_STEP + '" inputmode="numeric">';
+      html += '<label>시간 (분, ' + EXTRA_STEP + '분 단위)</label><input class="in" id="ex-min" type="number" min="' + EXTRA_STEP + '" step="' + EXTRA_STEP + '" inputmode="numeric">';
       html += '<label>사유 (꼭 적어 주세요)</label><textarea class="in" id="ex-reason" rows="2"></textarea>';
-      html += '<div class="muted" style="margin:6px 0">사장님이 수락해야 근무 시간으로 인정돼요.</div><button class="btn primary block" data-act="extra-submit" data-staff="' + esc(staffId) + '">올리기</button></div>';
+      html += '<div class="muted" style="margin:6px 0">사장님이 수락해야 근무 시간에 반영돼요. "조기 퇴근"은 그만큼 인정 시간이 줄어요.</div><button class="btn primary block" data-act="extra-submit" data-staff="' + esc(staffId) + '">올리기</button></div>';
     }
     if (mine.length){
       html += '<div class="sec-h" style="margin-top:16px">내가 올린 추가 근무</div>';
-      mine.slice(0, 10).forEach(function(x){ html += '<div class="hist" style="flex-wrap:wrap"><span>' + esc(fmtDateK(x.work_date)) + '</span><span class="sp">' + esc(EXTRA_KIND[x.kind] || x.kind) + ' ' + x.minutes + '분</span>' + extraBadge(x) + (x.status === 'rejected' && x.reject_reason ? '<div class="muted" style="width:100%">거절 사유: ' + esc(x.reject_reason) + '</div>' : '') + '</div>'; });
+      mine.slice(0, 10).forEach(function(x){ html += '<div class="hist" style="flex-wrap:wrap"><span>' + esc(fmtDateK(x.work_date)) + '</span><span class="sp">' + esc(EXTRA_KIND[x.kind] || x.kind) + ' ' + extraMinLabel(x) + '</span>' + extraBadge(x) + (x.status === 'rejected' && x.reject_reason ? '<div class="muted" style="width:100%">거절 사유: ' + esc(x.reject_reason) + '</div>' : '') + '</div>'; });
     }
     return html + '</div>';
   }
@@ -2048,6 +2049,7 @@
     var k = document.getElementById('ex-kind').value, st = document.getElementById('ex-start'), en = document.getElementById('ex-end');
     if (k === 'early' && r.sched_start){ st.value = ''; en.value = hm5(r.sched_start); }
     else if (k === 'late' && r.sched_end){ st.value = hm5(r.sched_end); en.value = ''; }
+    else if (k === 'earlyLeave' && r.sched_end){ st.value = ''; en.value = hm5(r.sched_end); }
     else { st.value = ''; en.value = ''; }
     document.getElementById('ex-min').value = '';
   }
@@ -2072,7 +2074,7 @@
   }
   routes.extra = async function(){
     await loadBase();
-    app.innerHTML = topbar('추가 근무 올리기', true) + '<div class="muted" style="margin:4px 4px 10px">근무표보다 더 일했을 때 직접 올리는 칸이에요. 지난 근무도 언제든 올릴 수 있어요.</div>' + await extraFormHtml(session.staffId);
+    app.innerHTML = topbar('추가 근무 올리기', true) + '<div class="muted" style="margin:4px 4px 10px">근무표보다 더 일했거나(추가 근무), 가게 사정 등으로 일찍 마쳤을 때(조기 퇴근) 직접 올리는 칸이에요. 지난 근무도 언제든 올릴 수 있어요.</div>' + await extraFormHtml(session.staffId);
     extraFill();
   };
   routes['extra-approve'] = async function(){
@@ -2094,7 +2096,7 @@
     pend.forEach(function(x){
       var a = atts[x.attendance_id] || {};
       html += '<div class="item" style="flex-wrap:wrap;align-items:flex-start"><div class="iname" style="flex:1 1 100%"><div class="t">' + esc(staffName(x.staff_id)) + ' · ' + esc(branchName(x.branch_id)) + ' · ' + esc(fmtDateK(x.work_date)) + '</div>' +
-        '<div class="s"><b>' + esc(EXTRA_KIND[x.kind] || x.kind) + ' ' + x.minutes + '분</b> (' + hm(x.start_at) + '~' + hm(x.end_at) + ')</div>' +
+        '<div class="s"><b>' + esc(EXTRA_KIND[x.kind] || x.kind) + ' ' + extraMinLabel(x) + '</b> (' + hm(x.start_at) + '~' + hm(x.end_at) + ')</div>' +
         '<div class="s">근무표 ' + (a.sched_start ? esc(hm5(a.sched_start) + '~' + hm5(a.sched_end)) : '없음') + ' · 실제 누른 시각 ' + hm(a.clock_in) + '~' + hm(a.clock_out) + '</div>' +
         '<div class="s">사유: ' + esc(x.reason) + '</div></div>' +
         '<div class="inline" style="gap:6px;margin-top:6px"><button class="btn sm primary" data-act="extra-ok" data-id="' + esc(x.id) + '">수락</button><button class="btn sm" data-act="extra-ok-edit" data-id="' + esc(x.id) + '" data-min="' + x.minutes + '">시간 고쳐서 수락</button><button class="btn sm" data-act="extra-no" data-id="' + esc(x.id) + '">거절</button></div></div>';
@@ -2102,10 +2104,10 @@
     html += '</div>';
     if (done.length){
       html += '<div class="card section"><div class="sec-h">최근 30일 처리한 것</div>';
-      done.forEach(function(x){ html += '<div class="hist" style="flex-wrap:wrap"><span>' + esc(fmtDateK(x.work_date)) + '</span><span class="sp">' + esc(staffName(x.staff_id)) + ' · ' + esc(EXTRA_KIND[x.kind] || x.kind) + ' ' + x.minutes + '분</span>' + extraBadge(x) + (x.status === 'approved' || x.status === 'rejected' ? ' <span class="muted" data-act="extra-undo" data-id="' + esc(x.id) + '" style="cursor:pointer;font-size:12px">되돌리기</span>' : '') + (x.reject_reason ? '<div class="muted" style="width:100%">거절 사유: ' + esc(x.reject_reason) + '</div>' : '') + '</div>'; });
+      done.forEach(function(x){ html += '<div class="hist" style="flex-wrap:wrap"><span>' + esc(fmtDateK(x.work_date)) + '</span><span class="sp">' + esc(staffName(x.staff_id)) + ' · ' + esc(EXTRA_KIND[x.kind] || x.kind) + ' ' + extraMinLabel(x) + '</span>' + extraBadge(x) + (x.status === 'approved' || x.status === 'rejected' ? ' <span class="muted" data-act="extra-undo" data-id="' + esc(x.id) + '" style="cursor:pointer;font-size:12px">되돌리기</span>' : '') + (x.reject_reason ? '<div class="muted" style="width:100%">거절 사유: ' + esc(x.reject_reason) + '</div>' : '') + '</div>'; });
       html += '</div>';
     }
-    html += '<div class="muted" style="margin:8px 4px">수락한 시간만 근무 조회·급여 초안의 인정 시간에 더해져요. 이미 확정한 달의 급여는 바뀌지 않아요.</div>';
+    html += '<div class="muted" style="margin:8px 4px">수락한 시간만큼 근무 조회·급여 초안의 인정 시간이 늘거나(추가 근무) 줄어요(조기 퇴근). 이미 확정한 달의 급여는 바뀌지 않아요.</div>';
     app.innerHTML = html;
   };
   async function extraDecide(id, status, approvedMin, rejectReason){
@@ -2250,12 +2252,12 @@
   function addMonths(ym, k){ var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + k; var d = new Date(y, m, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); }
   function recNet(r, sch){ // 근무표 기준 기록(12차~): 근무표 − 지각 − 휴게 + 수락된 추가 근무 / 옛 기록: 실제 분 − 근무표 휴게
     var ex = extraOf(r);
-    if (r.no_schedule) return { raw: r.clock_in && r.clock_out ? minutesBetween(r.clock_in, r.clock_out) : null, net: ex.min, brk: 0, night: ex.night, extra: ex.min, late: 0, early: 0, sched: true };
+    if (r.no_schedule) return { raw: r.clock_in && r.clock_out ? minutesBetween(r.clock_in, r.clock_out) : null, net: Math.max(0, ex.min), brk: 0, night: ex.night, extra: ex.min, late: 0, early: 0, sched: true };
     if (r.sched_start){
-      if (r.fill_status === 'requested' || r.fill_status === 'rejected') return { raw: null, net: ex.min, brk: 0, night: ex.night, extra: ex.min, late: 0, early: 0, sched: true, fillWait: true };
+      if (r.fill_status === 'requested' || r.fill_status === 'rejected') return { raw: null, net: Math.max(0, ex.min), brk: 0, night: ex.night, extra: ex.min, late: 0, early: 0, sched: true, fillWait: true };
       var a = attInfo(r); if (r.fill_status === 'approved'){ a.late = 0; a.early = 0; a.from = a.ss; }
       var span = Math.max(0, Math.round((new Date(a.se) - new Date(a.from)) / 60000)), sb = Math.min(r.sched_break_min || 0, span);
-      return { raw: r.clock_in && r.clock_out ? minutesBetween(r.clock_in, r.clock_out) : null, net: Math.max(0, span - sb) + ex.min, brk: sb, night: nightMinutes(a.from, a.se) + ex.night, extra: ex.min, late: a.late, early: a.early, sched: true };
+      return { raw: r.clock_in && r.clock_out ? minutesBetween(r.clock_in, r.clock_out) : null, net: Math.max(0, Math.max(0, span - sb) + ex.min), brk: sb, night: nightMinutes(a.from, a.se) + ex.night, extra: ex.min, late: a.late, early: a.early, sched: true };
     }
     if (!r.clock_in || !r.clock_out) return null;
     var raw = minutesBetween(r.clock_in, r.clock_out), brk = 0;
