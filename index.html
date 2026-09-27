@@ -250,7 +250,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -300,7 +300,7 @@
       update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
       upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
       remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); },
-      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
+      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
@@ -759,6 +759,9 @@
     html += tge();
     var certPend = 0;
     if (isOwner()){ try { certPend = (await db.select('ops_cert_requests', { eq: { status: 'requested' } })).length; } catch(e){ console.warn('증명서 신청 표 없음', e); } }
+    html += grp('자금');
+    if (isOwner()) html += row('#/cash', 'tile-green', '🏦', '자금 흐름', '법인 통장 거래내역 → 들어온 돈·나간 돈·카드 대금·배민·4대보험 (사장님만)');
+    html += tge();
     html += grp('법인');
     if (isOwner()) html += row('#/corp', 'tile-purple', '🏛️', '법인 서류', certPend ? '⚠ 증명서 신청 ' + certPend + '건 · 재직·경력증명서 · 주주명부 · 서류함' : '재직·경력증명서 · 주주명부 · 서류함 · 발급 대장 (사장님만)');
     html += tge();
@@ -6521,6 +6524,631 @@
     if (fn === 'corp_issue_set_sha'){ C.issues.forEach(function(i){ if (i.issue_no === a.p_issue_no) i.pdf_sha256 = a.p_sha; }); return { ok: true }; }
     if (fn === 'corp_issue_revoke'){ C.issues.forEach(function(i){ if (i.issue_no === a.p_issue_no){ i.revoked = true; i.revoked_at = new Date().toISOString(); } }); return { ok: true }; }
     return err('알 수 없는 함수: ' + fn);
+  }
+
+  // =========================================================
+  // ===== 자금 흐름 (법인 통장 거래내역 → 자동 분류 → 월 흐름표) =====
+  // 기획: 기획/자금흐름_기획안.md · SQL: supabase-migration-cash.sql
+  // 사장님만 · 선결제 사장님 코드(6자리)로 잠김. 분류는 규칙으로 그때그때 계산하고, 사장님이 직접 고른 것만 저장.
+  // =========================================================
+  var CASH_GROUPS = [
+    { key: 'sales', label: '💰 매출 입금', dir: 'in' },
+    { key: 'etcin', label: '💵 기타 입금', dir: 'in' },
+    { key: 'labor', label: '👥 인건비', dir: 'out' },
+    { key: 'card', label: '💳 카드 대금', dir: 'out' },
+    { key: 'fixed', label: '🏠 고정비', dir: 'out' },
+    { key: 'vendor', label: '🥐 거래처', dir: 'out' },
+    { key: 'tax', label: '🧾 세금', dir: 'out' },
+    { key: 'fee', label: '📑 수수료', dir: 'out' },
+    { key: 'fin', label: '🏦 금융', dir: 'out' },
+    { key: 'etcout', label: '📦 기타 지출', dir: 'out' }
+  ];
+  var CASH_CATS = [
+    { key: 'baemin', label: '배민 정산', group: 'sales' },
+    { key: 'coupang', label: '쿠팡이츠 정산', group: 'sales' },
+    { key: 'cardsale', label: '카드 매출', group: 'sales' },
+    { key: 'easypay', label: '간편결제·온라인', group: 'sales' },
+    { key: 'cashsale', label: '현금·기타 매출', group: 'sales' },
+    { key: 'subsidy', label: '지원금', group: 'etcin' },
+    { key: 'refund', label: '환급·이자', group: 'etcin' },
+    { key: 'etc_in', label: '기타 입금', group: 'etcin' },
+    { key: 'salary', label: '급여', group: 'labor' },
+    { key: 'insur', label: '4대보험', group: 'labor' },
+    { key: 'card', label: '카드 대금', group: 'card' },
+    { key: 'rent', label: '월세', group: 'fixed' },
+    { key: 'mgmt', label: '관리비', group: 'fixed' },
+    { key: 'util', label: '전기·수도·가스', group: 'fixed' },
+    { key: 'telecom', label: '통신·자동이체', group: 'fixed' },
+    { key: 'vendor', label: '거래처(물품·공사)', group: 'vendor' },
+    { key: 'tax', label: '국세', group: 'tax' },
+    { key: 'ltax', label: '지방세·과태료', group: 'tax' },
+    { key: 'fee', label: '세무·노무 수수료', group: 'fee' },
+    { key: 'loan', label: '대출·이자', group: 'fin' },
+    { key: 'etc_out', label: '기타 지출', group: 'etcout' }
+  ];
+  // 들어온 돈·나간 돈 합계에서 빼는 것
+  var CASH_SPECIAL = { transfer: '🔁 통장끼리 이동', other_acct: '🏦 본노엘 다른 통장', uncls: '❓ 미분류' };
+  var CASH_ASK = [ ['card', '💳 카드 대금'], ['baemin', '🛵 배민 입금'], ['coupang', '🛵 쿠팡이츠 입금'], ['cardsale', '💳 카드 매출 입금'], ['insur', '👥 4대보험'], ['salary', '👥 급여'], ['rent', '🏠 월세'], ['tax', '🧾 국세'] ];
+  var cashSt = { code: null, loaded: false, accounts: [], rules: [], months: [], last: [], tx: [], from: null, to: null, month: null, scope: 'all', open: {}, uploads: [], upResult: null, acctEdit: null, review: [] };
+
+  function cashCatInfo(k){ for (var i = 0; i < CASH_CATS.length; i++) if (CASH_CATS[i].key === k) return CASH_CATS[i]; return null; }
+  function cashCatLabel(k){ var c = cashCatInfo(k); return c ? c.label : (CASH_SPECIAL[k] || k); }
+  function cashCatDir(k){ var c = cashCatInfo(k); if (!c) return 'any'; for (var i = 0; i < CASH_GROUPS.length; i++) if (CASH_GROUPS[i].key === c.group) return CASH_GROUPS[i].dir; return 'any'; }
+  function cashCatOptions(dir, sel, withAuto){
+    var h = withAuto ? '<option value="">(자동)</option>' : '<option value="">항목 고르기…</option>';
+    CASH_GROUPS.forEach(function(g){
+      if (dir !== 'any' && g.dir !== dir) return;
+      h += '<optgroup label="' + esc(g.label) + '">' + CASH_CATS.filter(function(c){ return c.group === g.key; }).map(function(c){ return '<option value="' + c.key + '"' + (c.key === sel ? ' selected' : '') + '>' + esc(c.label) + '</option>'; }).join('') + '</optgroup>';
+    });
+    h += '<optgroup label="합계에서 빼기"><option value="transfer"' + (sel === 'transfer' ? ' selected' : '') + '>🔁 통장끼리 이동</option><option value="other_acct"' + (sel === 'other_acct' ? ' selected' : '') + '>🏦 본노엘 다른 통장</option></optgroup>';
+    return h;
+  }
+  function cashYmLabel(ym){ return ym ? ym.slice(0, 4) + '년 ' + (+ym.slice(5, 7)) + '월' : ''; }
+  function cashYmShift(ym, n){ var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; return y + '-' + pad(m + 1); }
+  function cashYmNow(){ return todayStr().slice(0, 7); }
+  function cashYmLastDay(ym){ var d = new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0); return ym + '-' + pad(d.getDate()); }
+  function cashBranchShort(id){ var b = base.branches.filter(function(x){ return x.id === id; })[0]; return b ? String(b.name).replace(/점$/, '') : '공통'; }
+  function cashAcct(id){ return cashSt.accounts.filter(function(a){ return a.id === id; })[0] || null; }
+  function cashMan(n){ n = Math.round(n || 0); var a = Math.abs(n); var s = a >= 100000000 ? (Math.round(a / 1000000) / 100) + '억' : a >= 10000 ? won(Math.round(a / 10000)) + '만' : won(a); return (n < 0 ? '-' : '') + s; }
+  function cashDiff(now, prev){ if (!prev) return ''; var d = now - prev; if (!d) return '<span class="muted">지난달과 같음</span>'; return '<span class="muted">지난달보다 ' + (d > 0 ? '▲' : '▼') + ' ' + cashMan(Math.abs(d)) + '</span>'; }
+
+  // ----- 자동 분류 -----
+  // 은행 엑셀의 "적요(memo)"·"내용/보낸분·받는분(party)"·"거래점(place)" 글자로 판단. 2026.1~7 실제 거래로 확인한 규칙
+  function cashBuiltin(t, dir){
+    var p = t.party || '', m = t.memo || '', pl = t.place || '';
+    if (dir === 'in'){
+      if (/음식배달|우아한형제|배달의민족/.test(p)) return 'baemin';
+      if (/쿠팡/.test(p)) return 'coupang';
+      if (/서울페이|제로페이|Npay|네이버페이|카카오페이|스마트스토어|에이블리|데일리샷|토스페이/.test(p) || /PG/.test(m)) return 'easypay';
+      if (/가맹입금|매출표/.test(m) || /온누리/.test(p) || /^(KB|SHC|BC|NH|현\d|하나\d|삼성\d|롯데|우\d|신한\d)|\d+BC?$/.test(p)) return 'cardsale';
+      if (/고용노동부|지원금/.test(p)) return 'subsidy';
+      if (/환급/.test(p) || /이자|국세/.test(m)) return 'refund';
+      if (/본노/.test(p)) return 'other_acct';
+      return 'uncls';
+    }
+    if (/사회보험|국민연금|건강보험|근로복지|고용보험/.test(p) || /보험료|연금|의보|산재/.test(m) || (/본노엘/.test(p) && /원주/.test(pl))) return 'insur';
+    if (/선불카드/.test(p)) return 'telecom';
+    if ((/카드/.test(p) && /카드결|이체|자동/.test(m)) || /카드결/.test(m)) return 'card';
+    if (/급여/.test(m)) return /본노/.test(p) ? 'other_acct' : 'salary';
+    if (/국세|세무서/.test(p)) return 'tax';
+    if (/전력|한전|가스|수도/.test(p) || /전기|수도|가스/.test(m)) return 'util';
+    if (/지방세|위택스|구청|등록본노엘|경찰청|자동본노엘|과태료/.test(p)) return 'ltax';
+    if (/입주|관리단|관리비|관리사무/.test(p)) return 'mgmt';
+    if (/CC$/.test(m)) return 'rent';
+    if (/세무|회계|노무/.test(p)) return 'fee';
+    if (/대출|캐피탈/.test(p) || /대출|이자/.test(m)) return 'loan';
+    if (/^(KT|SKT|LGU)|통신|렌탈|캡스|세콤|에스원/.test(p)) return 'telecom';
+    if (/본노/.test(p)) return 'other_acct';
+    return 'uncls';
+  }
+  // 한 통장 출금 = 다른 통장 입금 (같은 금액, 10분 안, 한쪽이라도 "본노엘") → 통장끼리 이동
+  function cashPair(tx){
+    var ins = {};
+    tx.forEach(function(t){ t.pair = null; if (t.inAmt > 0 && !t.cat) (ins[t.inAmt] = ins[t.inAmt] || []).push(t); });
+    tx.forEach(function(o){
+      if (!(o.outAmt > 0) || o.cat) return;
+      var list = ins[o.outAmt]; if (!list) return;
+      for (var i = 0; i < list.length; i++){
+        var c = list[i];
+        if (c.acct === o.acct || Math.abs(c.ms - o.ms) > 600000 || !/본노/.test(o.party + ' ' + c.party)) continue;
+        o.pair = c; c.pair = o; list.splice(i, 1); break;
+      }
+    });
+  }
+  function cashCatOf(t){
+    if (t.cat) return t.cat;
+    if (t.pair) return 'transfer';
+    var dir = t.outAmt > 0 ? 'out' : 'in';
+    for (var i = 0; i < cashSt.rules.length; i++){
+      var r = cashSt.rules[i];
+      if (r.dir !== 'any' && r.dir !== dir) continue;
+      if (String(r.field === 'memo' ? t.memo : t.party).indexOf(r.pattern) >= 0) return r.category;
+    }
+    return cashBuiltin(t, dir);
+  }
+  function cashClassify(){ cashPair(cashSt.tx); cashSt.tx.forEach(function(t){ t.c = cashCatOf(t); }); }
+
+  // 한 달·범위 합계. scope = 'all' 또는 매장 id
+  function cashSum(ym, scope){
+    var r = { inn: 0, out: 0, by: {}, n: {}, move: 0, xIn: 0, xOut: 0, otherIn: 0, otherOut: 0, unclsN: 0, uncls: 0, list: [] };
+    cashSt.tx.forEach(function(t){
+      if (t.ym !== ym || (scope !== 'all' && t.branch !== scope)) return;
+      r.list.push(t);
+      var c = t.c;
+      if (c === 'transfer'){
+        if (scope !== 'all' && t.pair && t.pair.branch !== t.branch){ r.xIn += t.inAmt; r.xOut += t.outAmt; }
+        else r.move += t.outAmt + (t.pair ? 0 : t.inAmt);
+        return;
+      }
+      if (c === 'other_acct'){ r.otherIn += t.inAmt; r.otherOut += t.outAmt; return; }
+      r.inn += t.inAmt; r.out += t.outAmt;
+      r.by[c] = (r.by[c] || 0) + t.inAmt + t.outAmt; r.n[c] = (r.n[c] || 0) + 1;
+      if (c === 'uncls'){ r.unclsN++; r.uncls += t.inAmt + t.outAmt; }
+    });
+    return r;
+  }
+
+  // ----- 서버 -----
+  async function cashCall(fn, args){
+    var r = await db.rpc(fn, Object.assign({ p_code: cashSt.code }, args || {}));
+    if (r && r.ok === false){ if (/사장님 코드/.test(r.error || '')) cashSt.code = null; throw new Error(r.error || '실패했어요'); }
+    return r;
+  }
+  async function cashLoad(from, to){
+    var r = await cashCall('cash_get', { p_from: from || null, p_to: to || null });
+    cashSt.accounts = r.accounts || []; cashSt.rules = r.rules || []; cashSt.months = r.months || []; cashSt.last = r.last || [];
+    cashSt.from = String(r.from).slice(0, 10); cashSt.to = String(r.to).slice(0, 10);
+    var am = {}; cashSt.accounts.forEach(function(a){ am[a.id] = a; });
+    cashSt.tx = (r.tx || []).map(function(x){
+      return { id: x[0], acct: x[1], at: x[2], ym: String(x[2]).slice(0, 7), inAmt: +x[3] || 0, outAmt: +x[4] || 0, bal: x[5], memo: x[6] || '', party: x[7] || '', place: x[8] || '', cat: x[9] || null, note: x[10] || '', branch: (am[x[1]] || {}).branch_id || null, ms: Date.parse(String(x[2]).replace(' ', 'T')) };
+    });
+    cashClassify();
+    cashSt.loaded = true;
+  }
+  // 보려는 달이 불러온 범위 밖이면 그 달까지 6개월을 다시 불러옴
+  async function cashEnsure(ym){
+    if (!base.branches.length) await loadBase();
+    if (!cashSt.loaded){ await cashLoad(); }
+    if (!cashSt.month) cashSt.month = cashSt.months.length ? cashSt.months[cashSt.months.length - 1] : cashYmNow();
+    ym = ym || cashSt.month;
+    if (ym < cashSt.from.slice(0, 7) || ym > cashSt.to.slice(0, 7)) await cashLoad(cashYmShift(ym, -5) + '-01', cashYmLastDay(ym));
+    cashSt.month = ym;
+  }
+  function cashLoadedMonths(){ var out = [], ym = cashSt.to.slice(0, 7), from = cashSt.from.slice(0, 7); while (ym >= from){ out.push(ym); ym = cashYmShift(ym, -1); } return out; }
+
+  async function cashNeedCode(title){
+    if (!isOwner()){ toast('사장님만 볼 수 있어요'); nav('#/home'); return true; }
+    if (!cashSt.code && corpSt.code) cashSt.code = corpSt.code;   // 법인 서류에서 이미 코드를 넣었으면 그대로
+    if (cashSt.code) return false;
+    var html = topbar(title, true);
+    html += '<div class="pin-wrap"><div style="font-size:18px;font-weight:600;margin-bottom:6px">사장님 코드</div><div class="muted" style="margin-bottom:14px">선결제 사장님 코드와 같은 6자리예요</div>' +
+      '<input class="pin" id="cash-code" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" style="width:240px;letter-spacing:10px">' +
+      '<div style="margin-top:18px"><button class="btn primary" data-act="cash-login">들어가기</button></div></div>' +
+      '<div class="muted" style="text-align:center;margin-top:8px">통장 거래내역은 이 코드가 맞아야만 서버가 보여줘요.<br>앱 비밀번호(4자리)만으로는 못 열어요.</div>';
+    app.innerHTML = html;
+    var ci = document.getElementById('cash-code'); if (ci){ ci.focus(); ci.addEventListener('keydown', function(e){ if (e.key === 'Enter') cashLogin(); }); }
+    return true;
+  }
+  async function cashLogin(){
+    var el = document.getElementById('cash-code'), v = el ? String(el.value || '').trim() : '';
+    if (!/^[0-9]{6}$/.test(v)){ toast('숫자 6자리를 넣어 주세요'); return; }
+    var r = await db.rpc('cash_login', { p_code: v });
+    if (!r || !r.ok){ toast((r && r.error) || '코드가 틀려요'); return; }
+    cashSt.code = v; render();
+  }
+
+  // 위쪽 공통: 매장 탭 + 달 고르기
+  function cashHead(){
+    var scopes = [['all', '전체']];
+    base.branches.forEach(function(b){ if (cashSt.accounts.some(function(a){ return a.branch_id === b.id; })) scopes.push([b.id, cashBranchShort(b.id)]); });
+    var h = '<div class="tabs">' + scopes.map(function(s){ return '<span class="tab' + (cashSt.scope === s[0] ? ' on' : '') + '" data-act="cash-scope" data-id="' + esc(s[0]) + '">' + esc(s[1]) + '</span>'; }).join('') + '</div>';
+    var months = cashSt.months.slice(); if (months.indexOf(cashSt.month) < 0) months.push(cashSt.month); months.sort().reverse();
+    h += '<select class="in" id="cash-month" style="margin-bottom:4px">' + months.map(function(m){ return '<option value="' + m + '"' + (m === cashSt.month ? ' selected' : '') + '>' + cashYmLabel(m) + '</option>'; }).join('') + '</select>';
+    return h;
+  }
+
+  // ===== 화면: 자금 흐름 요약 =====
+  routes.cash = async function(){
+    if (await cashNeedCode('자금 흐름')) return;
+    await cashEnsure();
+    var html = topbar('자금 흐름', true, '<button class="btn sm" data-act="cash-lock">🔒</button>');
+    if (!cashSt.accounts.length || !cashSt.months.length){
+      html += '<div class="note ok">은행 인터넷뱅킹에서 <b>거래내역 조회 → 엑셀 저장</b>한 파일을 올리면, 들어온 돈·나간 돈이 항목별로 자동 정리돼요. 통장끼리 옮긴 돈은 저절로 빠져요.</div>' +
+        '<a class="btn primary block" style="margin-top:12px" href="#/cash-upload">📤 거래내역 엑셀 올리기</a>' +
+        '<a class="btn block" style="margin-top:8px" href="#/cash-settings">⚙️ 통장 설정</a>';
+      app.innerHTML = html; return;
+    }
+    var ym = cashSt.month, sc = cashSt.scope, s = cashSum(ym, sc), p = cashSum(cashYmShift(ym, -1), sc);
+    var hasPrev = p.list.length > 0;
+    html += cashHead();
+    html += '<div class="summary">' +
+      '<a href="#/cash-month/' + ym + '"><div class="n" style="font-size:19px;color:var(--ok)">' + cashMan(s.inn) + '</div><div class="l">들어온 돈</div>' + (hasPrev ? '<div style="font-size:11px">' + cashDiff(s.inn, p.inn) + '</div>' : '') + '</a>' +
+      '<a href="#/cash-month/' + ym + '"><div class="n" style="font-size:19px;color:var(--danger)">' + cashMan(s.out) + '</div><div class="l">나간 돈</div>' + (hasPrev ? '<div style="font-size:11px">' + cashDiff(s.out, p.out) + '</div>' : '') + '</a>' +
+      '<a href="#/cash-month/' + ym + '"><div class="n" style="font-size:19px">' + (s.inn - s.out >= 0 ? '+' : '') + cashMan(s.inn - s.out) + '</div><div class="l">남은 돈(증감)</div></a></div>';
+    var notes = [];
+    if (s.move) notes.push('🔁 통장끼리 옮긴 돈 <b>' + cashMan(s.move) + '</b>은 위 합계에서 뺐어요');
+    if (s.xIn || s.xOut) notes.push('🔁 다른 매장에서 받음 <b>' + cashMan(s.xIn) + '</b> · 다른 매장으로 보냄 <b>' + cashMan(s.xOut) + '</b> (합계에서 뺌)');
+    if (s.otherOut || s.otherIn) notes.push('🏦 파일에 없는 본노엘 통장으로 보냄 <b>' + cashMan(s.otherOut) + '</b>' + (s.otherIn ? ' · 받음 <b>' + cashMan(s.otherIn) + '</b>' : '') + ' (나간 돈에 안 셈)');
+    if (notes.length) html += '<div class="muted" style="margin:10px 4px 0;line-height:1.7">' + notes.join('<br>') + '</div>';
+    if (s.unclsN) html += '<a class="note" style="display:block" href="#/cash-review">❓ 아직 모르는 거래 <b>' + s.unclsN + '건</b> (' + cashMan(s.uncls) + '원) → 눌러서 항목 정하기. 한 번 정하면 다음부터 자동이에요</a>';
+
+    html += '<div class="card section"><div class="sec-h">궁금한 것 바로 보기<span class="sp"></span><span class="muted">' + cashYmLabel(ym) + '</span></div><table class="pptable"><tr><th>항목</th><th>이번 달</th><th>지난달</th></tr>';
+    CASH_ASK.forEach(function(q){
+      var v = s.by[q[0]] || 0, pv = p.by[q[0]] || 0;
+      html += '<tr data-act="cash-goto" data-id="' + q[0] + '" style="cursor:pointer"><td>' + q[1] + ' <span class="muted">' + (s.n[q[0]] || 0) + '건</span></td><td><b>' + won(v) + '</b></td><td class="muted">' + (hasPrev ? won(pv) : '-') + '</td></tr>';
+    });
+    html += '</table></div>';
+
+    // 통장별 잔액 (마지막 거래 기준)
+    var lastMap = {}; cashSt.last.forEach(function(l){ lastMap[l.account_id] = l; });
+    var accs = cashSt.accounts.filter(function(a){ return sc === 'all' || a.branch_id === sc; }), totBal = 0;
+    html += '<div class="card section"><div class="sec-h">통장별 잔액<span class="sp"></span><span class="muted">마지막으로 올린 거래 기준</span></div><table class="pptable"><tr><th>통장</th><th>마지막 거래</th><th>잔액</th></tr>';
+    accs.forEach(function(a){ var l = lastMap[a.id]; if (l && l.balance != null) totBal += +l.balance; html += '<tr><td>' + esc(a.name) + '</td><td class="muted">' + (l ? esc(String(l.tx_at).slice(0, 10)) : '아직 없음') + '</td><td>' + (l && l.balance != null ? won(l.balance) : '-') + '</td></tr>'; });
+    html += '<tr class="tot"><td>합계</td><td></td><td>' + won(totBal) + '</td></tr></table></div>';
+
+    // 월별 흐름
+    html += '<div class="card section"><div class="sec-h">월별 흐름<span class="sp"></span><span class="muted">통장끼리 이동 뺌</span></div><table class="pptable"><tr><th>월</th><th>들어옴</th><th>나감</th><th>증감</th></tr>';
+    cashLoadedMonths().forEach(function(m){ var x = cashSum(m, sc); if (!x.list.length) return; html += '<tr data-act="cash-pick-month" data-id="' + m + '" style="cursor:pointer' + (m === ym ? ';background:var(--accent-soft)' : '') + '"><td>' + (+m.slice(5)) + '월</td><td>' + cashMan(x.inn) + '</td><td>' + cashMan(x.out) + '</td><td>' + (x.inn - x.out >= 0 ? '+' : '') + cashMan(x.inn - x.out) + '</td></tr>'; });
+    html += '</table></div>';
+
+    html += '<div class="inline" style="margin-top:16px"><a class="btn primary" href="#/cash-upload">📤 거래내역 올리기</a><a class="btn" href="#/cash-month/' + ym + '">📋 ' + (+ym.slice(5)) + '월 자세히</a><a class="btn" href="#/cash-settings">⚙️ 통장·규칙</a></div>';
+    html += '<div class="muted" style="margin-top:12px">항목 분류는 은행 적요·받는 분 글자로 자동으로 해요. 세무 판단(비용 인정 등)은 세무사님께 확인하세요.</div>';
+    app.innerHTML = html;
+  };
+
+  // ===== 화면: 한 달 자세히 =====
+  routes['cash-month'] = async function(params){
+    if (await cashNeedCode('자금 흐름')) return;
+    await cashEnsure(params.arg && /^\d{4}-\d\d$/.test(params.arg) ? params.arg : null);
+    if (params.arg2) cashSt.open[params.arg2] = true;
+    var ym = cashSt.month, sc = cashSt.scope, s = cashSum(ym, sc);
+    var html = topbar(cashYmLabel(ym) + ' 자세히', true, '<button class="btn sm" data-act="cash-xlsx">엑셀</button>');
+    html += cashHead();
+    html += '<div class="muted" style="margin:6px 4px">들어온 돈 <b style="color:var(--ok)">' + won(s.inn) + '</b> · 나간 돈 <b style="color:var(--danger)">' + won(s.out) + '</b> · 항목을 누르면 거래가 보이고, 거래마다 항목을 바꿀 수 있어요</div>';
+    var byCat = {}; s.list.forEach(function(t){ (byCat[t.c] = byCat[t.c] || []).push(t); });
+    function catBlock(k, label){
+      var list = byCat[k]; if (!list || !list.length) return '';
+      var tot = list.reduce(function(a, t){ return a + t.inAmt + t.outAmt; }, 0), open = !!cashSt.open[k];
+      var h = '<div class="item" data-act="cash-open" data-id="' + k + '" style="cursor:pointer"><div class="iname"><div class="t">' + (open ? '▼ ' : '▶ ') + esc(label) + '</div><div class="s">' + list.length + '건</div></div><b>' + won(tot) + '</b></div>';
+      if (open){
+        h += '<div style="background:var(--surface-sunken);border-bottom:1px solid var(--line)">';
+        list.slice().sort(function(a, b){ return a.at < b.at ? -1 : 1; }).forEach(function(t){
+          var a = cashAcct(t.acct), dir = t.outAmt > 0 ? 'out' : 'in';
+          h += '<div style="padding:8px 14px;border-bottom:1px solid var(--line);font-size:13px"><div class="inline" style="justify-content:space-between;flex-wrap:nowrap"><span class="muted" style="white-space:nowrap">' + esc(t.at.slice(5, 16)) + ' · ' + esc(a ? a.name : '') + '</span><b style="white-space:nowrap;color:' + (dir === 'in' ? 'var(--ok)' : 'var(--danger)') + '">' + (dir === 'in' ? '+' : '-') + won(t.inAmt + t.outAmt) + '</b></div>' +
+            '<div>' + esc(t.party || '(내용 없음)') + ' <span class="muted">' + esc(t.memo) + (t.pair ? ' · ↔ ' + esc((cashAcct(t.pair.acct) || {}).name || '') : '') + '</span></div>' +
+            '<select class="in cash-cat-sel" data-id="' + esc(t.id) + '" style="margin-top:4px;padding:6px 8px;font-size:13px">' + cashCatOptions(dir, t.cat || '', true).replace('<option value="">(자동)</option>', '<option value="">(자동: ' + esc(cashCatLabel(t.cat ? cashBuiltin(t, dir) : t.c)) + ')</option>') + '</select></div>';
+        });
+        h += '</div>';
+      }
+      return h;
+    }
+    CASH_GROUPS.forEach(function(g){
+      var cats = CASH_CATS.filter(function(c){ return c.group === g.key && byCat[c.key]; }); if (!cats.length) return;
+      var gt = cats.reduce(function(a, c){ return a + (s.by[c.key] || 0); }, 0);
+      html += '<div class="card section"><div class="sec-h">' + esc(g.label) + '<span class="sp"></span>' + won(gt) + '</div>' + cats.map(function(c){ return catBlock(c.key, c.label); }).join('') + '</div>';
+    });
+    var sp = ['uncls', 'other_acct', 'transfer'].filter(function(k){ return byCat[k]; });
+    if (sp.length) html += '<div class="card section"><div class="sec-h">따로 보기<span class="sp"></span><span class="muted">미분류만 합계에 들어가요</span></div>' + sp.map(function(k){ return catBlock(k, CASH_SPECIAL[k]); }).join('') + '</div>';
+    if (!s.list.length) html += '<div class="empty">이 달 거래가 아직 없어요</div>';
+    app.innerHTML = html;
+  };
+
+  // ===== 화면: 미분류 정리 =====
+  routes['cash-review'] = async function(){
+    if (await cashNeedCode('미분류 정리')) return;
+    await cashEnsure();
+    var html = topbar('모르는 거래 정리', true);
+    var g = {};
+    cashSt.tx.forEach(function(t){ if (t.c !== 'uncls') return; var dir = t.outAmt > 0 ? 'out' : 'in', key = dir + '|' + (t.party || t.memo); (g[key] = g[key] || { dir: dir, party: t.party, memo: t.memo, list: [], tot: 0 }).list.push(t); g[key].tot += t.inAmt + t.outAmt; });
+    cashSt.review = Object.keys(g).map(function(k){ return g[k]; }).sort(function(a, b){ return b.tot - a.tot; });
+    html += '<div class="muted" style="margin:0 4px 8px">' + cashYmLabel(cashSt.from.slice(0, 7)) + ' ~ ' + cashYmLabel(cashSt.to.slice(0, 7)) + ' 거래 중 규칙으로 못 알아본 것이에요. 큰 금액부터 보여요.<br><b>[앞으로도]</b>를 누르면 같은 이름은 다음부터 자동으로 분류돼요.</div>';
+    if (!cashSt.review.length) html += '<div class="note ok">모르는 거래가 없어요 👍</div>';
+    cashSt.review.slice(0, 60).forEach(function(r, i){
+      var names = {}; r.list.forEach(function(t){ var a = cashAcct(t.acct); if (a) names[a.name] = 1; });
+      html += '<div class="card section"><div style="padding:12px 14px"><div class="inline" style="justify-content:space-between"><b>' + esc(r.party || '(내용 없음)') + '</b><span class="badge ' + (r.dir === 'in' ? 'ok' : 'danger') + '">' + (r.dir === 'in' ? '입금' : '출금') + ' ' + won(r.tot) + '</span></div>' +
+        '<div class="muted">' + r.list.length + '건 · 적요 ' + esc(r.memo) + ' · ' + esc(Object.keys(names).join(', ')) + ' · ' + esc(r.list[0].at.slice(0, 10)) + (r.list.length > 1 ? ' ~ ' + esc(r.list[r.list.length - 1].at.slice(0, 10)) : '') + '</div>' +
+        '<select class="in" id="cash-rv-' + i + '" style="margin-top:8px">' + cashCatOptions(r.dir, '', false) + '</select>' +
+        '<div class="inline" style="margin-top:8px"><button class="btn sm primary" data-act="cash-rv-rule" data-id="' + i + '">앞으로도 이 이름은 이 항목</button><button class="btn sm" data-act="cash-rv-once" data-id="' + i + '">이 ' + r.list.length + '건만</button></div></div></div>';
+    });
+    if (cashSt.review.length > 60) html += '<div class="muted" style="margin-top:8px">나머지 ' + (cashSt.review.length - 60) + '묶음은 위를 정리하면 보여요</div>';
+    app.innerHTML = html;
+  };
+  async function cashReviewSave(i, asRule){
+    var r = cashSt.review[+i], sel = document.getElementById('cash-rv-' + i), cat = sel ? sel.value : '';
+    if (!r) return; if (!cat){ toast('항목을 먼저 골라 주세요'); return; }
+    if (asRule){
+      var useMemo = !r.party;
+      var res = await cashCall('cash_save_rule', { p_rule: { field: useMemo ? 'memo' : 'party', pattern: useMemo ? r.memo : r.party, dir: cat === 'transfer' || cat === 'other_acct' ? 'any' : r.dir, category: cat } });
+      cashSt.rules = cashSt.rules.filter(function(x){ return x.id !== res.id; }).concat([{ id: res.id, field: useMemo ? 'memo' : 'party', pattern: useMemo ? r.memo : r.party, dir: cat === 'transfer' || cat === 'other_acct' ? 'any' : r.dir, category: cat }]);
+      toast('규칙 저장: ' + (r.party || r.memo) + ' → ' + cashCatLabel(cat));
+    } else {
+      await cashCall('cash_set_category', { p_ids: r.list.map(function(t){ return t.id; }), p_category: cat });
+      r.list.forEach(function(t){ t.cat = cat; });
+      toast(r.list.length + '건을 ' + cashCatLabel(cat) + '(으)로 정했어요');
+    }
+    cashClassify(); render();
+  }
+
+  // ===== 화면: 거래내역 올리기 =====
+  function loadSheetJS(){
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise(function(res, rej){ var sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; sc.onload = function(){ res(window.XLSX); }; sc.onerror = function(){ rej(new Error('엑셀 읽기 도구를 못 불러왔어요 (인터넷 확인)')); }; document.head.appendChild(sc); });
+  }
+  function cashNum(s){ var n = Number(String(s == null ? '' : s).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? Math.round(n) : 0; }
+  function cashDate(s, tm){
+    s = String(s || '').trim(); var m = s.match(/^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!m) return null;
+    var t = m[4] ? [m[4], m[5], m[6] || '00'] : String(tm || '').match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/) ? String(tm).match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/).slice(1) : ['0', '00', '00'];
+    return m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]) + ' ' + pad(+t[0]) + ':' + pad(+t[1]) + ':' + pad(+(t[2] || 0));
+  }
+  // 은행마다 모양이 달라도: "거래일시"가 있는 줄을 제목 줄로 보고, 칸 이름으로 찾음 (신한·국민·기업 확인)
+  function cashParseRows(rows, fileName){
+    var hi = -1;
+    for (var i = 0; i < Math.min(rows.length, 40); i++){ if (rows[i].some(function(c){ return /거래일시|거래일자/.test(String(c)); })){ hi = i; break; } }
+    if (hi < 0) throw new Error(fileName + ': "거래일시" 칸을 못 찾았어요. 은행 거래내역 엑셀이 맞는지 확인해 주세요');
+    var H = rows[hi].map(function(c){ return String(c).replace(/\s/g, ''); });
+    function col(list, not){ for (var j = 0; j < list.length; j++){ for (var k = 0; k < H.length; k++){ if (list[j].test(H[k]) && !(not && not.test(H[k]))) return k; } } return -1; }
+    var cDt = col([/거래일시/, /거래일자/]), cTm = col([/^거래시간$/]), cIn = col([/입금/], /입금인|코드|합계/), cOut = col([/출금/], /가능|합계/), cBal = col([/잔액/]),
+        cMemo = col([/^적요$/, /거래구분/, /^구분$/]), cParty = col([/^내용$/, /보낸분|받는분/, /상대계좌예금주명/, /기재내용/, /거래내용/]), cPlace = col([/거래점/, /처리점/, /취급점/]);
+    if (cIn < 0 || cOut < 0) throw new Error(fileName + ': 입금·출금 칸을 못 찾았어요');
+    var head = rows.slice(0, hi).map(function(r){ return r.join(' '); }).join(' '), last4 = null;
+    var am = head.match(/계좌번호\s*[:：]?\s*([0-9][0-9\-]{6,})/); if (am) last4 = am[1].replace(/\D/g, '').slice(-4);
+    var out = [];
+    rows.slice(hi + 1).forEach(function(r){
+      var at = cashDate(r[cDt], cTm >= 0 ? r[cTm] : null); if (!at) return;
+      var inA = cashNum(r[cIn]), outA = cashNum(r[cOut]); if (!inA && !outA) return;
+      var bal = cBal >= 0 && String(r[cBal]).trim() !== '' ? cashNum(r[cBal]) : null;
+      out.push({ tx_at: at, amount_in: inA, amount_out: outA, balance: bal, memo: cMemo >= 0 ? String(r[cMemo]).trim() : '', party: cParty >= 0 ? String(r[cParty]).trim() : '', place: cPlace >= 0 ? String(r[cPlace]).trim() : '', dup_key: [at, inA, outA, bal == null ? '' : bal].join('|') });
+    });
+    out.sort(function(a, b){ return a.tx_at < b.tx_at ? -1 : 1; });
+    // 같은 초·같은 금액·같은 잔액이 여러 줄이면 번호를 붙여 다른 거래로 저장
+    var seen = {}; out.forEach(function(x){ var k = x.dup_key; seen[k] = (seen[k] || 0) + 1; if (seen[k] > 1) x.dup_key = k + '#' + seen[k]; });
+    var bank = (fileName.match(/신한|국민|기업|우리|하나|농협|카카오|토스|새마을|우체국|IBK|KB|NH/) || [])[0] || (head.match(/신한|국민|기업|우리|하나|농협/) || [])[0] || '';
+    bank = { IBK: '기업', KB: '국민', NH: '농협' }[bank] || bank;
+    return { rows: out, last4: last4, bank: bank };
+  }
+  function cashGuess(f){
+    // 1) 계좌번호 끝 4자리 2) 파일 이름 앞 글자(성·왕·중·답) + 은행
+    if (f.last4){ var a = cashSt.accounts.filter(function(x){ return x.last4 === f.last4; })[0]; if (a) return a.id; }
+    var br = base.branches.filter(function(b){ var s = cashBranchShort(b.id); return f.name.indexOf(s) === 0 || f.name.indexOf(s.slice(0, 1) + ')') === 0; })[0];
+    f.branchGuess = br ? br.id : '';
+    var m = cashSt.accounts.filter(function(x){ return (!br || x.branch_id === br.id) && (!f.bank || x.bank === f.bank); });
+    return m.length === 1 ? m[0].id : '__new';
+  }
+  async function cashFilesPicked(files){
+    if (!files || !files.length) return;
+    toast('파일 읽는 중…');
+    var X = await loadSheetJS();
+    for (var i = 0; i < files.length; i++){
+      var file = files[i];
+      try {
+        var buf = await file.arrayBuffer();
+        var wb = X.read(buf, { type: 'array' });
+        var rows = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+        var p = cashParseRows(rows, file.name);
+        var f = { name: file.name, rows: p.rows, last4: p.last4, bank: p.bank };
+        f.acct = cashGuess(f);
+        cashSt.uploads.push(f);
+      } catch(e){ toast(e.message || String(e)); console.error(e); }
+    }
+    cashSt.upResult = null; render();
+  }
+  routes['cash-upload'] = async function(){
+    if (await cashNeedCode('거래내역 올리기')) return;
+    await cashEnsure();
+    var html = topbar('거래내역 올리기', true);
+    html += '<div class="note ok" style="margin-top:0">은행 인터넷뱅킹 → <b>거래내역 조회</b> → 기간 고르기 → <b>엑셀 저장</b>. 파일 여러 개를 한꺼번에 골라도 돼요.<br>같은 거래를 두 번 올려도 한 번만 저장돼요 (기간이 겹쳐도 괜찮아요).</div>';
+    html += '<label class="btn primary block" style="margin-top:12px">📂 엑셀 파일 고르기<input type="file" id="cash-file" multiple accept=".xls,.xlsx,.csv" style="display:none"></label>';
+    if (cashSt.upResult) html += '<div class="note ok">' + cashSt.upResult + '</div>';
+    if (cashSt.uploads.length){
+      cashSt.uploads.forEach(function(f, i){
+        var inS = 0, outS = 0; f.rows.forEach(function(r){ inS += r.amount_in; outS += r.amount_out; });
+        var brName = f.branchGuess ? cashBranchShort(f.branchGuess) : '';
+        html += '<div class="card section"><div class="sec-h"><span class="sp">📄 ' + esc(f.name) + '</span><button class="btn sm" data-act="cash-up-remove" data-id="' + i + '">빼기</button></div><div style="padding:10px 14px">' +
+          '<div class="muted">' + (f.rows.length ? f.rows.length + '건 · ' + esc(f.rows[0].tx_at.slice(0, 10)) + ' ~ ' + esc(f.rows[f.rows.length - 1].tx_at.slice(0, 10)) : '거래 0건') + (f.bank ? ' · ' + esc(f.bank) : '') + (f.last4 ? ' · 끝자리 ' + esc(f.last4) : '') + '</div>' +
+          '<div style="margin:4px 0 8px">입금 <b style="color:var(--ok)">' + won(inS) + '</b> · 출금 <b style="color:var(--danger)">' + won(outS) + '</b></div>' +
+          '<label class="muted">어느 통장이에요?</label><select class="in cash-up-acct" data-id="' + i + '">' +
+          cashSt.accounts.map(function(a){ return '<option value="' + esc(a.id) + '"' + (a.id === f.acct ? ' selected' : '') + '>' + esc(a.name) + ' (' + esc(a.bank) + (a.last4 ? ' ' + esc(a.last4) : '') + ')</option>'; }).join('') +
+          '<option value="__new"' + (f.acct === '__new' ? ' selected' : '') + '>+ 새 통장 만들기: ' + esc((brName ? brName + ' ' : '') + (f.bank || '은행')) + '</option></select>' +
+          (f.acct === '__new' ? '<div class="grid2" style="margin-top:8px"><div><label class="muted">매장</label><select class="in cash-up-br" data-id="' + i + '"><option value="">공통</option>' + base.branches.map(function(b){ return '<option value="' + esc(b.id) + '"' + (b.id === f.branchGuess ? ' selected' : '') + '>' + esc(cashBranchShort(b.id)) + '</option>'; }).join('') + '</select></div><div><label class="muted">은행</label><input class="in cash-up-bank" data-id="' + i + '" value="' + esc(f.bank || '') + '" placeholder="신한"></div></div>' : '') +
+          '</div></div>';
+      });
+      html += '<button class="btn primary block" style="margin-top:14px" data-act="cash-up-save">💾 ' + cashSt.uploads.length + '개 파일 저장하기</button>';
+    }
+    if (cashSt.accounts.length){
+      var lastMap = {}; cashSt.last.forEach(function(l){ lastMap[l.account_id] = l; });
+      html += '<div class="card section"><div class="sec-h">지금까지 올린 것</div><table class="pptable"><tr><th>통장</th><th>거래</th><th>마지막 거래</th></tr>' +
+        cashSt.accounts.map(function(a){ var l = lastMap[a.id]; return '<tr><td>' + esc(a.name) + '</td><td>' + (l ? won(l.n) + '건' : '0건') + '</td><td class="muted">' + (l ? esc(String(l.tx_at).slice(0, 10)) : '-') + '</td></tr>'; }).join('') + '</table></div>';
+    }
+    app.innerHTML = html;
+  };
+  async function cashUploadSave(){
+    var done = [], ins = 0, skip = 0;
+    for (var i = 0; i < cashSt.uploads.length; i++){
+      var f = cashSt.uploads[i], acct = f.acct;
+      if (acct === '__new'){
+        var bank = (f.newBank != null ? f.newBank : f.bank || '').trim();
+        if (!bank){ toast(f.name + ': 은행 이름을 넣어 주세요'); return; }
+        var br = f.newBranch != null ? f.newBranch : (f.branchGuess || '');
+        var r0 = await cashCall('cash_save_account', { p_acc: { name: (br ? cashBranchShort(br) + ' ' : '') + bank, bank: bank, last4: f.last4 || '', branch_id: br, sort_order: cashSt.accounts.length + 1 } });
+        acct = r0.id;
+        cashSt.accounts.push({ id: acct, name: (br ? cashBranchShort(br) + ' ' : '') + bank, bank: bank, last4: f.last4, branch_id: br || null });
+        cashSt.uploads.forEach(function(g){ if (g !== f && g.acct === '__new' && (g.newBranch != null ? g.newBranch : g.branchGuess || '') === br && (g.newBank != null ? g.newBank : g.bank) === bank) g.acct = acct; });
+      }
+      for (var k = 0; k < f.rows.length; k += 800){
+        var r = await cashCall('cash_import', { p_account: acct, p_rows: f.rows.slice(k, k + 800) });
+        ins += r.inserted || 0; skip += r.skipped || 0;
+      }
+      done.push(f.name);
+    }
+    cashSt.uploads = []; cashSt.loaded = false; cashSt.month = null;
+    await cashEnsure();
+    cashSt.upResult = '✅ ' + done.length + '개 파일 저장 — 새 거래 <b>' + won(ins) + '건</b>' + (skip ? ', 이미 있던 거래 ' + won(skip) + '건은 건너뜀' : '') + '<br><a href="#/cash" style="text-decoration:underline">자금 흐름 보러 가기 →</a>';
+    render();
+  }
+
+  // ===== 화면: 통장·규칙 설정 =====
+  routes['cash-settings'] = async function(){
+    if (await cashNeedCode('통장·규칙 설정')) return;
+    await cashEnsure();
+    var html = topbar('통장·규칙 설정', true);
+    var lastMap = {}; cashSt.last.forEach(function(l){ lastMap[l.account_id] = l; });
+    html += '<div class="card section"><div class="sec-h">통장<span class="sp"></span><button class="btn sm" data-act="cash-acct-new">+ 추가</button></div>';
+    if (!cashSt.accounts.length) html += '<div class="empty">아직 통장이 없어요. 엑셀을 올리면서 바로 만들어도 돼요</div>';
+    cashSt.accounts.forEach(function(a){
+      var l = lastMap[a.id];
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(a.name) + '</div><div class="s">' + esc(a.bank) + (a.last4 ? ' · 끝 ' + esc(a.last4) : '') + ' · ' + esc(a.branch_id ? cashBranchShort(a.branch_id) : '공통') + ' · ' + (l ? won(l.n) + '건, 마지막 ' + esc(String(l.tx_at).slice(0, 10)) : '거래 없음') + '</div></div>' +
+        '<button class="btn sm" data-act="cash-acct-edit" data-id="' + esc(a.id) + '">수정</button></div>';
+    });
+    html += '</div>';
+    var e = cashSt.acctEdit;
+    if (e){
+      html += '<div class="form section"><b>' + (e.id ? '통장 수정' : '새 통장') + '</b>' +
+        '<div class="grid2"><div><label>이름</label><input class="in" id="cash-a-name" value="' + esc(e.name || '') + '" placeholder="성수 신한"></div><div><label>은행</label><input class="in" id="cash-a-bank" value="' + esc(e.bank || '') + '" placeholder="신한"></div></div>' +
+        '<div class="grid2"><div><label>계좌 끝 4자리 (선택)</label><input class="in" id="cash-a-last4" inputmode="numeric" maxlength="4" value="' + esc(e.last4 || '') + '"></div><div><label>매장</label><select class="in" id="cash-a-br"><option value="">공통</option>' + base.branches.map(function(b){ return '<option value="' + esc(b.id) + '"' + (b.id === e.branch_id ? ' selected' : '') + '>' + esc(cashBranchShort(b.id)) + '</option>'; }).join('') + '</select></div></div>' +
+        '<div class="inline"><button class="btn primary" data-act="cash-acct-save">저장</button><button class="btn" data-act="cash-acct-cancel">취소</button>' +
+        (e.id ? '<span class="sp" style="flex:1"></span><button class="btn sm danger" data-act="cash-acct-clear" data-id="' + esc(e.id) + '">거래만 지우기</button><button class="btn sm danger" data-act="cash-acct-del" data-id="' + esc(e.id) + '">통장 삭제</button>' : '') + '</div>' +
+        (e.id ? '<div class="muted">잘못 올렸을 때: [거래만 지우기] 하고 다시 올리면 돼요. 통장 삭제는 그 통장 거래도 같이 지워져요.</div>' : '') + '</div>';
+    }
+    html += '<div class="card section"><div class="sec-h">사장님이 가르친 규칙<span class="sp"></span><span class="muted">' + cashSt.rules.length + '개</span></div>';
+    if (!cashSt.rules.length) html += '<div class="empty">아직 없어요. [모르는 거래 정리]에서 [앞으로도]를 누르면 여기 쌓여요</div>';
+    cashSt.rules.forEach(function(r){
+      html += '<div class="item"><div class="iname"><div class="t">"' + esc(r.pattern) + '" → ' + esc(cashCatLabel(r.category)) + '</div><div class="s">' + (r.field === 'memo' ? '적요' : '받는 분·내용') + '에 이 글자가 있으면 · ' + ({ in: '입금만', out: '출금만', any: '입출금 모두' }[r.dir] || '') + '</div></div><button class="btn sm danger" data-act="cash-rule-del" data-id="' + esc(r.id) + '">삭제</button></div>';
+    });
+    html += '<div class="form" style="border:0;border-top:1px solid var(--line);border-radius:0"><div class="grid2"><div><label>이 글자가 있으면</label><input class="in" id="cash-r-pat" placeholder="예: 알짜유통"></div><div><label>어디에서</label><select class="in" id="cash-r-field"><option value="party">받는 분·내용</option><option value="memo">적요</option></select></div></div>' +
+      '<div class="grid2"><div><label>입출금</label><select class="in" id="cash-r-dir"><option value="out">출금만</option><option value="in">입금만</option><option value="any">모두</option></select></div><div><label>항목</label><select class="in" id="cash-r-cat">' + cashCatOptions('any', '', false) + '</select></div></div>' +
+      '<button class="btn" data-act="cash-rule-add">규칙 추가</button></div></div>';
+    html += '<div class="muted" style="margin-top:12px;line-height:1.7">기본 규칙(앱에 들어 있음): 음식배달=배민, 쿠팡페이=쿠팡이츠, 카드사 약자+번호·가맹입금=카드 매출, 서울페이·제로페이·Npay 등=간편결제, BZ급여=급여, 사회보험·보험료=4대보험, 신한카드 결제=카드 대금, 국세납부=국세, 유동CC·타행CC=월세, 한국전력=전기 … 사장님 규칙이 기본 규칙보다 먼저예요.</div>';
+    html += '<button class="btn block" style="margin-top:14px" data-act="cash-lock">🔒 잠그기</button>';
+    app.innerHTML = html;
+  };
+
+  // 엑셀 내려받기 (세무사 전달용): 요약(항목 × 매장) + 거래 목록
+  async function cashXlsx(){
+    var ym = cashSt.month, ExcelJS = await loadExcelJS(), wb = new ExcelJS.Workbook();
+    var brs = base.branches.filter(function(b){ return cashSt.accounts.some(function(a){ return a.branch_id === b.id; }); });
+    var sAll = cashSum(ym, 'all'), per = brs.map(function(b){ return cashSum(ym, b.id); });
+    var ws = wb.addWorksheet('요약');
+    ws.addRow([cashYmLabel(ym) + ' 자금 흐름 (통장끼리 이동 제외)']).font = { bold: true, size: 13 };
+    ws.addRow(['구분', '항목', '전체'].concat(brs.map(function(b){ return cashBranchShort(b.id); }))).font = { bold: true };
+    CASH_GROUPS.forEach(function(g){ CASH_CATS.filter(function(c){ return c.group === g.key; }).forEach(function(c){ if (!sAll.by[c.key]) return; ws.addRow([g.label.replace(/^\S+\s/, ''), c.label, sAll.by[c.key]].concat(per.map(function(p){ return p.by[c.key] || 0; }))); }); });
+    if (sAll.by.uncls) ws.addRow(['미분류', '미분류', sAll.by.uncls].concat(per.map(function(p){ return p.by.uncls || 0; })));
+    ws.addRow([]);
+    ws.addRow(['', '들어온 돈', sAll.inn].concat(per.map(function(p){ return p.inn; }))).font = { bold: true };
+    ws.addRow(['', '나간 돈', sAll.out].concat(per.map(function(p){ return p.out; }))).font = { bold: true };
+    ws.addRow(['', '증감', sAll.inn - sAll.out].concat(per.map(function(p){ return p.inn - p.out; }))).font = { bold: true };
+    ws.addRow(['', '통장끼리 이동(제외)', sAll.move]);
+    ws.addRow(['', '본노엘 다른 통장으로(제외)', sAll.otherOut]);
+    ws.columns.forEach(function(c, i){ c.width = i < 2 ? 18 : 14; if (i >= 2) c.numFmt = '#,##0'; });
+    var wl = wb.addWorksheet('거래 목록');
+    wl.addRow(['거래일시', '통장', '매장', '입금', '출금', '잔액', '적요', '내용', '거래점', '항목', '정한 방법']).font = { bold: true };
+    sAll.list.slice().sort(function(a, b){ return a.at < b.at ? -1 : 1; }).forEach(function(t){ var a = cashAcct(t.acct); wl.addRow([t.at, a ? a.name : '', t.branch ? cashBranchShort(t.branch) : '공통', t.inAmt || null, t.outAmt || null, t.bal, t.memo, t.party, t.place, cashCatLabel(t.c).replace(/^[^\s가-힣]+\s/, ''), t.cat ? '직접' : t.pair ? '짝 맞춤' : '자동']); });
+    wl.columns.forEach(function(c, i){ c.width = [19, 12, 8, 12, 12, 13, 10, 18, 10, 16, 8][i]; if (i >= 3 && i <= 5) c.numFmt = '#,##0'; });
+    var buf = await wb.xlsx.writeBuffer();
+    downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), '본노엘_자금흐름_' + ym + '.xlsx');
+  }
+
+  // --- 자금 흐름 버튼들 ---
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act]'); if (!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    if (!/^cash-/.test(act)) return;
+    if (el.disabled) return;
+    el.disabled = true;
+    try {
+      switch (act){
+        case 'cash-login': await cashLogin(); break;
+        case 'cash-lock': cashSt.code = null; cashSt.loaded = false; cashSt.tx = []; if (typeof corpSt !== 'undefined') corpSt.code = null; toast('잠갔어요'); nav('#/home'); break;
+        case 'cash-scope': cashSt.scope = id; render(); break;
+        case 'cash-pick-month': cashSt.month = id; render(); break;
+        case 'cash-goto': cashSt.open = {}; nav('#/cash-month/' + cashSt.month + '/' + id); break;
+        case 'cash-open': cashSt.open[id] = !cashSt.open[id]; render(); break;
+        case 'cash-xlsx': toast('엑셀 만드는 중…'); await cashXlsx(); break;
+        case 'cash-rv-rule': await cashReviewSave(id, true); break;
+        case 'cash-rv-once': await cashReviewSave(id, false); break;
+        case 'cash-up-remove': cashSt.uploads.splice(+id, 1); render(); break;
+        case 'cash-up-save': el.textContent = '저장하는 중…'; await cashUploadSave(); break;
+        case 'cash-acct-new': cashSt.acctEdit = { branch_id: '' }; render(); break;
+        case 'cash-acct-edit': cashSt.acctEdit = Object.assign({}, cashAcct(id)); render(); break;
+        case 'cash-acct-cancel': cashSt.acctEdit = null; render(); break;
+        case 'cash-acct-save': {
+          var v = function(x){ var n = document.getElementById(x); return n ? String(n.value || '').trim() : ''; };
+          await cashCall('cash_save_account', { p_acc: { id: cashSt.acctEdit.id || '', name: v('cash-a-name'), bank: v('cash-a-bank'), last4: v('cash-a-last4'), branch_id: v('cash-a-br'), sort_order: cashSt.acctEdit.sort_order != null ? cashSt.acctEdit.sort_order : cashSt.accounts.length + 1 } });
+          cashSt.acctEdit = null; cashSt.loaded = false; toast('저장했어요'); render(); break;
+        }
+        case 'cash-acct-clear': {
+          var a1 = cashAcct(id); if (!a1 || !window.confirm(a1.name + ' 통장의 거래내역을 모두 지울까요?\n(통장 설정은 남고, 엑셀을 다시 올리면 돼요)')) break;
+          var rc = await cashCall('cash_delete_range', { p_account: id, p_from: null, p_to: null });
+          cashSt.acctEdit = null; cashSt.loaded = false; toast(won(rc.deleted) + '건 지웠어요'); render(); break;
+        }
+        case 'cash-acct-del': {
+          var a2 = cashAcct(id); if (!a2 || !window.confirm(a2.name + ' 통장을 삭제할까요?\n이 통장 거래내역도 모두 지워져요.')) break;
+          await cashCall('cash_delete_account', { p_id: id }); cashSt.acctEdit = null; cashSt.loaded = false; toast('삭제했어요'); render(); break;
+        }
+        case 'cash-rule-add': {
+          var pat = (document.getElementById('cash-r-pat') || {}).value || '', cat = (document.getElementById('cash-r-cat') || {}).value || '';
+          if (!pat.trim() || !cat){ toast('글자와 항목을 넣어 주세요'); break; }
+          await cashCall('cash_save_rule', { p_rule: { pattern: pat.trim(), field: document.getElementById('cash-r-field').value, dir: document.getElementById('cash-r-dir').value, category: cat } });
+          cashSt.loaded = false; toast('규칙을 추가했어요'); render(); break;
+        }
+        case 'cash-rule-del': if (!window.confirm('이 규칙을 지울까요? (거래는 그대로, 분류만 기본 규칙으로 돌아가요)')) break; await cashCall('cash_delete_rule', { p_id: id }); cashSt.loaded = false; render(); break;
+      }
+    } catch(err){ console.error(err); toast('실패: ' + (err.message || err)); }
+    finally { el.disabled = false; }
+  });
+  app.addEventListener('change', async function(e){
+    var t = e.target;
+    try {
+      if (t.id === 'cash-file'){ await cashFilesPicked(t.files); return; }
+      if (t.id === 'cash-month'){ cashSt.open = {}; await cashEnsure(t.value); if (current.route === 'cash-month') nav('#/cash-month/' + t.value); else render(); return; }
+      if (t.classList.contains('cash-up-acct')){ cashSt.uploads[+t.getAttribute('data-id')].acct = t.value; render(); return; }
+      if (t.classList.contains('cash-up-br')){ cashSt.uploads[+t.getAttribute('data-id')].newBranch = t.value; return; }
+      if (t.classList.contains('cash-up-bank')){ cashSt.uploads[+t.getAttribute('data-id')].newBank = t.value; return; }
+      if (t.classList.contains('cash-cat-sel')){
+        var tid = t.getAttribute('data-id'), tx = cashSt.tx.filter(function(x){ return x.id === tid; })[0];
+        await cashCall('cash_set_category', { p_ids: [tid], p_category: t.value });
+        if (tx) tx.cat = t.value || null;
+        cashClassify(); toast(t.value ? cashCatLabel(t.value) + '(으)로 정했어요' : '자동 분류로 돌렸어요'); render(); return;
+      }
+    } catch(err){ console.error(err); toast('실패: ' + (err.message || err)); }
+  });
+
+  // ----- 시연 모드: 가짜 통장·거래 -----
+  function cashMemRpc(T, fn, a){
+    var owner = (T.__pp && T.__pp.owner) || '000000';
+    var err = function(m){ return { ok: false, error: m }; };
+    if (a.p_code !== owner) return err('사장님 코드가 틀려요 (시연 모드: 000000)');
+    if (!T.__cash) T.__cash = cashDemoSeed();
+    var C = T.__cash;
+    if (fn === 'cash_login') return { ok: true };
+    if (fn === 'cash_get'){
+      var maxAt = C.tx.reduce(function(m, t){ return t.tx_at > m ? t.tx_at : m; }, '');
+      var to = a.p_to || (maxAt ? cashYmLastDay(maxAt.slice(0, 7)) : todayStr()), from = a.p_from || cashYmShift(to.slice(0, 7), -5) + '-01';
+      var months = {}; C.tx.forEach(function(t){ months[t.tx_at.slice(0, 7)] = 1; });
+      var last = {}; C.tx.forEach(function(t){ var l = last[t.account_id]; if (!l || t.tx_at >= l.tx_at) last[t.account_id] = { account_id: t.account_id, tx_at: t.tx_at, balance: t.balance, n: (l ? l.n : 0) + 1 }; else l.n++; });
+      return { ok: true, from: from, to: to, accounts: C.accounts, rules: C.rules, months: Object.keys(months).sort(), last: Object.keys(last).map(function(k){ return last[k]; }),
+        tx: C.tx.filter(function(t){ return t.tx_at >= from && t.tx_at.slice(0, 10) <= to; }).sort(function(x, y){ return x.tx_at < y.tx_at ? -1 : 1; }).map(function(t){ return [t.id, t.account_id, t.tx_at, t.amount_in, t.amount_out, t.balance, t.memo, t.party, t.place, t.category, t.note]; }) };
+    }
+    if (fn === 'cash_save_account'){ var p = a.p_acc; if (!p.name || !p.bank) return err('통장 이름과 은행을 넣어 주세요'); if (p.id){ Object.assign(C.accounts.filter(function(x){ return x.id === p.id; })[0] || {}, { name: p.name, bank: p.bank, last4: p.last4 || null, branch_id: p.branch_id || null }); return { ok: true, id: p.id }; } var nid = uid(); C.accounts.push({ id: nid, name: p.name, bank: p.bank, last4: p.last4 || null, branch_id: p.branch_id || null, sort_order: p.sort_order || 0 }); return { ok: true, id: nid }; }
+    if (fn === 'cash_delete_account'){ C.accounts = C.accounts.filter(function(x){ return x.id !== a.p_id; }); C.tx = C.tx.filter(function(x){ return x.account_id !== a.p_id; }); return { ok: true }; }
+    if (fn === 'cash_import'){ var have = {}, n = 0; C.tx.forEach(function(t){ if (t.account_id === a.p_account) have[t.dup_key] = 1; }); a.p_rows.forEach(function(r){ if (have[r.dup_key]) return; have[r.dup_key] = 1; n++; C.tx.push(Object.assign({ id: uid(), account_id: a.p_account, category: null, note: null }, r)); }); return { ok: true, inserted: n, skipped: a.p_rows.length - n }; }
+    if (fn === 'cash_delete_range'){ var before = C.tx.length; C.tx = C.tx.filter(function(t){ return !(t.account_id === a.p_account && (!a.p_from || t.tx_at >= a.p_from) && (!a.p_to || t.tx_at.slice(0, 10) <= a.p_to)); }); return { ok: true, deleted: before - C.tx.length }; }
+    if (fn === 'cash_set_category'){ C.tx.forEach(function(t){ if (a.p_ids.indexOf(t.id) >= 0) t.category = a.p_category || null; }); return { ok: true, updated: a.p_ids.length }; }
+    if (fn === 'cash_set_note'){ C.tx.forEach(function(t){ if (t.id === a.p_id) t.note = a.p_note || null; }); return { ok: true }; }
+    if (fn === 'cash_save_rule'){ var rr = a.p_rule, hit = C.rules.filter(function(x){ return x.field === (rr.field || 'party') && x.pattern === rr.pattern && x.dir === (rr.dir || 'any'); })[0]; if (hit){ hit.category = rr.category; return { ok: true, id: hit.id }; } var rid = uid(); C.rules.push({ id: rid, field: rr.field || 'party', pattern: rr.pattern, dir: rr.dir || 'any', category: rr.category }); return { ok: true, id: rid }; }
+    if (fn === 'cash_delete_rule'){ C.rules = C.rules.filter(function(x){ return x.id !== a.p_id; }); return { ok: true }; }
+    return err('알 수 없는 함수: ' + fn);
+  }
+  function cashDemoSeed(){
+    var seed = 7; function rnd(){ seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    function amt(lo, hi){ return Math.round((lo + (hi - lo) * rnd()) / 10) * 10; }
+    var A = [ { id: 'ca1', name: '성수 신한', bank: '신한', last4: null, branch_id: 'b1', sort_order: 1 }, { id: 'ca2', name: '왕십리 신한', bank: '신한', last4: null, branch_id: 'b2', sort_order: 2 },
+              { id: 'ca3', name: '중계 신한', bank: '신한', last4: null, branch_id: 'b3', sort_order: 3 }, { id: 'ca4', name: '답십리 신한', bank: '신한', last4: null, branch_id: 'b4', sort_order: 4 },
+              { id: 'ca5', name: '답십리 국민', bank: '국민', last4: '0000', branch_id: 'b4', sort_order: 5 } ];
+    var tx = [], bal = { ca1: 40000000, ca2: 12000000, ca3: 30000000, ca4: 8000000, ca5: 2000000 };
+    function add(acct, at, inA, outA, memo, party, place){ bal[acct] += inA - outA; tx.push({ id: uid(), account_id: acct, tx_at: at, amount_in: inA, amount_out: outA, balance: bal[acct], memo: memo, party: party, place: place || '', category: null, note: null, dup_key: at + '|' + inA + '|' + outA }); }
+    var end = new Date(), d = new Date(end.getFullYear(), end.getMonth() - 3, 1);
+    var cardCos = ['KB10000001', '현800000001', '하나90000001', '삼성100000001', '롯데9900000001', 'NH10000001', 'SHC100000001'];
+    for (; d < end; d.setDate(d.getDate() + 1)){
+      var ds = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()), day = d.getDate();
+      ['ca1', 'ca2', 'ca3'].forEach(function(ac, i){ cardCos.slice(0, 4 + i).forEach(function(cc, j){ add(ac, ds + ' 0' + (3 + j) + ':1' + i + ':00', amt(100000, 700000), 0, i ? 'FB자금' : '타행PC', cc, ''); }); });
+      cardCos.forEach(function(cc, j){ add('ca5', ds + ' 0' + (2 + j % 7) + ':3' + j + ':00', amt(100000, 600000), 0, '전자금융', cc, ''); });
+      ['ca1', 'ca2', 'ca3', 'ca4'].forEach(function(ac, i){ add(ac, ds + ' 05:5' + i + ':00', amt(300000, 1500000), 0, 'FB자금', '음식배달', '잠실'); });
+      if (day % 3 === 0) ['ca1', 'ca2', 'ca3'].forEach(function(ac, i){ add(ac, ds + ' 04:0' + i + ':00', amt(800000, 2500000), 0, 'FB이체', '쿠팡페이주식회', ''); });
+      if (day % 2 === 0) add('ca1', ds + ' 06:10:00', amt(50000, 300000), 0, 'FB자금', '서울페이가맹', '');
+      if (day % 7 === 3){ var mv = amt(10000000, 20000000); add('ca5', ds + ' 14:00:00', 0, mv, '스마트출금', '(주)본노엘', ''); add('ca4', ds + ' 14:00:30', mv, 0, '타행MB', '주식회사본노엘', '(국민)'); }
+      if (day === 5) ['ca1', 'ca3', 'ca4'].forEach(function(ac){ add(ac, ds + ' 07:00:00', 0, amt(500000, 1100000), 'FB전기', '한국전력공사', ''); });
+      if (day === 10){
+        ['ca1', 'ca3', 'ca4'].forEach(function(ac, i){ for (var k = 1; k <= 8; k++) add(ac, ds + ' 10:' + pad(i * 10 + k) + ':00', 0, amt(900000, 2600000), 'BZ급여', '(시연)직원' + (i * 8 + k), ''); });
+        ['ca1', 'ca3', 'ca4'].forEach(function(ac){ add(ac, ds + ' 09:00:00', 0, amt(3500000, 5500000), '보험료', pad(d.getFullYear() % 100) + pad(d.getMonth() + 1) + '사회보험', ''); });
+        ['ca1', 'ca2', 'ca3', 'ca4'].forEach(function(ac){ add(ac, ds + ' 09:30:00', 0, amt(1000000, 3000000), 'BZ공과', '국세납부', ''); });
+      }
+      if (day === 15) add('ca4', ds + ' 08:00:00', 0, amt(9000000, 14000000), '카드결', '신한카드법인', '');
+      if (day === 20){ var mv2 = 20000000; add('ca1', ds + ' 15:00:00', 0, mv2, 'BZ뱅크', '(주)본노엘', ''); add('ca4', ds + ' 15:00:40', mv2, 0, 'BZ뱅크', '(주)본노엘', ''); }
+      if (day === 25){ ['ca1', 'ca2', 'ca3', 'ca4'].forEach(function(ac, i){ add(ac, ds + ' 11:00:00', 0, [3100000, 2400000, 2800000, 3300000][i], '유동CC', '(시연)건물주' + (i + 1), ''); }); add('ca1', ds + ' 16:00:00', 0, amt(2000000, 5000000), 'BZ뱅크', '(시연)거래처A', ''); add('ca3', ds + ' 16:10:00', 0, amt(300000, 900000), 'BZ뱅크', '(시연)홍길동', ''); }
+      if (day === 27) add('ca4', ds + ' 18:00:00', 0, 181500, 'FB자동', '노무법인(시연)', '');
+    }
+    return { accounts: A, rules: [], tx: tx };
   }
 
   // ===== 시작 =====
