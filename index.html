@@ -1890,13 +1890,38 @@
     app.innerHTML = html;
     var wk = document.getElementById('pt-week'); if (wk) wk.addEventListener('change', function(){ if (wk.value) nav('#/patterns/' + b + '/' + weekStart(wk.value)); });
   };
+  // 주간표가 한 번 생긴 주는 고정 패턴을 안 보기 때문에, 고정을 고쳐도 그 주엔 안 나옴 → 이번 주 이후 주간표에도 맞출지 물어봄
+  async function syncFixedToWeeks(b, pairs){
+    if (!pairs.length) return;
+    var all = await db.select('ops_shift_patterns', { eq: { branch_id: b, active: true } });
+    var thisWs = weekStart(todayStr()), weeks = [];
+    all.forEach(function(p){ if (p.week_start && p.week_start >= thisWs && weeks.indexOf(p.week_start) < 0) weeks.push(p.week_start); });
+    if (!weeks.length) return;
+    weeks.sort();
+    var names = []; pairs.forEach(function(x){ var nm = staffName(x.staff_id); if (names.indexOf(nm) < 0) names.push(nm); });
+    if (!window.confirm('고정 패턴을 바꿨어요.\n\n이미 따로 만들어 둔 주간표(' + weeks.map(function(w){ return fmtDateK(w) + ' 주'; }).join(', ') + ')에는 자동으로 안 들어가요.\n\n그 주간표에도 ' + names.join(', ') + '님 해당 요일을 고정 패턴과 똑같이 맞출까요?\n(그 주에만 따로 바꿔 둔 게 있으면 덮어써져요)')) return;
+    var fixed = all.filter(function(p){ return !p.week_start; });
+    for (var wi = 0; wi < weeks.length; wi++){
+      for (var pi = 0; pi < pairs.length; pi++){
+        var wk = weeks[wi], pr = pairs[pi];
+        var old = all.filter(function(p){ return p.week_start === wk && p.staff_id === pr.staff_id && p.weekday === pr.weekday; });
+        for (var oi = 0; oi < old.length; oi++) await db.update('ops_shift_patterns', { id: old[oi].id }, { active: false });
+        var src = fixed.filter(function(p){ return p.staff_id === pr.staff_id && p.weekday === pr.weekday; });
+        if (src.length) await db.insert('ops_shift_patterns', src.map(function(p){ return { staff_id: p.staff_id, branch_id: b, weekday: p.weekday, start_time: p.start_time, end_time: p.end_time, break_start: p.break_start || null, break_end: p.break_end || null, note: p.note || null, active: true, week_start: wk }; }));
+      }
+    }
+    toast('주간표 ' + weeks.length + '개에도 맞췄어요');
+  }
   async function patEditSave(id){
     var st = document.getElementById('pte-s-' + id).value, en = document.getElementById('pte-e-' + id).value;
     var bs = document.getElementById('pte-bs-' + id).value || null, be = document.getElementById('pte-be-' + id).value || null;
     if (!st || !en || toMin(st) >= toMin(en)){ toast('시작·끝 시간을 확인해 주세요'); return; }
     if ((bs && !be) || (!bs && be)){ toast('휴게는 시작·끝 둘 다 넣어 주세요'); return; }
+    var row = (await db.select('ops_shift_patterns', { eq: { id: id } }))[0];
     await db.update('ops_shift_patterns', { id: id }, { start_time: st, end_time: en, break_start: bs, break_end: be });
-    toast('바꿨어요'); render();
+    toast('바꿨어요');
+    if (row && !row.week_start) await syncFixedToWeeks(row.branch_id, [{ staff_id: row.staff_id, weekday: row.weekday }]);
+    render();
   }
   // 한 사람의 한 주(월~일) 패턴을 한 번에 저장. 요일마다 시작·끝·휴게가 달라도 되고, 빈 요일은 휴무로 처리(있던 패턴은 지움).
   async function patGridSave(b, week){
@@ -1904,24 +1929,30 @@
     if (!staffId){ toast('근무자를 골라 주세요'); return; }
     var existing = (await db.select('ops_shift_patterns', { eq: { staff_id: staffId, branch_id: b, active: true } })).filter(function(p){ return week ? p.week_start === week : !p.week_start; });
     var byDay = {}; existing.forEach(function(p){ byDay[p.weekday] = p; });
-    var toInsert = [], toUpdate = [], toDelete = [], errs = [];
+    var toInsert = [], toUpdate = [], toDelete = [], errs = [], changed = [];
+    function same(a, c){ return String(a || '').slice(0, 5) === String(c || '').slice(0, 5); }
     WD_ORDER.forEach(function(w){
       var st = (app.querySelector('.ptg-s[data-w="' + w + '"]') || {}).value || '';
       var en = (app.querySelector('.ptg-e[data-w="' + w + '"]') || {}).value || '';
       var bs = (app.querySelector('.ptg-bs[data-w="' + w + '"]') || {}).value || null;
       var be = (app.querySelector('.ptg-be[data-w="' + w + '"]') || {}).value || null;
       var ex = byDay[w];
-      if (!st && !en){ if (ex) toDelete.push(ex.id); return; }
+      if (!st && !en){ if (ex){ toDelete.push(ex.id); changed.push(w); } return; }
       if (!st || !en || toMin(st) >= toMin(en)){ errs.push(WD[w]); return; }
       if ((bs && !be) || (!bs && be)){ errs.push(WD[w] + '(휴게)'); return; }
-      if (ex) toUpdate.push({ id: ex.id, start_time: st, end_time: en, break_start: bs, break_end: be });
-      else toInsert.push({ staff_id: staffId, branch_id: b, weekday: w, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week || null });
+      if (ex){
+        toUpdate.push({ id: ex.id, start_time: st, end_time: en, break_start: bs, break_end: be });
+        if (!same(ex.start_time, st) || !same(ex.end_time, en) || !same(ex.break_start, bs) || !same(ex.break_end, be)) changed.push(w);
+      }
+      else { toInsert.push({ staff_id: staffId, branch_id: b, weekday: w, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week || null }); changed.push(w); }
     });
     if (errs.length){ toast(errs.join(', ') + ' 시간을 확인해 주세요 (시작이 끝보다 빨라야 하고, 휴게는 시작·끝 둘 다 넣어야 해요)'); return; }
     for (var i = 0; i < toUpdate.length; i++) await db.update('ops_shift_patterns', { id: toUpdate[i].id }, { start_time: toUpdate[i].start_time, end_time: toUpdate[i].end_time, break_start: toUpdate[i].break_start, break_end: toUpdate[i].break_end });
     if (toInsert.length) await db.insert('ops_shift_patterns', toInsert);
     for (var j = 0; j < toDelete.length; j++) await db.remove('ops_shift_patterns', { id: toDelete[j] });
-    toast('저장했어요'); render();
+    toast('저장했어요');
+    if (!week) await syncFixedToWeeks(b, changed.map(function(w){ return { staff_id: staffId, weekday: w }; }));
+    render();
   }
   async function patCopy(b, from, to){
     var all = await db.select('ops_shift_patterns', { eq: { branch_id: b, active: true } });
@@ -1951,7 +1982,11 @@
       wds.forEach(function(w){ rows.push({ staff_id: s.id, branch_id: b, weekday: w, start_time: st, end_time: en, break_start: bs, break_end: be, active: true, week_start: week || null }); });
     });
     if (errs.length){ toast('안 된 줄: ' + errs.slice(0, 2).join(' / ')); }
-    if (rows.length){ await db.insert('ops_shift_patterns', rows); toast('패턴 ' + rows.length + '개 추가' + (made ? ' · 새 직원 ' + made + '명 등록' : '') + (errs.length ? ' (' + errs.length + '줄 실패)' : '')); render(); }
+    if (rows.length){
+      await db.insert('ops_shift_patterns', rows); toast('패턴 ' + rows.length + '개 추가' + (made ? ' · 새 직원 ' + made + '명 등록' : '') + (errs.length ? ' (' + errs.length + '줄 실패)' : ''));
+      if (!week){ var seenPair = {}, pairs = []; rows.forEach(function(r){ var k = r.staff_id + '|' + r.weekday; if (!seenPair[k]){ seenPair[k] = 1; pairs.push({ staff_id: r.staff_id, weekday: r.weekday }); } }); await syncFixedToWeeks(b, pairs); }
+      render();
+    }
     else if (made) render();
   }
 
@@ -5737,7 +5772,7 @@
         case 'memo-edit': { var ms = base.staff.filter(function(x){ return x.id === id; })[0]; var mv = window.prompt(ms.name + ' 메모 (비우면 지움)', ms.memo || ''); if (mv === null) break; await db.update('manual_staff', { id: id }, { memo: mv.trim() || null }); toast('메모 저장'); render(); break; }
         case 'note-save': { var nb = el.getAttribute('data-branch'), nt = document.getElementById('bn-text').value; await db.upsert('ops_branch_notes', [{ branch_id: nb, text: nt, updated_by: session.staffId, updated_at: new Date().toISOString() }], 'branch_id'); toast('매장 메모 저장'); render(); break; }
         case 'pat-staff-add': { var pn = document.getElementById('ps-name').value.trim(); if (!pn){ toast('이름을 넣어 주세요'); break; } if (base.staff.some(function(x){ return x.name === pn && x.active !== false; })){ toast('이미 명단에 있는 이름이에요'); break; } await db.insert('manual_staff', { name: pn, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast(pn + ' 추가했어요'); render(); break; }
-        case 'pat-del': if (window.confirm('이 패턴을 지울까요?')){ await db.update('ops_shift_patterns', { id: id }, { active: false }); render(); } break;
+        case 'pat-del': if (window.confirm('이 패턴을 지울까요?')){ var patDelRow = (await db.select('ops_shift_patterns', { eq: { id: id } }))[0]; await db.update('ops_shift_patterns', { id: id }, { active: false }); if (patDelRow && !patDelRow.week_start) await syncFixedToWeeks(patDelRow.branch_id, [{ staff_id: patDelRow.staff_id, weekday: patDelRow.weekday }]); render(); } break;
         case 'pat-edit-toggle': document.getElementById('ptx-' + id).classList.toggle('hidden'); break;
         case 'pat-edit-save': el.disabled = true; try { await patEditSave(id); } finally { el.disabled = false; } break;
         case 'pat-bulk': await patBulk(el.getAttribute('data-branch'), el.getAttribute('data-week') || null); break;
