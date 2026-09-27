@@ -724,7 +724,8 @@
     html += row('#/clock', 'tile-green', '⏱', '출퇴근', '매장폰에서 이름·비밀번호로 출근·퇴근');
     if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 근무시간 (근무표 기준, 급여 근거)');
     if (isOwner()) html += row('#/extra-approve', 'tile-green', '✅', '추가 근무 승인', extraPend ? '⚠ 승인 대기 ' + extraPend + '건' : '직원이 올린 조기 출근·연장·조기 퇴근 수락');
-    html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '더 일했거나 일찍 마쳤을 때 직접 올리기');
+    html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '근무표보다 더 일했을 때 직접 올리기');
+    html += row('#/extra-early', 'tile-orange', '🏃', '조퇴·조기 마감 올리기', '근무표보다 일찍 마쳤을 때 (수락되면 시간 줄어듦)');
     html += tge();
     html += grp('로그북(업무일지)');
     html += row('#/alog', 'tile-yellow', '✍️', '근무자 일지 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
@@ -2151,23 +2152,26 @@
     return '<span class="badge warn">승인 대기</span>';
   }
   function extraMinLabel(x){ return (x.kind === 'earlyLeave' ? '-' : '+') + x.minutes + '분'; }
-  async function extraFormHtml(staffId){
+  // early=true면 "조퇴·조기 마감" 전용(종류 고정, 끝=근무표 끝, 시작=실제로 마친 시각)
+  async function extraFormHtml(staffId, early){
     var from = addDays(todayStr(), -62);
     var recs = (await db.select('ops_attendance', { eq: { staff_id: staffId }, gte: { work_date: from }, order: { col: 'work_date', asc: false } })).filter(function(r){ return r.clock_in; });
     var mine = []; try { mine = await db.select('ops_attendance_extras', { eq: { staff_id: staffId }, gte: { work_date: addDays(todayStr(), -40) }, order: { col: 'created_at', asc: false } }); } catch(e){ return '<div class="note danger">추가 근무 표가 아직 준비 안 됐어요. 사장님께 알려 주세요.</div>'; }
     app._exRecs = recs;
-    var html = '<div class="card section" style="text-align:left"><div class="sec-h">추가 근무 올리기</div>';
-    if (!recs.length) html += '<div class="empty">최근 두 달 안에 출근 기록이 없어요</div>';
+    var byOwner = isOwner();
+    var html = '<div class="card section" style="text-align:left"><div class="sec-h">' + (early ? '조퇴·조기 마감 올리기' : '추가 근무 올리기') + '</div>';
+    if (!recs.length) html += '<div class="empty">최근 두 달 안에 출근 기록이 없어요' + (early ? ' (출근을 찍은 근무만 조퇴로 올릴 수 있어요)' : '') + '</div>';
     else {
       html += '<div class="form" style="box-shadow:none;margin:0"><label>어느 근무</label><select class="in" id="ex-rec">' + recs.map(function(r){ return '<option value="' + esc(r.id) + '">' + esc(fmtDateK(r.work_date)) + ' ' + esc(branchName(r.branch_id)) + ' · ' + esc(attShow(r)) + '</option>'; }).join('') + '</select>';
-      html += '<label>종류</label><select class="in" id="ex-kind">' + Object.keys(EXTRA_KIND).map(function(k){ return '<option value="' + k + '">' + EXTRA_KIND[k] + '</option>'; }).join('') + '</select>';
-      html += '<div class="grid2"><div><label>시작</label><input class="in" id="ex-start" type="time"></div><div><label>끝</label><input class="in" id="ex-end" type="time"></div></div>';
-      html += '<label>시간 (분, ' + EXTRA_STEP + '분 단위)</label><input class="in" id="ex-min" type="number" min="' + EXTRA_STEP + '" step="' + EXTRA_STEP + '" inputmode="numeric">';
-      html += '<label>사유 (꼭 적어 주세요)</label><textarea class="in" id="ex-reason" rows="2"></textarea>';
-      html += '<div class="muted" style="margin:6px 0">사장님이 수락해야 근무 시간에 반영돼요. "조기 퇴근"은 그만큼 인정 시간이 줄어요.</div><button class="btn primary block" data-act="extra-submit" data-staff="' + esc(staffId) + '">올리기</button></div>';
+      if (early) html += '<input type="hidden" id="ex-kind" value="earlyLeave">';
+      else html += '<label>종류</label><select class="in" id="ex-kind">' + Object.keys(EXTRA_KIND).map(function(k){ return '<option value="' + k + '">' + EXTRA_KIND[k] + '</option>'; }).join('') + '</select>';
+      html += '<div class="grid2"><div><label>' + (early ? '실제로 마친 시각' : '시작') + '</label><input class="in" id="ex-start" type="time"></div><div><label>' + (early ? '원래 끝나는 시각' : '끝') + '</label><input class="in" id="ex-end" type="time"></div></div>';
+      html += '<label>' + (early ? '줄어드는 시간' : '시간') + ' (분, ' + EXTRA_STEP + '분 단위)</label><input class="in" id="ex-min" type="number" min="' + EXTRA_STEP + '" step="' + EXTRA_STEP + '" inputmode="numeric">';
+      html += '<label>사유 (꼭 적어 주세요)</label><textarea class="in" id="ex-reason" rows="2" placeholder="' + (early ? '예: 빵 소진으로 조기 마감, 몸이 안 좋아 조퇴' : '') + '"></textarea>';
+      html += '<div class="muted" style="margin:6px 0">' + (byOwner ? '사장님이 올리면 바로 반영돼요.' : '사장님이 수락해야 근무 시간에 반영돼요.') + (early ? ' 수락되면 그만큼 인정 시간이 줄어요.' : ' "조기 퇴근"은 그만큼 인정 시간이 줄어요.') + '</div><button class="btn primary block" data-act="extra-submit" data-staff="' + esc(staffId) + '">올리기</button></div>';
     }
     if (mine.length){
-      html += '<div class="sec-h" style="margin-top:16px">내가 올린 추가 근무</div>';
+      html += '<div class="sec-h" style="margin-top:16px">올린 기록</div>';
       mine.slice(0, 10).forEach(function(x){ html += '<div class="hist" style="flex-wrap:wrap"><span>' + esc(fmtDateK(x.work_date)) + '</span><span class="sp">' + esc(EXTRA_KIND[x.kind] || x.kind) + ' ' + extraMinLabel(x) + '</span>' + extraBadge(x) + (x.status === 'rejected' && x.reject_reason ? '<div class="muted" style="width:100%">거절 사유: ' + esc(x.reject_reason) + '</div>' : '') + '</div>'; });
     }
     return html + '</div>';
@@ -2192,20 +2196,32 @@
     var kind = document.getElementById('ex-kind').value, st = document.getElementById('ex-start').value, en = document.getElementById('ex-end').value;
     var min = parseInt(document.getElementById('ex-min').value, 10), reason = document.getElementById('ex-reason').value.trim();
     if (!st || !en){ toast('시작·끝 시각을 넣어 주세요'); return false; }
-    if (!(min > 0) || min % EXTRA_STEP){ toast('추가 시간은 ' + EXTRA_STEP + '분 단위로 넣어 주세요'); return false; }
+    if (!(min > 0) || min % EXTRA_STEP){ toast('시간은 ' + EXTRA_STEP + '분 단위로 넣어 주세요'); return false; }
     var span = toMin(en) - toMin(st); if (span < 0) span += 1440;
-    if (min > span){ toast('추가 시간이 시작~끝보다 길어요'); return false; }
+    if (min > span){ toast('시간이 두 시각 사이보다 길어요'); return false; }
     if (!reason){ toast('사유를 적어 주세요'); return false; }
     var sd = r.work_date; if (kind === 'late' && r.sched_start && toMin(st) < toMin(r.sched_start)) sd = addDays(sd, 1); // 자정 넘은 연장
     var ed = sd; if (toMin(en) < toMin(st)) ed = addDays(sd, 1);
-    await db.insert('ops_attendance_extras', { attendance_id: r.id, staff_id: staffId, branch_id: r.branch_id, work_date: r.work_date, kind: kind, start_at: localIso(sd, st), end_at: localIso(ed, en), minutes: min, reason: reason, status: 'requested' });
-    toast('올렸어요. 사장님이 수락하면 인정돼요'); return true;
+    var row = { attendance_id: r.id, staff_id: staffId, branch_id: r.branch_id, work_date: r.work_date, kind: kind, start_at: localIso(sd, st), end_at: localIso(ed, en), minutes: min, reason: reason, status: 'requested' };
+    if (isOwner()) Object.assign(row, { status: 'approved', decided_by: session.staffId, decided_at: nowIso() });   // 사장님이 올린 건 바로 확정
+    await db.insert('ops_attendance_extras', row);
+    toast(isOwner() ? '올리고 바로 반영했어요' : '올렸어요. 사장님이 수락하면 반영돼요'); return true;
   }
-  routes.extra = async function(){
+  // 사장님·매니저는 직원 대신 올릴 수 있음(가게 사정으로 일찍 보낸 경우 등). 알바는 본인만.
+  async function extraPage(params, early){
     await loadBase();
-    app.innerHTML = topbar('추가 근무 올리기', true) + '<div class="muted" style="margin:4px 4px 10px">근무표보다 더 일했거나(추가 근무), 가게 사정 등으로 일찍 마쳤을 때(조기 퇴근) 직접 올리는 칸이에요. 지난 근무도 언제든 올릴 수 있어요.</div>' + await extraFormHtml(session.staffId);
+    var who = (isManager() && params.arg && base.staff.some(function(s){ return s.id === params.arg; })) ? params.arg : session.staffId;
+    var html = topbar(early ? '조퇴·조기 마감 올리기' : '추가 근무 올리기', true);
+    html += '<div class="muted" style="margin:4px 4px 10px">' + (early ? '근무표보다 일찍 마쳤을 때(조퇴, 빵 소진 등 조기 마감) 올리는 칸이에요. 수락되면 그만큼 근무 인정 시간이 줄어요.' : '근무표보다 더 일했을 때 직접 올리는 칸이에요.') + ' 지난 근무도 언제든 올릴 수 있어요.</div>';
+    if (isManager()){
+      var ppl = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (isOwner() || s.branch_id === session.branchId || !s.branch_id); }).sort(function(a, b){ return a.name.localeCompare(b.name, 'ko'); });
+      html += '<div class="form" style="margin-bottom:10px"><label>누구 근무예요?</label><select class="in" id="ex-who" data-route="' + (early ? 'extra-early' : 'extra') + '"><option value="' + esc(session.staffId) + '"' + (who === session.staffId ? ' selected' : '') + '>본인 (' + esc(session.name) + ')</option>' + ppl.filter(function(s){ return s.id !== session.staffId; }).map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === who ? ' selected' : '') + '>' + esc(s.name) + (isOwner() && s.branch_id ? ' · ' + esc(branchName(s.branch_id)) : '') + '</option>'; }).join('') + '</select></div>';
+    }
+    app.innerHTML = html + await extraFormHtml(who, early);
     extraFill();
-  };
+  }
+  routes.extra = function(params){ return extraPage(params, false); };
+  routes['extra-early'] = function(params){ return extraPage(params, true); };
   routes['extra-approve'] = async function(){
     await loadBase();
     if (!isOwner()){ toast('추가 근무 승인은 사장님만 할 수 있어요'); nav('#/home'); return; }
@@ -2313,7 +2329,7 @@
         html += '<div style="margin-top:18px"><button class="btn primary" data-act="clock-pin">확인</button></div><div style="margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">다른 이름</span></div></div>';
       } else {
         if (st.extra){
-          html += '<div class="pin-wrap" style="padding-bottom:0"><div style="font-size:20px;font-weight:700">' + esc(s.name) + '</div></div>' + await extraFormHtml(s.id) + '<div style="text-align:center;margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">닫기</span></div>';
+          html += '<div class="pin-wrap" style="padding-bottom:0"><div style="font-size:20px;font-weight:700">' + esc(s.name) + '</div></div>' + await extraFormHtml(s.id, st.extra === 'early') + '<div style="text-align:center;margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">닫기</span></div>';
           app.innerHTML = html; extraFill(); return;
         }
         var open = openRecordOf(recs, s.id);
@@ -2324,7 +2340,7 @@
         if (unclosedMe) html += '<div class="note" style="text-align:left;margin:0 0 14px">' + esc(fmtDateK(unclosedMe.work_date)) + ' 퇴근을 안 눌렀어요. 매니저에게 퇴근 시각을 고쳐 달라고 말해 주세요.</div>';
         if (open) html += '<div class="muted" style="margin-bottom:10px">' + (open.sched_start ? '오늘 근무 ' + hm5(open.sched_start) + '~' + hm5(open.sched_end) : open.no_schedule ? '오늘 근무표에 없는 출근이에요' : '출근 ' + hm(open.clock_in) + ' (' + fmtH(minutesBetween(open.clock_in, nowIso())) + ' 지남)') + '</div><button class="btn primary" data-act="clock-out" data-id="' + esc(open.id) + '" style="font-size:22px;padding:18px 40px">퇴근하기</button>';
         else html += '<button class="btn primary" data-act="clock-in" style="font-size:22px;padding:18px 40px;background:var(--ok);border-color:var(--ok)">출근하기</button>';
-        html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div><div style="margin-top:36px"><span class="muted" data-act="extra-open" style="cursor:pointer;font-size:13px;text-decoration:underline">추가 근무 올리기</span></div><div style="margin-top:10px"><span class="muted" data-act="pin-change" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:13px;text-decoration:underline">비밀번호 바꾸기 (다른 사람이 대신 못 찍게)</span></div></div>';
+        html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div><div style="margin-top:36px"><span class="muted" data-act="extra-open" style="cursor:pointer;font-size:13px;text-decoration:underline">추가 근무 올리기</span> <span class="muted" style="font-size:13px">·</span> <span class="muted" data-act="extra-open-early" style="cursor:pointer;font-size:13px;text-decoration:underline">조퇴·조기 마감 올리기</span></div><div style="margin-top:10px"><span class="muted" data-act="pin-change" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:13px;text-decoration:underline">비밀번호 바꾸기 (다른 사람이 대신 못 찍게)</span></div></div>';
         if (await schedReady()){
           try {
             var mFrom = addMonths(monthOf(today), -1) + '-01', mRecs = await db.select('ops_attendance', { eq: { staff_id: s.id, branch_id: b }, gte: { work_date: mFrom } });
@@ -5839,6 +5855,7 @@
         case 'clock-pick': clockState.staffId = id; clockState.ok = false; render(); break;
         case 'clock-back': clockState.staffId = null; clockState.ok = false; clockState.extra = false; render(); break;
         case 'extra-open': clockState.extra = true; render(); break;
+        case 'extra-open-early': clockState.extra = 'early'; render(); break;
         case 'extra-submit': el.disabled = true; try { if (await extraSubmit(el.getAttribute('data-staff'))){ if (current.route === 'clock') clockDone(); else render(); } } finally { el.disabled = false; } break;
         case 'extra-ok': await extraDecide(id, 'approved', null); break;
         case 'extra-ok-edit': { var em = window.prompt('인정할 분 (' + EXTRA_STEP + '분 단위)', el.getAttribute('data-min')); if (em === null) break; em = parseInt(em, 10); if (!(em > 0) || em % EXTRA_STEP){ toast(EXTRA_STEP + '분 단위로 넣어 주세요'); break; } await extraDecide(id, 'approved', em); } break;
@@ -5981,6 +5998,7 @@
   });
   app.addEventListener('change', async function(e){
     if (e.target.id === 'ptg-staff'){ patGridStaff = e.target.value; render(); return; }
+    if (e.target.id === 'ex-who'){ nav('#/' + e.target.getAttribute('data-route') + '/' + e.target.value); return; }
     if (e.target.id === 'ex-rec' || e.target.id === 'ex-kind'){ extraFill(); return; }
     if (e.target.id === 'ex-start' || e.target.id === 'ex-end'){ extraCalc(); return; }
     if (e.target.id === 'exp-file'){ await expPhotoPicked(e.target.files && e.target.files[0]); return; }
