@@ -752,7 +752,7 @@
     if (isOwner()) html += row('#/pay-setup', 'tile-gray', '💵', '급여 설정', '시급·고용형태·요율 (사장님만)');
     html += tge();
     html += grp('근로계약서·유니폼·보건증');
-    if (isManager()) html += row('#/docs-admin', 'tile-purple', '📝', '근로계약서 & 입사서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부');
+    if (isOwner()) html += row('#/docs-admin', 'tile-purple', '📝', '근로계약서 & 입사서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부 (사장님만)');
     if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
     if (isManager()) html += row('#/uniform-swap', 'tile-orange', '🔄', '유니폼 교체 (반팔 → 긴팔)', '계절 교체 · 반팔 반납 + 긴팔 수령 · 날짜 · 서명 PDF');
     if (isManager()) html += row('#/uniform-return', 'tile-purple', '👕', '유니폼 반납', '퇴사자 반납 확인 · 서명 · 반납확인서 PDF');
@@ -3176,7 +3176,7 @@
   // --- 서류 관리 (사장님·매니저) ---
   routes['docs-admin'] = async function(params){
     await loadBase();
-    if (!isManager()){ nav('#/home'); return; }
+    if (!isOwner()){ toast('근로계약서 준비는 사장님만 할 수 있어요'); nav('#/home'); return; }
     var sel = pickBranch(params, true);
     var all = (await db.select('ops_documents', { order: { col: 'created_at', asc: false } })).filter(function(r){ return !isUniformOnlyRow(r) && String(r.doc_key).indexOf('cert_') !== 0; });
     var settings = await loadDocsSettings();
@@ -3197,7 +3197,7 @@
       people.forEach(function(s){
         var bt = latest[s.id], stt = bt ? batchStatus(bt) : null;
         var sub = '';
-        if (bt){ var sent = bt.rows.filter(function(r){ return r.email_sent_at; })[0]; sub = stt === 'sent' ? '발송 ' + fmtDT(sent && sent.email_sent_at) + ' → ' + esc(sent && sent.email_to) : stt === 'failed' ? esc((bt.rows.filter(function(r){ return r.email_error; })[0] || {}).email_error || '') : stt === 'signed' ? '서명됨 · 메일 미발송' : '준비 ' + fmtDT(bt.created_at) + ' · ' + bt.rows.filter(function(r){ return !isSubRow(r); }).length + '장'; }
+        if (bt){ var sent = bt.rows.filter(function(r){ return r.email_sent_at; })[0]; var preparer = staffName(bt.rows[0].prepared_by); sub = stt === 'sent' ? '발송 ' + fmtDT(sent && sent.email_sent_at) + ' → ' + esc(sent && sent.email_to) : stt === 'failed' ? esc((bt.rows.filter(function(r){ return r.email_error; })[0] || {}).email_error || '') : stt === 'signed' ? '서명됨 · 메일 미발송' : '준비 ' + fmtDT(bt.created_at) + ' · ' + bt.rows.filter(function(r){ return !isSubRow(r); }).length + '장'; if (preparer) sub += ' · 준비한 사람: ' + esc(preparer); }
         html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t">' + esc(s.name) + (s.branch_id ? '' : ' <span class="muted">(전체)</span>') + '</div><div class="s">' + (sub || '서류 없음') + '</div><div class="s" style="margin-top:3px">' + folderChips(folders[s.id]) + '</div></div>' + batchBadge(stt) + '<span class="inline">';
         if (!bt || stt === 'sent') html += '<a class="btn sm primary" href="#/docs-prep/' + esc(s.id) + '">' + (bt ? '새로 준비' : '준비') + '</a>';
         if (bt && stt === 'prepared') html += '<a class="btn sm primary" href="#/sign">매장폰에서 서명 ›</a><a class="btn sm" href="#/docs-prep/' + esc(s.id) + '/' + esc(bt.id) + '">수정</a><button class="btn sm danger" data-act="docs-del-batch" data-id="' + esc(bt.id) + '">삭제</button>';
@@ -3258,7 +3258,7 @@
   }
   routes['docs-prep'] = async function(params){
     await loadBase();
-    if (!isManager()){ nav('#/home'); return; }
+    if (!isOwner()){ toast('근로계약서 준비는 사장님만 할 수 있어요'); nav('#/home'); return; }
     var s = base.staff.filter(function(x){ return x.id === params.arg; })[0];
     if (!s){ toast('직원을 찾을 수 없어요'); nav('#/docs-admin'); return; }
     if (!prepKeep || !prepState || prepState.staffId !== s.id){
@@ -3328,7 +3328,7 @@
     await loadBase();
     var rows = await db.select('ops_documents', { eq: { batch_id: params.arg } }); rows.sort(docOrder);
     if (!rows.length){ toast('서류가 없어요'); nav('#/home'); return; }
-    if (!isManager() && rows[0].staff_id !== session.staffId){ nav('#/home'); return; }
+    if (!isOwner() && rows[0].staff_id !== session.staffId){ nav('#/home'); return; }
     var stt = batchStatus({ rows: rows });
     var html = topbar('서류 · ' + staffName(rows[0].staff_id), true);
     html += '<div class="inline" style="justify-content:space-between;margin:0 4px 10px">' + batchBadge(stt) + '<span class="muted">' + esc(branchName(rows[0].branch_id)) + ' · 양식 ' + esc(rows[0].template_version) + '</span></div>';
@@ -3338,21 +3338,22 @@
       html += '<div class="item" style="flex-wrap:wrap"><div class="iname"><div class="t">' + esc(r.doc_title) + '</div><div class="s">' + (r.signed_at ? '서명 ' + fmtDT(r.signed_at) : '서명 전') + (r.email_sent_at ? ' · 발송 ' + fmtDT(r.email_sent_at) : '') + '</div></div>' + (r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">PDF 열기</button>' : '<span class="badge muted">PDF 없음</span>') + '</div>';
     });
     html += '</div>';
-    html += '<div class="card section"><div class="sec-h"><span class="sp">제출 서류 (등본·통장사본)</span>' + (isManager() ? '<span class="muted" style="font-weight:400">노무사 전달 후 [지움]으로 원본 삭제</span>' : '') + '</div>';
+    html += '<div class="card section"><div class="sec-h"><span class="sp">제출 서류 (등본·통장사본)</span>' + (isOwner() ? '<span class="muted" style="font-weight:400">노무사 전달 후 [지움]으로 원본 삭제</span>' : '') + '</div>';
     ['sub_resident', 'sub_bank'].forEach(function(k){
       var d = subDef(k), r = subs.filter(function(x){ return x.doc_key === k; })[0];
       html += '<div class="item"><div class="iname"><div class="t">' + esc(d.title) + '</div><div class="s">' + (r && r.status === 'submitted' ? '제출 ' + fmtDT(r.signed_at) : r && r.status === 'removed' ? '제출 후 원본 삭제 ' + fmtDT(r.updated_at) : '미제출') + '</div></div><span class="inline">' +
-        (r && r.status === 'submitted' && r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">열기</button>' + (isManager() ? '<button class="btn sm danger" data-act="sub-del" data-id="' + esc(r.id) + '" data-path="' + esc(r.pdf_path) + '">지움</button>' : '') : '') + '</span></div>';
+        (r && r.status === 'submitted' && r.pdf_path ? '<button class="btn sm" data-act="docs-open-pdf" data-path="' + esc(r.pdf_path) + '">열기</button>' + (isOwner() ? '<button class="btn sm danger" data-act="sub-del" data-id="' + esc(r.id) + '" data-path="' + esc(r.pdf_path) + '">지움</button>' : '') : '') + '</span></div>';
     });
     html += '<div class="item"><div class="iname"><div class="t">보건증</div><div class="s">"보건증" 화면에서 따로 관리해요 (만료일·제출 확인)</div></div>' + (isManager() ? '<a class="btn sm" href="#/health-admin">보건증 관리</a>' : '<a class="btn sm" href="#/health">내 보건증</a>') + '</div>';
     html += '</div>';
     var r0 = rows.filter(function(r){ return r.signed_at; })[0] || rows[0];
     html += '<div class="card section"><div class="sec-h">교부 기록</div><div style="padding:10px 14px;font-size:13px;line-height:1.8">' +
+      '준비한 사람: <b>' + esc(staffName(rows[0].prepared_by) || '-') + '</b> · ' + fmtDT(rows.reduce(function(a, r){ return a < r.created_at ? a : r.created_at; }, rows[0].created_at)) + '<br>' +
       '받는 사람: <b>' + esc(r0.email_to || '-') + '</b><br>참조: ' + esc(r0.email_cc || '-') + '<br>보낸 시각: ' + esc(r0.email_sent_at ? fmtDT(r0.email_sent_at) : '-') +
       (r0.email_error ? '<br><span style="color:var(--danger)">오류: ' + esc(r0.email_error) + '</span>' : '') +
       '<br>서명 기기: <span class="muted">' + esc(r0.signed_ua || '-') + '</span><br>접속 IP: ' + esc(r0.signed_ip || '-') +
       (r0.pdf_sha256 ? '<br>PDF 지문: <code>' + esc(r0.pdf_sha256.slice(0, 16)) + '…</code>' : '') + '</div></div>';
-    if (isManager()){
+    if (isOwner()){
       html += '<div class="inline" style="margin-top:12px">';
       if (rows.some(function(r){ return r.pdf_path; })) html += '<button class="btn primary" data-act="docs-resend" data-id="' + esc(params.arg) + '">' + (stt === 'sent' ? '다시 보내기' : '메일 발송') + '</button>';
       if (stt === 'prepared') html += '<button class="btn danger" data-act="docs-del-batch" data-id="' + esc(params.arg) + '">삭제</button>';
