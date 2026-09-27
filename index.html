@@ -593,6 +593,7 @@
 
   async function pinGo(){
     var s = base.staff.concat(base.kiosks).filter(function(x){ return x.id === loginState.staffId; })[0];
+    if (!s || s.active === false){ toast('퇴사 처리된 이름이라 들어갈 수 없어요'); loginState.staffId = null; render(); return; }
     var p1 = (document.getElementById('pin1') || {}).value || '';
     if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
     if (!s.pin){
@@ -1348,7 +1349,7 @@
     if (!people.length) html += '<div class="empty">근무 중인 직원이 없어요</div>';
     people.forEach(function(s){ html += staffRow(s); });
     html += '</div>';
-    if (inactive.length){
+    if (inactive.length && isOwner()){   // 퇴사자는 사장님만 볼 수 있음
       var open = !!staffUI.showInactive[b];
       html += '<div class="group-title" data-act="staff-inactive-toggle" data-branch="' + esc(b) + '" style="cursor:pointer">퇴사자 ' + inactive.length + '명 ' + (open ? '숨기기 ▲' : '보기 ▼') + '</div>';
       if (open){ html += '<div class="card section">'; inactive.forEach(function(s){ html += staffRow(s); }); html += '</div>'; }
@@ -1439,7 +1440,7 @@
     html += '<div class="muted" style="margin:0 4px 6px">' + (isWeekly ? '이 주 전용 표' : '고정 패턴 (매주 같음)') + (isManager() ? ' · <a href="#/patterns/' + esc(b) + '/' + (isWeekly ? ws : 'fixed') + '" style="text-decoration:underline">고치기</a>' : '') + '</div>';
     // 이번 주 스케줄 확인: 알바생 본인 확인 버튼 + 매니저용 확인 현황
     var weekPeople = {};
-    pool.forEach(function(p){ if (!weekPeople[p.staff_id]) weekPeople[p.staff_id] = true; });
+    pool.forEach(function(p){ if (!weekPeople[p.staff_id] && base.staff.some(function(s){ return s.id === p.staff_id && s.active !== false; })) weekPeople[p.staff_id] = true; });
     var weekStaffIds = Object.keys(weekPeople);
     var myAck = acks.filter(function(a){ return a.staff_id === session.staffId; })[0];
     if (weekStaffIds.indexOf(session.staffId) >= 0){
@@ -1525,7 +1526,7 @@
         html += '<div class="card" style="overflow-x:auto"><table class="grid"><tr><th></th>' + days.map(function(d, di){ return '<th' + (d === day ? ' class="on"' : '') + (byDayLanes[di].lanes > 1 ? ' colspan="' + byDayLanes[di].lanes + '"' : '') + '>' + WD[wdOf(d)] + '<br>' + dateObj(d).getDate() + '</th>'; }).join('') + '</tr>';
         for (var i = 0; i < times.length - 1; i++){
           var rs = times[i], re = times[i + 1];
-          html += '<tr><th>' + fromMin(rs) + (re - rs !== 30 ? '<br><span style="font-weight:400">~' + fromMin(re) + '</span>' : '') + '</th>';
+          html += '<tr><th>' + fromMin(rs) + '</th>';
           byDayLanes.forEach(function(dl, di){
             var active = dl.list.filter(function(r){ return toMin(r.start) < re && rs < toMin(r.end); });
             for (var ln = 0; ln < dl.lanes; ln++){
@@ -2352,7 +2353,7 @@
     await attachExtras(recs, b, days[0]);
     var html = topbar('근무 조회 · ' + branchName(b), true) + branchTabs(b, false);
     html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="hours-month" data-ym="' + addMonths(ym, -1) + '">‹ 지난달</button><b>' + ym.replace('-', '년 ') + '월</b><button class="btn sm" data-act="hours-month" data-ym="' + addMonths(ym, 1) + '">다음달 ›</button></div>';
-    var open = recs.filter(function(x){ return x.clock_in && !x.clock_out && x.work_date >= addDays(todayStr(), -1); });
+    var open = recs.filter(function(x){ return x.clock_in && !x.clock_out && x.work_date >= addDays(todayStr(), -1) && (isOwner() || !isLeft(x.staff_id)); });
     if (open.length) html += '<div class="note ok">지금 근무 중: ' + open.map(function(x){ return esc(staffName(x.staff_id)) + ' ' + hm(x.clock_in) + '~'; }).join(' · ') + '</div>';
     // 근무표 계획 시간
     var planned = {};
@@ -2360,6 +2361,8 @@
     var byStaff = {};
     recs.forEach(function(x){ (byStaff[x.staff_id] = byStaff[x.staff_id] || []).push(x); });
     var ids = Object.keys(byStaff); Object.keys(planned).forEach(function(k){ if (ids.indexOf(k) < 0) ids.push(k); });
+    function isLeft(id){ return base.staff.some(function(s){ return s.id === id && s.active === false; }); }
+    if (!isOwner()) ids = ids.filter(function(id){ return !isLeft(id); });   // 퇴사자 기록은 사장님만
     ids.sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); });
     html += '<div class="card section"><div class="sec-h">사람별 합계<span class="sp"></span><button class="btn sm" data-act="hours-xlsx" data-branch="' + esc(b) + '" data-ym="' + ym + '">엑셀 (주휴 포함)</button> <button class="btn sm" data-act="hours-csv" data-branch="' + esc(b) + '" data-ym="' + ym + '">CSV</button></div>';
     if (!ids.length) html += '<div class="empty">이 달 기록이 없어요</div>';
@@ -2368,7 +2371,7 @@
       var list = byStaff[id] || [], net = 0, night = 0, dcount = 0, missing = 0;
       list.forEach(function(x){ var n = recNet(x, sch); if (n){ net += n.net; night += n.night; dcount++; } else missing++; csv.push([staffName(id), x.work_date, x.sched_start ? hm5(x.sched_start) + '~' + hm5(x.sched_end) : (x.no_schedule ? '없음' : '실제 기준'), hm(x.clock_in), hm(x.clock_out), n && n.raw != null ? n.raw : '', n ? n.brk : '', n && n.late ? n.late : '', n && n.extra ? n.extra : '', n ? n.net : '', n ? n.night : '', (x.edits && x.edits.length ? '수정 ' + x.edits.length + '회' : '') + (!x.clock_out ? ' 퇴근 안 누름' : '') + (n && n.early ? ' 조기퇴근 ' + n.early + '분' : '')]); });
       var plan = planned[id] || 0, diff = net - plan;
-      html += '<div class="item" data-act="hours-toggle" data-id="' + esc(id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(staffName(id)) + '</div><div class="s">' + dcount + '일 · 인정 <b>' + fmtH(net) + '</b> · 근무표 ' + fmtH(plan) + ' · 야간 ' + fmtH(night) + (missing ? ' · <span style="color:var(--danger)">퇴근 없음 ' + missing + '</span>' : '') + '</div></div><span class="badge ' + (Math.abs(diff) < 30 ? 'ok' : 'warn') + '">' + (diff >= 0 ? '+' : '') + fmtH(diff) + '</span></div>';
+      html += '<div class="item" data-act="hours-toggle" data-id="' + esc(id) + '" style="cursor:pointer"><div class="iname"><div class="t">' + esc(staffName(id)) + (isLeft(id) ? ' <span class="badge muted">퇴사</span>' : '') + '</div><div class="s">' + dcount + '일 · 인정 <b>' + fmtH(net) + '</b> · 근무표 ' + fmtH(plan) + ' · 야간 ' + fmtH(night) + (missing ? ' · <span style="color:var(--danger)">퇴근 없음 ' + missing + '</span>' : '') + '</div></div><span class="badge ' + (Math.abs(diff) < 30 ? 'ok' : 'warn') + '">' + (diff >= 0 ? '+' : '') + fmtH(diff) + '</span></div>';
       html += '<div class="expand hidden" id="hx-' + esc(id) + '" style="padding-left:14px">';
       list.forEach(function(x){ var n = recNet(x, sch); html += '<div class="hist" style="flex-wrap:wrap"><span>' + esc(fmtDateK(x.work_date)) + '</span><span class="sp">' + hoursLine(x, n) + (x.edits && x.edits.length ? ' · <span class="badge muted" title="' + esc(x.edits.map(function(e){ return e.field + ' ' + e.from + '→' + e.to + ' (' + e.reason + ')'; }).join(', ')) + '">수정 ' + x.edits.length + '</span>' : '') + '</span><button class="btn sm" data-act="att-edit" data-id="' + esc(x.id) + '">고치기</button>' + (x.sched_start || x.no_schedule ? '<span class="muted" data-act="att-resched" data-id="' + esc(x.id) + '" style="cursor:pointer;font-size:12px;margin-left:6px">근무표로 다시 맞추기</span>' : '') + (x.fill_status !== 'approved' && (!n || n.late || n.fillWait || !x.sched_start) && !x.no_schedule ? '<span class="muted" data-act="fill-ok" data-id="' + esc(x.id) + '" style="cursor:pointer;font-size:12px;margin-left:6px;text-decoration:underline">근무표대로 인정</span>' : '') + '</div>'; });
       if (!list.length) html += '<div class="hist"><span class="muted">기록 없음 (근무표만 있음)</span></div>';
@@ -2380,7 +2383,7 @@
       var missM = missingShifts(sch, b, recs, days[0], days[days.length - 1] < todayStr() ? days[days.length - 1] : todayStr(), null);
       if (missM.length) html = html.replace('<div class="card section"><div class="sec-h">사람별 합계', '<div class="card section"><div class="sec-h">출퇴근 기록 없는 근무 ' + missM.length + '건</div><div class="muted" style="margin:0 0 6px">근무표엔 있는데 출퇴근을 안 누른 근무예요. 여기서 채우면 바로 인정돼요.</div>' + missHtml(missM, 'fill-mgr') + '</div><div class="card section"><div class="sec-h">사람별 합계');
     }
-    var sus = recs.filter(suspectOver);
+    var sus = recs.filter(function(x){ return suspectOver(x) && (isOwner() || !isLeft(x.staff_id)); });
     if (sus.length){
       html += '<div class="card section"><div class="sec-h">확인해 볼 날 ' + sus.length + '건<span class="sp"></span></div><div class="muted" style="margin:0 0 6px">실제 기록이 근무표보다 30분 이상 긴데 추가 근무를 안 올린 날이에요. 시키거나 알고 둔 초과 근무라면 승인 안 해도 임금을 줘야 할 수 있어요.</div>';
       sus.forEach(function(x){ html += '<div class="hist"><span>' + esc(fmtDateK(x.work_date)) + '</span><span class="sp">' + esc(staffName(x.staff_id)) + ' · 근무표 ' + (x.sched_start ? esc(hm5(x.sched_start) + '~' + hm5(x.sched_end)) : '없음') + ' · 실제 ' + hm(x.clock_in) + '~' + hm(x.clock_out) + '</span></div>'; });
@@ -2416,7 +2419,7 @@
     var ids = {};
     recs.forEach(function(x){ ids[x.staff_id] = 1; });
     days.forEach(function(d){ shiftsOn(sch, b, d).forEach(function(sf){ if (sf.kind === 'off') return; var who = sf.kind === 'sub' ? sf.req.sub_staff_id : sf.staffId; if (who) ids[who] = 1; }); });
-    var people = Object.keys(ids).filter(function(id){ return staffName(id); }).sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); });
+    var people = Object.keys(ids).filter(function(id){ return staffName(id) && (isOwner() || !base.staff.some(function(s){ return s.id === id && s.active === false; })); }).sort(function(x, y){ return staffName(x).localeCompare(staffName(y)); });   // 퇴사자는 사장님 엑셀에만
     if (!people.length){ toast('이 달 기록이 없어요'); return; }
     var weeks = []; for (var ws = from; ws <= last; ws = addDays(ws, 7)) weeks.push(ws);
     var wb = new ExcelJS.Workbook(); wb.creator = '본노엘 운영';
