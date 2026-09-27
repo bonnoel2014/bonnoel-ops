@@ -1373,6 +1373,12 @@
   function weekStart(dateStr){ var d = dateObj(dateStr); var day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
   function tRange(s, e){ return s + '~' + e; }
   function shiftHours(r){ var mins = toMin(r.end) - toMin(r.start); if (r.brk){ var p = r.brk.split('~'); mins -= (toMin(p[1]) - toMin(p[0])); } return (mins / 60).toFixed(1) + '시간'; }
+  // 근무 분 = 끝 − 시작 − 휴게 (자정 넘는 근무는 +24시간)
+  function workMin(start, end, bs, be){ var m = toMin(end) - toMin(start); if (m <= 0) m += 1440; if (bs && be){ var b = toMin(be) - toMin(bs); if (b < 0) b += 1440; m -= b; } return Math.max(0, m); }
+  function wkH(min){ return (Math.round(min / 6) / 10).toFixed(1) + '시간'; }
+  async function loadStaffFlags(){ try { var r = await db.select('ops_settings', { eq: { key: 'staff_flags' } }); return (r[0] && r[0].value) || {}; } catch(e){ return {}; } }
+  // 주휴: 급여 설정에서 사람별로 켜기/끄기 한 게 있으면 그걸, 없으면 주 15시간 이상이면 대상
+  function juhyuOn(staffId, min, flags){ var f = ((flags || {})[staffId] || {}).juhyu || 'auto'; return f === 'yes' || (f === 'auto' && min >= 900); }
   var STATUS_K = { requested: '신청함', rejected: '거절됨', covering: '대타 구하는 중', confirmed: '확정', cancelled: '취소' };
 
   async function loadSchedule(branchIds, fromDate, toDate){
@@ -1580,6 +1586,30 @@
         '<div class="inline" style="margin-top:8px"><button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
     }
     html += '<div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 자리는 그날 시작 시간이 빠른 순, 앞사람 퇴근 시각에 출근하는 사람은 같은 줄 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게' + (isManager() ? ' · 사장님·매니저는 눌러서 다른 사람으로 바로 바꿀 수 있어요' : '') + '</div>';
+    // 이번 주 사람별 근무시간 (사장님만): 이 주 실제 표 기준, 대타는 대신 나온 사람 몫, 휴무 확정은 뺌
+    if (isOwner()){
+      var wkMin = {};
+      byDay.forEach(function(list){ list.forEach(function(r){
+        if (r.kind === 'off') return;
+        var who = r.kind === 'sub' ? (r.req && r.req.sub_staff_id) : r.staffId; if (!who) return;
+        var bp = r.brk ? r.brk.split('~') : [];
+        wkMin[who] = (wkMin[who] || 0) + workMin(r.start, r.end, bp[0], bp[1]);
+      }); });
+      var wkIds = Object.keys(wkMin).sort(function(x, y){ return staffName(x).localeCompare(staffName(y), 'ko'); });
+      if (wkIds.length){
+        var wr = await Promise.all([ db.select('ops_shift_patterns', { eq: { active: true } }), loadStaffFlags() ]);
+        var othMin = {}, othBr = {};
+        wr[0].forEach(function(p){ if (p.branch_id !== b) (othBr[p.branch_id] = othBr[p.branch_id] || []).push(p); });
+        Object.keys(othBr).forEach(function(br){ var list = othBr[br], wk = list.filter(function(p){ return p.week_start === ws; }); (wk.length ? wk : list.filter(function(p){ return !p.week_start; })).forEach(function(p){ othMin[p.staff_id] = (othMin[p.staff_id] || 0) + workMin(p.start_time, p.end_time, p.break_start, p.break_end); }); });
+        var wkSum = 0;
+        html += '<div class="group-title">이번 주 사람별 근무시간<span class="sp"></span><span class="muted" style="font-weight:400">사장님만 보여요 · 휴게 뺌 · 대타·휴무 반영</span></div><div class="card" style="padding:4px 12px">';
+        wkIds.forEach(function(id){
+          var m = wkMin[id], tot = m + (othMin[id] || 0); wkSum += m;
+          html += '<div class="item" style="padding:7px 0"><div class="iname"><div class="t">' + esc(staffName(id)) + '</div>' + (othMin[id] ? '<div class="s">다른 매장 포함 ' + wkH(tot) + '</div>' : '') + '</div><b style="margin-right:8px">' + wkH(m) + '</b>' + (juhyuOn(id, tot, wr[1]) ? '<span class="badge ok">주휴 O</span>' : '<span class="badge muted">주휴 X</span>') + '</div>';
+        });
+        html += '<div class="item" style="padding:7px 0"><div class="iname"><div class="t"><b>합계</b></div></div><b>' + wkH(wkSum) + '</b></div></div>';
+      }
+    }
     // 매장 메모 (입사 예정·퇴사 예정·충원 예정 등)
     html += '<div class="group-title">매장 메모</div>';
     if (isManager()) html += '<div class="form"><textarea class="in" id="bn-text" rows="5" placeholder="입사 예정 · 퇴사 예정 · 충원 예정 · 기타">' + esc(note ? note.text : '') + '</textarea><div class="inline" style="justify-content:space-between"><span class="muted">' + (note ? esc(staffName(note.updated_by)) + ' · ' + md(note.updated_at) : '') + '</span><button class="btn sm primary" data-act="note-save" data-branch="' + esc(b) + '">메모 저장</button></div></div>';
@@ -1844,8 +1874,16 @@
     // 모드: fixed(고정, 매주 같음) 또는 주 시작 날짜(그 주 전용)
     var mode = /^\d{4}-\d{2}-\d{2}$/.test(params.arg2 || '') ? weekStart(params.arg2) : 'fixed';
     var week = mode === 'fixed' ? null : mode;
-    var all = await db.select('ops_shift_patterns', { eq: { branch_id: b, active: true } });
+    var pr = await Promise.all([ db.select('ops_shift_patterns', { eq: { active: true } }), loadStaffFlags() ]);
+    var all = pr[0].filter(function(p){ return p.branch_id === b; }), flags = pr[1];
     var pats = all.filter(function(p){ return week ? p.week_start === week : !p.week_start; });
+    // 다른 매장에서도 같은 기준(고정/같은 주)으로 일하는 시간 — 주휴는 전체 매장 합으로 봄
+    var otherMin = {}, byBr = {};
+    pr[0].forEach(function(p){ if (p.branch_id !== b) (byBr[p.branch_id] = byBr[p.branch_id] || []).push(p); });
+    Object.keys(byBr).forEach(function(br){
+      var list = byBr[br], wk = week ? list.filter(function(p){ return p.week_start === week; }) : [];
+      (wk.length ? wk : list.filter(function(p){ return !p.week_start; })).forEach(function(p){ otherMin[p.staff_id] = (otherMin[p.staff_id] || 0) + workMin(p.start_time, p.end_time, p.break_start, p.break_end); });
+    });
     var fixedCount = all.filter(function(p){ return !p.week_start; }).length;
     var prevWeek = week ? addDays(week, -7) : null, prevCount = week ? all.filter(function(p){ return p.week_start === prevWeek; }).length : 0;
     var thisWs = weekStart(todayStr());
@@ -1870,7 +1908,12 @@
           '<div class="grid2"><div><label>휴게 시작 (없으면 비움)</label><select class="in" id="pte-bs-' + esc(p.id) + '">' + halfHourOptions(p.break_start || '', '없음') + '</select></div><div><label>휴게 끝</label><select class="in" id="pte-be-' + esc(p.id) + '">' + halfHourOptions(p.break_end || '', '없음') + '</select></div></div>' +
           '<button class="btn sm primary" data-act="pat-edit-save" data-id="' + esc(p.id) + '">저장</button></div>';
       }).join('') : '<div class="s warn">패턴 없음</div>';
-      html += '<div class="item" style="align-items:flex-start"><div class="iname"><div class="t">' + esc(s.name) + (s.branch_id !== b ? ' <span class="badge muted">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</span>' : '') + ' <span data-act="memo-edit" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:12px;color:var(--ink-faint)">✎ 메모</span></div>' + (s.memo ? '<div class="s"><i>' + esc(s.memo) + '</i></div>' : '') + patLines + '</div></div>';
+      var hoursTag = '';
+      if (isOwner() && mine.length){   // 주간 시간 합계는 사장님만
+        var myMin = mine.reduce(function(a, p){ return a + workMin(p.start_time, p.end_time, p.break_start, p.break_end); }, 0), tot = myMin + (otherMin[s.id] || 0);
+        hoursTag = ' <span style="font-size:13px;font-weight:600;color:var(--ink)">· 주 ' + wkH(myMin) + '</span>' + (otherMin[s.id] ? ' <span class="muted" style="font-size:12px">(전체 매장 ' + wkH(tot) + ')</span>' : '') + (juhyuOn(s.id, tot, flags) ? ' <span class="badge ok">주휴 O</span>' : '');
+      }
+      html += '<div class="item" style="align-items:flex-start"><div class="iname"><div class="t">' + esc(s.name) + (s.branch_id !== b ? ' <span class="badge muted">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</span>' : '') + hoursTag + ' <span data-act="memo-edit" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:12px;color:var(--ink-faint)">✎ 메모</span></div>' + (s.memo ? '<div class="s"><i>' + esc(s.memo) + '</i></div>' : '') + patLines + '</div></div>';
     });
     html += '</div>';
     if (!patGridStaff || !people.some(function(s){ return s.id === patGridStaff; })) patGridStaff = people[0] ? people[0].id : null;
