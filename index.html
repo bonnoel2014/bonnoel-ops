@@ -1503,12 +1503,13 @@
     html += '<div class="group-title inline" style="justify-content:space-between"><span>주간 표' + (viewMode === 'grid' ? ' <span class="muted" style="font-weight:400">(옆으로 밀어 보세요)</span>' : '') + '</span><span class="tabs" style="margin:0"><span class="tab' + (viewMode === 'grid' ? ' on' : '') + '" data-act="sched-view" data-mode="grid">시간표</span><span class="tab' + (viewMode === 'daylist' ? ' on' : '') + '" data-act="sched-view" data-mode="daylist">요일별 보기</span></span></div>';
     var byDay = days.map(function(d){ return shiftsOn(sch, b, d); });
     // 그날 시작 시간이 빠른 사람부터 1번 자리, 겹치지 않게 되면(예: 오픈이 끝나면) 그 자리를 다음 사람이 이어받음
+    // 앞사람이 끝나는 바로 그 시각에 들어오는 사람(교대)은 앞사람과 같은 줄에 이어서 둠
     function assignLanes(list){
       var sorted = list.filter(function(r){ return r.kind !== 'off'; }).slice().sort(function(a, b){ return toMin(a.start) - toMin(b.start); });
       var laneEnd = [];
       sorted.forEach(function(r){
-        var lane = -1;
-        for (var i = 0; i < laneEnd.length; i++){ if (laneEnd[i] <= toMin(r.start)){ lane = i; break; } }
+        var s = toMin(r.start), lane = laneEnd.indexOf(s);
+        if (lane === -1) for (var i = 0; i < laneEnd.length; i++){ if (laneEnd[i] <= s){ lane = i; break; } }
         if (lane === -1){ lane = laneEnd.length; laneEnd.push(0); }
         laneEnd[lane] = toMin(r.end);
         r.lane = lane;
@@ -1578,7 +1579,7 @@
         '<div class="inline" style="margin-top:4px"><select class="in" id="chip-delete-end" style="width:auto">' + halfHourOptions('') + '</select><button class="btn sm" id="chip-delete-btn" data-act="chip-delete-slot" style="color:var(--danger)">삭제</button></div></div>' +
         '<div class="inline" style="margin-top:8px"><button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
     }
-    html += '<div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 자리는 그날 시작 시간이 빠른 순 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게' + (isManager() ? ' · 사장님·매니저는 눌러서 다른 사람으로 바로 바꿀 수 있어요' : '') + '</div>';
+    html += '<div class="muted" style="margin-top:6px">사람마다 색이 달라요 · 자리는 그날 시작 시간이 빠른 순, 앞사람 퇴근 시각에 출근하는 사람은 같은 줄 · 테두리 진한 것 = 대타 · 노랑 = 대타 구하는 중 · 초록 = 못 구해서 출근 · 점선 = 휴게' + (isManager() ? ' · 사장님·매니저는 눌러서 다른 사람으로 바로 바꿀 수 있어요' : '') + '</div>';
     // 매장 메모 (입사 예정·퇴사 예정·충원 예정 등)
     html += '<div class="group-title">매장 메모</div>';
     if (isManager()) html += '<div class="form"><textarea class="in" id="bn-text" rows="5" placeholder="입사 예정 · 퇴사 예정 · 충원 예정 · 기타">' + esc(note ? note.text : '') + '</textarea><div class="inline" style="justify-content:space-between"><span class="muted">' + (note ? esc(staffName(note.updated_by)) + ' · ' + md(note.updated_at) : '') + '</span><button class="btn sm primary" data-act="note-save" data-branch="' + esc(b) + '">메모 저장</button></div></div>';
