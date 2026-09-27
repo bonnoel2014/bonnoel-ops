@@ -1518,7 +1518,7 @@
 
     if (viewMode === 'grid'){
       var mn = 24 * 60, mx = 0, bounds = {};
-      pool.forEach(function(p){ mn = Math.min(mn, toMin(p.start_time)); mx = Math.max(mx, toMin(p.end_time)); bounds[toMin(p.start_time)] = 1; bounds[toMin(p.end_time)] = 1; });
+      byDay.forEach(function(list){ list.forEach(function(r){ if (r.kind === 'off') return; mn = Math.min(mn, toMin(r.start)); mx = Math.max(mx, toMin(r.end)); bounds[toMin(r.start)] = 1; bounds[toMin(r.end)] = 1; }); });
       if (mx > mn){
         for (var t = Math.ceil(mn / 30) * 30; t <= Math.floor(mx / 30) * 30; t += 30) bounds[t] = 1;
         var times = Object.keys(bounds).map(Number).sort(function(x, y){ return x - y; });
