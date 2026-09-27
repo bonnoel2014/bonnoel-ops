@@ -1327,7 +1327,7 @@
       (canRole ? '<select class="in" style="width:auto;padding:6px" data-act="role" data-id="' + esc(s.id) + '"><option value="staff"' + (s.role === 'staff' || !s.role ? ' selected' : '') + '>근무자</option><option value="manager"' + (s.role === 'manager' ? ' selected' : '') + '>매니저</option><option value="owner"' + (s.role === 'owner' ? ' selected' : '') + '>사장</option></select>' : '') +
       (isOwner() ? '<button class="btn sm" data-act="kiosk-pin" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '">비밀번호 바꾸기</button>' : '') +   // 사장님만
       (s.pin && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">1225로 초기화</button>' : '') +
-      (s.id !== session.staffId && (isOwner() || s.role === 'staff') ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : isManager() && s.role === 'staff' ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : '') + '</div>';
+      (s.id !== session.staffId && (isOwner() || isKiosk() || s.role === 'staff') ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : '') + '</div>';
   }
   routes.staff = async function(params){
     await loadBase();
