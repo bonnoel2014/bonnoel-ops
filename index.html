@@ -2007,7 +2007,15 @@
     return total;
   }
   function fmtH(min){ return (min / 60).toFixed(1) + 'h'; }
-  function openRecordOf(list, staffId){ return list.filter(function(r){ return r.staff_id === staffId && r.clock_in && !r.clock_out && (Date.now() - new Date(r.clock_in)) < 20 * 3600000; })[0]; }
+  // 퇴근을 안 누른 기록을 "근무 중"으로 볼지. 오늘 기록은 출근 20시간 안이면 근무 중.
+  // 지난 날 기록은 그날 근무표 끝나고 3시간까지만(자정 넘겨 마감하는 경우 대비), 그 뒤엔 "퇴근 안 누름"
+  function isOpenRec(r){
+    if (!r.clock_in || r.clock_out || (Date.now() - new Date(r.clock_in)) >= 20 * 3600000) return false;
+    if (r.work_date < todayStr() && r.sched_start && r.sched_end) return Date.now() < new Date(schedIso(r, r.sched_end)).getTime() + 3 * 3600000;
+    return true;
+  }
+  function openRecordOf(list, staffId){ return list.filter(function(r){ return r.staff_id === staffId && isOpenRec(r); })[0]; }
+  function unclosedRecordOf(list, staffId){ return list.filter(function(r){ return r.staff_id === staffId && r.clock_in && !r.clock_out && r.work_date < todayStr() && !isOpenRec(r); })[0]; }
 
   // ===== 근무표 기준 출퇴근 + 추가 근무 (12차, 기획/출퇴근_근무표기준_설계.md) =====
   // 인정 = 근무표(지각만 1분 단위 자동 차감) + 사장님이 수락한 추가 근무. 실제 누른 시각은 clock_in/out에 그대로 보관.
@@ -2244,7 +2252,7 @@
       html += '<div class="inline" style="justify-content:space-between;margin:0 4px 8px"><b>' + esc(branchName(b)) + '</b><span class="muted" data-act="clock-branch-reset" style="cursor:pointer">매장 바꾸기</span></div>';
       html += '<div class="muted" style="margin:0 4px 10px">내 이름을 누르고 비밀번호 4자리를 넣으면 출근·퇴근이 기록돼요.</div><div class="name-grid">';
       var hcMarksK = await hcRedMarks();
-      people.forEach(function(s){ var open = openRecordOf(recs, s.id); html += '<button class="btn" data-act="clock-pick" data-id="' + esc(s.id) + '" style="' + (open ? 'background:var(--ok-soft);border-color:var(--ok)' : '') + '">' + esc(s.name) + (open ? '<br><span style="font-size:12px;font-weight:400">근무 중 ' + (open.sched_start ? hm5(open.sched_start) + '~' + hm5(open.sched_end) : open.no_schedule ? '' : hm(open.clock_in) + '~') + '</span>' : (pendDocIds[s.id] ? '<br><span style="font-size:12px;font-weight:400;color:var(--warn)">서류 서명 필요</span>' : hcNameMark(hcMarksK, s.id))) + '</button>'; });
+      people.forEach(function(s){ var open = openRecordOf(recs, s.id), unclosed = !open && unclosedRecordOf(recs, s.id); html += '<button class="btn" data-act="clock-pick" data-id="' + esc(s.id) + '" style="' + (open ? 'background:var(--ok-soft);border-color:var(--ok)' : '') + '">' + esc(s.name) + (open ? '<br><span style="font-size:12px;font-weight:400">근무 중 ' + (open.sched_start ? hm5(open.sched_start) + '~' + hm5(open.sched_end) : open.no_schedule ? '' : hm(open.clock_in) + '~') + '</span>' : unclosed ? '<br><span style="font-size:12px;font-weight:400;color:var(--warn)">' + esc(fmtDateK(unclosed.work_date)) + ' 퇴근 안 누름</span>' : (pendDocIds[s.id] ? '<br><span style="font-size:12px;font-weight:400;color:var(--warn)">서류 서명 필요</span>' : hcNameMark(hcMarksK, s.id))) + '</button>'; });
       html += '</div>';
       var todayRecs = recs.filter(function(r){ return r.work_date === today; });
       if (todayRecs.length){
@@ -2269,6 +2277,8 @@
         var mine = recs.filter(function(r){ return r.staff_id === s.id; }).slice(0, 3);
         html += '<div class="pin-wrap"><div style="font-size:22px;font-weight:700">' + esc(s.name) + '</div><div class="muted" style="margin:4px 0 18px">' + esc(fmtDateK(today)) + ' 지금 ' + hm(nowIso()) + '</div>';
         if (pendDocIds[s.id]) html += '<div class="note" style="text-align:left;margin:0 0 14px">입사 서류(근로계약서 등)를 아직 안 썼어요. 출근은 되지만 오늘 안에 <a href="#/sign" style="text-decoration:underline;font-weight:600">서류 서명</a>을 꼭 해 주세요.</div>';
+        var unclosedMe = !open && unclosedRecordOf(recs, s.id);
+        if (unclosedMe) html += '<div class="note" style="text-align:left;margin:0 0 14px">' + esc(fmtDateK(unclosedMe.work_date)) + ' 퇴근을 안 눌렀어요. 매니저에게 퇴근 시각을 고쳐 달라고 말해 주세요.</div>';
         if (open) html += '<div class="muted" style="margin-bottom:10px">' + (open.sched_start ? '오늘 근무 ' + hm5(open.sched_start) + '~' + hm5(open.sched_end) : open.no_schedule ? '오늘 근무표에 없는 출근이에요' : '출근 ' + hm(open.clock_in) + ' (' + fmtH(minutesBetween(open.clock_in, nowIso())) + ' 지남)') + '</div><button class="btn primary" data-act="clock-out" data-id="' + esc(open.id) + '" style="font-size:22px;padding:18px 40px">퇴근하기</button>';
         else html += '<button class="btn primary" data-act="clock-in" style="font-size:22px;padding:18px 40px;background:var(--ok);border-color:var(--ok)">출근하기</button>';
         html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div><div style="margin-top:36px"><span class="muted" data-act="extra-open" style="cursor:pointer;font-size:13px;text-decoration:underline">추가 근무 올리기</span></div><div style="margin-top:10px"><span class="muted" data-act="pin-change" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:13px;text-decoration:underline">비밀번호 바꾸기 (다른 사람이 대신 못 찍게)</span></div></div>';
