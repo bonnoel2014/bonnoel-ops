@@ -1353,7 +1353,7 @@
       html += '<div class="group-title" data-act="staff-inactive-toggle" data-branch="' + esc(b) + '" style="cursor:pointer">퇴사자 ' + inactive.length + '명 ' + (open ? '숨기기 ▲' : '보기 ▼') + '</div>';
       if (open){ html += '<div class="card section">'; inactive.forEach(function(s){ html += staffRow(s); }); html += '</div>'; }
     }
-    if (isOwner()) html += '<div class="group-title">직원 추가</div><div class="form"><div><label>이름</label><input class="in" id="ns-name" placeholder="이름"></div><button class="btn" data-act="staff-add" data-branch="' + esc(b) + '">' + esc(branchName(b)) + '에 추가</button></div>';
+    if (isOwner() || isKiosk()) html += '<div class="group-title">직원 추가</div><div class="form"><div><label>이름</label><input class="in" id="ns-name" placeholder="이름"></div><button class="btn" data-act="staff-add" data-branch="' + esc(b) + '">' + esc(branchName(b)) + '에 추가</button></div>';
     app.innerHTML = html;
   };
 
