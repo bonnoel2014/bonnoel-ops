@@ -1531,7 +1531,7 @@
             for (var ln = 0; ln < dl.lanes; ln++){
               var r = active.filter(function(x){ return x.lane === ln; })[0];
               if (!r){
-                var emptyAct = isManager() ? ' data-act="chip-pick-empty" data-branch="' + esc(b) + '" data-date="' + esc(days[di]) + '" data-weekday="' + wdOf(days[di]) + '" data-start="' + esc(fromMin(rs)) + '" style="cursor:pointer"' : '';
+                var emptyAct = isManager() ? ' data-act="chip-pick-empty" data-branch="' + esc(b) + '" data-date="' + esc(days[di]) + '" data-weekday="' + wdOf(days[di]) + '" data-start="' + esc(fromMin(rs)) + '" data-end="' + esc(fromMin(re)) + '" style="cursor:pointer"' : '';
                 html += '<td' + (days[di] === day ? ' class="on"' : '') + emptyAct + '></td>';
                 continue;
               }
@@ -1568,10 +1568,11 @@
     if (isManager()){
       var pickPeople = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || (!s.branch_id && s.role !== 'owner') || pool.some(function(p){ return p.staff_id === s.id; })); });
       html += '<div class="card hidden" id="chip-panel" data-pattern=""><div class="muted" style="margin-bottom:6px" id="chip-panel-title">이 자리, 누구로 할까요?</div>' +
-        '<div class="hidden" id="chip-endtime-wrap" style="margin-bottom:8px"><label class="muted">몇 시까지</label><select class="in" id="chip-endtime" style="width:auto">' + halfHourOptions('') + '</select></div>' +
         '<div class="inline" style="flex-wrap:wrap;gap:6px">' +
         pickPeople.map(function(s){ return '<button class="btn sm" data-act="chip-assign" data-staff="' + esc(s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
         '</div>' +
+        '<div class="hidden" id="chip-endtime-wrap" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><label class="muted">몇 시까지</label>' +
+        '<div class="inline" style="margin-top:4px"><select class="in" id="chip-endtime" style="width:auto">' + halfHourOptions('') + '</select><button class="btn sm primary" data-act="chip-add-save">저장</button></div></div>' +
         '<div class="hidden" id="chip-delete-wrap" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><label class="muted">이 시간부터 몇 시까지 지울까요</label>' +
         '<div class="inline" style="margin-top:4px"><select class="in" id="chip-delete-end" style="width:auto">' + halfHourOptions('') + '</select><button class="btn sm" id="chip-delete-btn" data-act="chip-delete-slot" style="color:var(--danger)">삭제</button></div></div>' +
         '<div class="inline" style="margin-top:8px"><button class="btn sm" data-act="chip-cancel">취소</button></div></div>';
@@ -1634,7 +1635,8 @@
     overlap.forEach(function(p){ ns = Math.min(ns, toMin(p.start_time)); ne = Math.max(ne, toMin(p.end_time)); });
     for (var i = 0; i < overlap.length; i++){ await db.update('ops_shift_patterns', { id: overlap[i].id }, { active: false }); }
     var finalStart = fromMin(ns), finalEnd = fromMin(ne);
-    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: finalStart, end_time: finalEnd, active: true, week_start: week });
+    var keepBrk = overlap.filter(function(p){ return p.break_start; })[0], keepNote = overlap.filter(function(p){ return p.note; })[0];
+    await db.insert('ops_shift_patterns', { staff_id: staffId, branch_id: branchId, weekday: weekday, start_time: finalStart, end_time: finalEnd, break_start: keepBrk ? keepBrk.break_start : null, break_end: keepBrk ? keepBrk.break_end : null, note: keepNote ? keepNote.note : null, active: true, week_start: week });
     toast(staffName(staffId) + ' ' + finalStart + '~' + finalEnd + '로 반영했어요'); render();
   }
   // 근무 한 칸(30분)만 지우기: 앞/뒤 끝이면 시간만 줄이고, 중간이면 둘로 쪼개고, 딱 그 칸뿐이면 통째로 지움
@@ -3244,16 +3246,16 @@
   var UNI_KEYS = [ { key: 'apron', label: '앞치마' }, { key: 'karate_short', label: '카라티 반팔' }, { key: 'karate_long', label: '카라티 긴팔' }, { key: 'chef', label: '조리복 (긴팔)' } ];
   // 폰(특히 안드로이드)에서 <input type="time" step="1800">은 휠에서 1분 단위까지 다 보여서 30분 단위로 못 막고, 오전/오후로 표시돼 24시간제가 안 됨
   // → 정시·30분만 있고 24시간제(예: "16:30")로 나오는 select로 대신함. 모든 시간 입력에서 재사용.
+  var EXTRA_TIMES = ['07:20']; // 30분 단위 밖이지만 실제로 쓰는 시각 (왕십리점 7:20 출근)
   function halfHourOptions(sel, emptyLabel){
-    var out = '<option value=""' + (sel ? '' : ' selected') + '>' + esc(emptyLabel == null ? '휴무' : emptyLabel) + '</option>';
-    var offGrid = !!(sel && toMin(sel) % 30 !== 0), inserted = false;
-    for (var h = 0; h < 24; h++) for (var m = 0; m < 60; m += 30){
-      var v = pad(h) + ':' + pad(m);
-      if (offGrid && !inserted && toMin(sel) < toMin(v)){ out += '<option value="' + esc(sel) + '" selected>' + esc(sel) + '</option>'; inserted = true; }
-      out += '<option value="' + v + '"' + (v === sel ? ' selected' : '') + '>' + v + '</option>';
-    }
-    if (offGrid && !inserted) out += '<option value="' + esc(sel) + '" selected>' + esc(sel) + '</option>';
-    return out;
+    sel = sel ? String(sel).slice(0, 5) : '';
+    var list = EXTRA_TIMES.slice();
+    for (var h = 0; h < 24; h++) for (var m = 0; m < 60; m += 30) list.push(pad(h) + ':' + pad(m));
+    if (sel) list.push(sel);
+    var seen = {};
+    list = list.filter(function(v){ if (seen[v]) return false; seen[v] = 1; return true; }).sort(function(a, b){ return toMin(a) - toMin(b); });
+    return '<option value=""' + (sel ? '' : ' selected') + '>' + esc(emptyLabel == null ? '휴무' : emptyLabel) + '</option>' +
+      list.map(function(v){ return '<option value="' + esc(v) + '"' + (v === sel ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('');
   }
   function uniformFromArray(arr){
     var u = { apron: { on: false, qty: 1 }, karate_short: { on: false, qty: 1 }, karate_long: { on: false, qty: 1 }, chef: { on: false, qty: 1 } };
@@ -5669,18 +5671,29 @@
           document.getElementById('chip-panel-title').textContent = '이 근무, 누구로 바꿀까요?';
           document.getElementById('chip-endtime-wrap').classList.add('hidden');
           document.getElementById('chip-delete-wrap').classList.remove('hidden');
-          document.getElementById('chip-delete-end').value = el.getAttribute('data-slot-end');
+          document.getElementById('chip-delete-end').innerHTML = halfHourOptions(el.getAttribute('data-slot-end'));
+          cp.querySelectorAll('[data-act="chip-assign"]').forEach(function(bt){ bt.classList.remove('primary'); });
           cp.classList.remove('hidden'); cp.scrollIntoView({ behavior: 'smooth', block: 'center' });
           break;
         }
         case 'chip-pick-empty': {
           var cpe = document.getElementById('chip-panel');
-          cpe.dataset.mode = 'add'; cpe.dataset.branch = el.getAttribute('data-branch'); cpe.dataset.date = el.getAttribute('data-date'); cpe.dataset.weekday = el.getAttribute('data-weekday'); cpe.dataset.start = el.getAttribute('data-start');
-          document.getElementById('chip-panel-title').textContent = el.getAttribute('data-start') + '부터 누구를 넣을까요?';
+          cpe.dataset.mode = 'add'; cpe.dataset.branch = el.getAttribute('data-branch'); cpe.dataset.date = el.getAttribute('data-date'); cpe.dataset.weekday = el.getAttribute('data-weekday'); cpe.dataset.start = el.getAttribute('data-start'); cpe.dataset.staff = '';
+          document.getElementById('chip-panel-title').textContent = el.getAttribute('data-start') + '부터 — ① 사람 고르고 ② 몇 시까지 정한 뒤 ③ 저장';
           document.getElementById('chip-endtime-wrap').classList.remove('hidden');
           document.getElementById('chip-delete-wrap').classList.add('hidden');
-          document.getElementById('chip-endtime').value = fromMin(Math.min(23 * 60 + 30, toMin(el.getAttribute('data-start')) + 30));
+          document.getElementById('chip-endtime').innerHTML = halfHourOptions(el.getAttribute('data-end') || fromMin(Math.min(23 * 60 + 30, toMin(el.getAttribute('data-start')) + 30)));
+          cpe.querySelectorAll('[data-act="chip-assign"]').forEach(function(bt){ bt.classList.remove('primary'); });
           cpe.classList.remove('hidden'); cpe.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          break;
+        }
+        case 'chip-add-save': {
+          var cps = document.getElementById('chip-panel');
+          if (!cps.dataset.staff){ toast('먼저 넣을 사람을 골라 주세요'); break; }
+          var endSave = document.getElementById('chip-endtime').value;
+          if (!endSave || toMin(endSave) <= toMin(cps.dataset.start)){ toast('끝나는 시간을 확인해 주세요'); break; }
+          el.disabled = true;
+          try { await chipAddShift(cps.dataset.branch, cps.dataset.date, +cps.dataset.weekday, cps.dataset.start, cps.dataset.staff, endSave); } finally { el.disabled = false; }
           break;
         }
         case 'chip-delete-slot': {
@@ -5693,15 +5706,14 @@
         }
         case 'chip-assign': {
           var cp2 = document.getElementById('chip-panel');
+          if (cp2.dataset.mode === 'add'){
+            cp2.dataset.staff = el.getAttribute('data-staff');
+            cp2.querySelectorAll('[data-act="chip-assign"]').forEach(function(bt){ bt.classList.toggle('primary', bt === el); });
+            break;
+          }
           el.disabled = true;
-          try {
-            if (cp2.dataset.mode === 'add'){
-              var endVal = document.getElementById('chip-endtime').value;
-              if (!endVal || toMin(endVal) <= toMin(cp2.dataset.start)){ toast('끝나는 시간을 확인해 주세요'); break; }
-              await chipAddShift(cp2.dataset.branch, cp2.dataset.date, +cp2.dataset.weekday, cp2.dataset.start, el.getAttribute('data-staff'), endVal);
-            }
-            else { var pid = cp2.dataset.pattern; if (!pid){ break; } await db.update('ops_shift_patterns', { id: pid }, { staff_id: el.getAttribute('data-staff') }); toast('바꿨어요'); render(); }
-          } finally { el.disabled = false; }
+          try { var pid = cp2.dataset.pattern; if (!pid){ break; } await db.update('ops_shift_patterns', { id: pid }, { staff_id: el.getAttribute('data-staff') }); toast('바꿨어요'); render(); }
+          finally { el.disabled = false; }
           break;
         }
         case 'chip-cancel': document.getElementById('chip-panel').classList.add('hidden'); break;
