@@ -1378,8 +1378,19 @@
   function workMin(start, end, bs, be){ var m = toMin(end) - toMin(start); if (m <= 0) m += 1440; if (bs && be){ var b = toMin(be) - toMin(bs); if (b < 0) b += 1440; m -= b; } return Math.max(0, m); }
   function wkH(min){ return (Math.round(min / 6) / 10).toFixed(1) + '시간'; }
   async function loadStaffFlags(){ try { var r = await db.select('ops_settings', { eq: { key: 'staff_flags' } }); return (r[0] && r[0].value) || {}; } catch(e){ return {}; } }
-  // 주휴: 급여 설정에서 사람별로 켜기/끄기 한 게 있으면 그걸, 없으면 주 15시간 이상이면 대상
+  // 주휴: 급여 설정에서 사람별로 켜기/끄기 한 게 있으면 그걸, 없으면 소정근로 주 15시간 이상이면 대상
   function juhyuOn(staffId, min, flags){ var f = ((flags || {})[staffId] || {}).juhyu || 'auto'; return f === 'yes' || (f === 'auto' && min >= 900); }
+  // 주휴 판단용 소정근로(그날 분): 고정 패턴(매주 반복)만 씀. 이 주 전용 표로 더 넣은 시간·대타·추가 근무는 일시적이라 제외(사장님 규칙 9/28).
+  // 고정 패턴이 아예 없는 사람만 예외로 그 주 표를 씀. patterns = 불러온 패턴 목록(sch.patterns 등)
+  function soJeongDayMin(patterns, staffId, dateStr){
+    var wd = wdOf(dateStr), mine = patterns.filter(function(p){ return p.staff_id === staffId; });
+    var fixed = mine.filter(function(p){ return !p.week_start; });
+    var use;
+    if (fixed.length) use = fixed.filter(function(p){ return p.weekday === wd; });
+    else { var ws = weekStart(dateStr); use = mine.filter(function(p){ return p.week_start === ws && p.weekday === wd; }); }
+    return use.reduce(function(a, p){ return a + workMin(p.start_time, p.end_time, p.break_start, p.break_end); }, 0);
+  }
+  function soJeongWeekMin(patterns, staffId, ws){ var m = 0; for (var i = 0; i < 7; i++) m += soJeongDayMin(patterns, staffId, addDays(ws, i)); return m; }
   var STATUS_K = { requested: '신청함', rejected: '거절됨', covering: '대타 구하는 중', confirmed: '확정', cancelled: '취소' };
 
   async function loadSchedule(branchIds, fromDate, toDate){
@@ -1603,10 +1614,10 @@
         wr[0].forEach(function(p){ if (p.branch_id !== b) (othBr[p.branch_id] = othBr[p.branch_id] || []).push(p); });
         Object.keys(othBr).forEach(function(br){ var list = othBr[br], wk = list.filter(function(p){ return p.week_start === ws; }); (wk.length ? wk : list.filter(function(p){ return !p.week_start; })).forEach(function(p){ othMin[p.staff_id] = (othMin[p.staff_id] || 0) + workMin(p.start_time, p.end_time, p.break_start, p.break_end); }); });
         var wkSum = 0;
-        html += '<div class="group-title">이번 주 사람별 근무시간<span class="sp"></span><span class="muted" style="font-weight:400">사장님만 보여요 · 휴게 뺌 · 대타·휴무 반영</span></div><div class="card" style="padding:4px 12px">';
+        html += '<div class="group-title">이번 주 사람별 근무시간<span class="sp"></span><span class="muted" style="font-weight:400">사장님만 보여요 · 휴게 뺌 · 대타·휴무 반영 · 주휴는 고정 근무 기준</span></div><div class="card" style="padding:4px 12px">';
         wkIds.forEach(function(id){
           var m = wkMin[id], tot = m + (othMin[id] || 0); wkSum += m;
-          html += '<div class="item" style="padding:7px 0"><div class="iname"><div class="t">' + esc(staffName(id)) + '</div>' + (othMin[id] ? '<div class="s">다른 매장 포함 ' + wkH(tot) + '</div>' : '') + '</div><b style="margin-right:8px">' + wkH(m) + '</b>' + (juhyuOn(id, tot, wr[1]) ? '<span class="badge ok">주휴 O</span>' : '<span class="badge muted">주휴 X</span>') + '</div>';
+          html += '<div class="item" style="padding:7px 0"><div class="iname"><div class="t">' + esc(staffName(id)) + '</div>' + (othMin[id] ? '<div class="s">다른 매장 포함 ' + wkH(tot) + '</div>' : '') + '</div><b style="margin-right:8px">' + wkH(m) + '</b>' + (juhyuOn(id, soJeongWeekMin(wr[0], id, ws), wr[1]) ? '<span class="badge ok">주휴 O</span>' : '<span class="badge muted">주휴 X</span>') + '</div>';
         });
         html += '<div class="item" style="padding:7px 0"><div class="iname"><div class="t"><b>합계</b></div></div><b>' + wkH(wkSum) + '</b></div></div>';
       }
@@ -1912,7 +1923,7 @@
       var hoursTag = '';
       if (isOwner() && mine.length){   // 주간 시간 합계는 사장님만
         var myMin = mine.reduce(function(a, p){ return a + workMin(p.start_time, p.end_time, p.break_start, p.break_end); }, 0), tot = myMin + (otherMin[s.id] || 0);
-        hoursTag = ' <span style="font-size:13px;font-weight:600;color:var(--ink)">· 주 ' + wkH(myMin) + '</span>' + (otherMin[s.id] ? ' <span class="muted" style="font-size:12px">(전체 매장 ' + wkH(tot) + ')</span>' : '') + (juhyuOn(s.id, tot, flags) ? ' <span class="badge ok">주휴 O</span>' : '');
+        hoursTag = ' <span style="font-size:13px;font-weight:600;color:var(--ink)">· 주 ' + wkH(myMin) + '</span>' + (otherMin[s.id] ? ' <span class="muted" style="font-size:12px">(전체 매장 ' + wkH(tot) + ')</span>' : '') + (juhyuOn(s.id, soJeongWeekMin(pr[0], s.id, week || weekStart(todayStr())), flags) ? ' <span class="badge ok">주휴 O</span>' : '');
       }
       html += '<div class="item" style="align-items:flex-start"><div class="iname"><div class="t">' + esc(s.name) + (s.branch_id !== b ? ' <span class="badge muted">' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + '</span>' : '') + hoursTag + ' <span data-act="memo-edit" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:12px;color:var(--ink-faint)">✎ 메모</span></div>' + (s.memo ? '<div class="s"><i>' + esc(s.memo) + '</i></div>' : '') + patLines + '</div></div>';
     });
@@ -2472,9 +2483,9 @@
   }
   function juhyuWeek(weekMin, plannedMin, flag){ // 급여 초안(computePay)과 같은 규칙
     var eligible = flag === 'yes' || (flag !== 'no' && plannedMin >= 900);
-    if (!eligible) return { min: 0, note: flag === 'no' ? '주휴 없음(설정)' : '근무표 주 15시간 미만 → 주휴 없음' };
+    if (!eligible) return { min: 0, note: flag === 'no' ? '주휴 없음(설정)' : '고정 근무 주 15시간 미만 → 주휴 없음' + (weekMin >= 900 ? ' (실제 ' + (weekMin / 60).toFixed(1) + 'h는 대타·주간표 추가 등 일시적)' : '') };
     var basis = plannedMin > 0 ? Math.min(plannedMin, weekMin) : weekMin;
-    return { min: Math.round(Math.min(basis, 2400) / 2400 * 480), note: '(근무표 ' + (plannedMin / 60).toFixed(1) + 'h · 실제 인정 ' + (weekMin / 60).toFixed(1) + 'h 중 적은 쪽 기준, 40h=8h)' };
+    return { min: Math.round(Math.min(basis, 2400) / 2400 * 480), note: '(고정 근무 ' + (plannedMin / 60).toFixed(1) + 'h · 실제 인정 ' + (weekMin / 60).toFixed(1) + 'h 중 적은 쪽 기준, 40h=8h)' };
   }
   function h2(min){ return Math.round(min / 60 * 100) / 100; }
   function mdK(d){ return (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)); }
@@ -2519,7 +2530,7 @@
         for (var i = 0; i < 7; i++){
           var d = addDays(wsD, i); if (d > last) break;
           var inM = d >= first, wd = wdOf(d);
-          poolFor(sch, b, d).forEach(function(pt){ if (pt.staff_id === id && pt.weekday === wd) planned += toMin(pt.end_time) - toMin(pt.start_time) - (pt.break_start ? toMin(pt.break_end) - toMin(pt.break_start) : 0); });
+          planned += soJeongDayMin(sch.patterns, id, d);   // 주휴 판단은 고정 패턴 기준(급여 초안과 같은 규칙)
           var mine = recs.filter(function(x){ return x.staff_id === id && x.work_date === d; });
           var shift = shiftsOn(sch, b, d).filter(function(sf){ return sf.kind !== 'off' && (sf.kind === 'sub' ? sf.req.sub_staff_id === id : sf.staffId === id); })[0];
           var lines = mine.length ? mine : [null];
@@ -2651,11 +2662,11 @@
     recsFull.forEach(function(r){ var n = recNet(r, sch); if (!n) return; var ws0 = weekStart(r.work_date); weekNetAll[ws0] = (weekNetAll[ws0] || 0) + n.net;
       if (r.work_date < monthFrom || r.work_date > monthTo) return;
       daily[r.work_date] = (daily[r.work_date] || 0) + n.net; night += n.night;
-      var own = poolFor(sch, r.branch_id, r.work_date).some(function(p){ return p.staff_id === r.staff_id && p.weekday === wdOf(r.work_date); });
+      var own = soJeongDayMin(sch.patterns, r.staff_id, r.work_date) > 0;   // 고정 근무일이 아니면 일시적(대타·주간표 추가) 근무
       if (!own){ extraByWeek[ws0] = (extraByWeek[ws0] || 0) + n.net; } });
-    // 소정근로시간(근무 패턴) 주별 합계 — 달에 걸친 주는 다른 달 날짜까지 7일 전체로
+    // 소정근로시간 주별 합계(고정 패턴 기준, soJeongDayMin) — 달에 걸친 주는 다른 달 날짜까지 7일 전체로
     var plannedByWeek = {};
-    if (staffId) for (var dd = fullFrom; dd <= fullTo; dd = addDays(dd, 1)){ (function(d){ var ws0 = weekStart(d); base.branches.forEach(function(br){ poolFor(sch, br.id, d).forEach(function(p){ if (p.staff_id !== staffId || p.weekday !== wdOf(d)) return; var m = toMin(p.end_time) - toMin(p.start_time) - (p.break_start ? toMin(p.break_end) - toMin(p.break_start) : 0); plannedByWeek[ws0] = (plannedByWeek[ws0] || 0) + m; }); }); })(dd); }
+    if (staffId) for (var dd = fullFrom; dd <= fullTo; dd = addDays(dd, 1)){ var wsDD = weekStart(dd); plannedByWeek[wsDD] = (plannedByWeek[wsDD] || 0) + soJeongDayMin(sch.patterns, staffId, dd); }
     var total = 0, dailyOT = 0, weekly = {}, weeklyDailyOT = {};
     Object.keys(daily).sort().forEach(function(d){ var m = daily[d]; total += m; var ot = Math.max(0, m - 480); dailyOT += ot; var ws = weekStart(d); weekly[ws] = (weekly[ws] || 0) + m; weeklyDailyOT[ws] = (weeklyDailyOT[ws] || 0) + ot; days.push({ date: d, min: m }); });
     var weeklyOT = 0; Object.keys(weekly).sort().forEach(function(ws){ weeklyOT += Math.max(0, Math.max(0, weekly[ws] - 2400) - weeklyDailyOT[ws]); });
@@ -2744,11 +2755,11 @@
       var run = runs[id] || { data: calc, income_tax: null, adjust: 0, status: 'draft' };
       if (run.status !== 'confirmed') run.data = calc; // 확정 전엔 항상 최신 기록으로
       var t = payTotals(run); sumNet += t.net;
-      html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:120px"><div class="t">' + esc(staffName(id)) + (run.status === 'confirmed' ? ' <span class="badge ok">확정</span>' : ' <span class="badge muted">초안</span>') + '</div><div class="s">' + calc.days + '일 ' + fmtH(calc.total_min) + ' · 시급 ' + won(calc.wage) + (calc.wage === S.min_wage ? '' : ' (개별)') + ' · ' + (calc.pay_type === 'freelance' ? '3.3%' : calc.short_time ? '초단시간(4대보험 없음)' : calc.pay_type === 'none' ? '공제 없음' : '4대보험') + '</div><div class="s">기본 ' + won(calc.base) + ' + 주휴 ' + won(calc.juhyu) + ' + 야간 ' + won(calc.night_pay) + ' + 연장 ' + won(calc.ot_pay) + (calc.bonus ? ' + 근무일당 ' + won(calc.bonus) : '') + ' = <b>' + won(calc.gross) + '</b></div><div class="s">' + (calc.juhyu_type === 'regular' ? '<span class="badge ok">주휴 대상</span>' : '<span class="badge muted">주휴 비대상</span>') + (calc.temp_weeks && calc.temp_weeks.length ? ' <span class="badge warn">대타로 15h 넘은 주 ' + calc.temp_weeks.length + '주 · 주휴 미적용 (적용 시 +' + won(calc.temp_weeks.reduce(function(a, w){ return a + w.would; }, 0)) + ')</span>' : '') + '</div><div class="s">공제 ' + won(t.dedSum) + ' → 실지급 <b>' + won(t.net) + '원</b></div></div>' +
+      html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="min-width:120px"><div class="t">' + esc(staffName(id)) + (run.status === 'confirmed' ? ' <span class="badge ok">확정</span>' : ' <span class="badge muted">초안</span>') + '</div><div class="s">' + calc.days + '일 ' + fmtH(calc.total_min) + ' · 시급 ' + won(calc.wage) + (calc.wage === S.min_wage ? '' : ' (개별)') + ' · ' + (calc.pay_type === 'freelance' ? '3.3%' : calc.short_time ? '초단시간(4대보험 없음)' : calc.pay_type === 'none' ? '공제 없음' : '4대보험') + '</div><div class="s">기본 ' + won(calc.base) + ' + 주휴 ' + won(calc.juhyu) + ' + 야간 ' + won(calc.night_pay) + ' + 연장 ' + won(calc.ot_pay) + (calc.bonus ? ' + 근무일당 ' + won(calc.bonus) : '') + ' = <b>' + won(calc.gross) + '</b></div><div class="s">' + (calc.juhyu_type === 'regular' ? '<span class="badge ok">주휴 대상</span>' : '<span class="badge muted">주휴 비대상</span>') + (calc.temp_weeks && calc.temp_weeks.length ? ' <span class="badge warn">일시적으로(대타·주간 추가) 15h 넘은 주 ' + calc.temp_weeks.length + '주 · 주휴 미적용 (적용 시 +' + won(calc.temp_weeks.reduce(function(a, w){ return a + w.would; }, 0)) + ')</span>' : '') + '</div><div class="s">공제 ' + won(t.dedSum) + ' → 실지급 <b>' + won(t.net) + '원</b></div></div>' +
         '<div class="inline" style="width:100%;margin-top:6px"><label class="muted">소득세</label><input class="qty pr-tax" data-staff="' + esc(id) + '" type="number" step="10" value="' + (run.income_tax != null ? run.income_tax : '') + '" placeholder="' + (calc.pay_type === 'freelance' ? '자동' : '0') + '" style="width:90px"' + (calc.pay_type === 'freelance' ? ' disabled' : '') + '><label class="muted">조정</label><input class="qty pr-adj" data-staff="' + esc(id) + '" type="number" step="10" value="' + (run.adjust || '') + '" placeholder="0" style="width:90px"><input class="in pr-memo" data-staff="' + esc(id) + '" placeholder="조정 사유" value="' + esc(run.adjust_memo || '') + '" style="flex:1;min-width:120px;padding:6px 8px;font-size:14px">' + (run.id ? '<a class="btn sm" href="#/slip/' + esc(run.id) + '">명세서</a>' : '<span class="muted">저장 후 명세서</span>') + (isOwner() && run.id ? '<button class="btn sm ' + (run.status === 'confirmed' ? '' : 'ok') + '" data-act="pay-confirm" data-id="' + esc(run.id) + '" data-on="' + (run.status === 'confirmed' ? '0' : '1') + '">' + (run.status === 'confirmed' ? '확정 풀기' : '확정') + '</button>' : '') + '</div></div>';
     });
     html += '<div class="sec-h" style="border-top:1px solid var(--line);border-bottom:0">실지급 합계<span class="sp"></span>' + won(sumNet) + '원</div></div>';
-    html += '<div class="muted" style="margin-top:8px">주휴 = 주 15시간 이상인 주에 (주 시간÷40)×8시간 · 야간 22~06시 ×' + S.night_premium + ' · 연장 = 하루 8시간 또는 주 40시간 초과 ×' + S.ot_premium + ' · 국민연금 ' + S.np_rate + '% · 건강 ' + S.hi_rate + '% · 장기요양 ' + S.ltc_rate + '% · 고용 ' + S.ei_rate + '% · 10원 미만 버림</div>';
+    html += '<div class="muted" style="margin-top:8px">주휴 = 고정 근무(매주 반복 패턴)가 주 15시간 이상인 사람만, (고정·실제 중 적은 주 시간÷40)×8시간 — 대타·주간표로 더 넣은 일시적 시간은 주휴 판단에서 빼요 · 야간 22~06시 ×' + S.night_premium + ' · 연장 = 하루 8시간 또는 주 40시간 초과 ×' + S.ot_premium + ' · 국민연금 ' + S.np_rate + '% · 건강 ' + S.hi_rate + '% · 장기요양 ' + S.ltc_rate + '% · 고용 ' + S.ei_rate + '% · 10원 미만 버림</div>';
     html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="pay-save" data-branch="' + esc(b) + '" data-ym="' + ym + '">초안 저장 (' + ym.slice(5) + '월)</button></div></div>';
     app.innerHTML = html;
     app._pay = { ids: ids, byStaff: byStaff, sch: sch, profs: profs, S: S, runs: runs, FL: FL };
@@ -2801,7 +2812,7 @@
     html += '<div class="slip"><h2>' + esc(title) + '</h2><div class="slip-meta"><div>회사명: ' + esc(S.company) + '(' + esc(branchName(run.branch_id)) + ')<br>산정기간: ' + days[0] + ' ~ ' + days[days.length - 1] + '</div><div>지급일자: ' + esc(run.pay_date || '') + '<br>' + (run.status === 'confirmed' ? '확정' : '<b>초안</b>') + '</div></div>';
     html += '<table class="slip-t"><tr><th>성명</th><td>' + esc(s.name) + '</td><th>구분</th><td>' + (x.pay_type === 'freelance' ? '사업소득(3.3%)' : x.short_time ? '근로소득(초단시간 · 4대보험 미적용)' : x.pay_type === 'none' ? '근로소득(공제 없음)' : '근로소득(4대보험)') + '</td></tr><tr><th>시급</th><td>' + won(x.wage) + '원</td><th>근무일수</th><td>' + x.days + '일</td></tr></table>';
     html += '<table class="slip-t"><tr><th colspan="4">세부 내역</th></tr><tr><th colspan="2">지급</th><th colspan="2">공제</th></tr><tr><th>지급항목</th><th>지급금액</th><th>공제항목</th><th>공제금액</th></tr>' + body + '<tr><th>지급총액</th><td class="r"><b>' + won(x.gross + t.adj) + '</b></td><th>공제총액</th><td class="r"><b>' + won(t.dedSum) + '</b></td></tr><tr><td colspan="2"></td><th>실지급액</th><td class="r"><b>' + won(t.net) + '</b></td></tr></table>';
-    html += '<table class="slip-t"><tr><th colspan="2">근로시간</th></tr><tr><td>총 근로시간</td><td class="r">' + fmtH(x.total_min) + ' (' + x.total_min + '분)</td></tr><tr><td>연장근로시간</td><td class="r">' + x.ot_min + '분</td></tr><tr><td>야간근로시간</td><td class="r">' + x.night_min + '분</td></tr><tr><td>주휴시간</td><td class="r">' + x.juhyu_min + '분</td></tr><tr><td>주휴 구분</td><td class="r">' + (x.juhyu_type === 'regular' ? '주휴 대상 (소정근로 주 15시간 이상)' : '주휴 비대상 (소정근로 주 15시간 미만)') + (x.temp_weeks && x.temp_weeks.length ? ' · 대타로 15시간 넘은 주 ' + x.temp_weeks.map(function(w){ return fmtDateK(w.ws); }).join(', ') + ' → 주휴 미적용' : '') + '</td></tr></table>';
+    html += '<table class="slip-t"><tr><th colspan="2">근로시간</th></tr><tr><td>총 근로시간</td><td class="r">' + fmtH(x.total_min) + ' (' + x.total_min + '분)</td></tr><tr><td>연장근로시간</td><td class="r">' + x.ot_min + '분</td></tr><tr><td>야간근로시간</td><td class="r">' + x.night_min + '분</td></tr><tr><td>주휴시간</td><td class="r">' + x.juhyu_min + '분</td></tr><tr><td>주휴 구분</td><td class="r">' + (x.juhyu_type === 'regular' ? '주휴 대상 (소정근로 주 15시간 이상)' : '주휴 비대상 (소정근로 주 15시간 미만)') + (x.temp_weeks && x.temp_weeks.length ? ' · 일시적으로(대타·주간 추가) 15시간 넘은 주 ' + x.temp_weeks.map(function(w){ return fmtDateK(w.ws); }).join(', ') + ' → 주휴 미적용' : '') + '</td></tr></table>';
     html += '<table class="slip-t"><tr><th colspan="2">계산방법</th></tr><tr><td>기본급</td><td>총 근로시간 × 시급</td></tr><tr><td>주휴수당</td><td>주 15시간 이상인 주: (주 근로시간 ÷ 40) × 8시간 × 시급</td></tr><tr><td>야간근로수당</td><td>22시~06시 시간 × 시급 × ' + S.night_premium + '</td></tr><tr><td>연장근로수당</td><td>1일 8시간 또는 1주 40시간 초과 시간 × 시급 × ' + S.ot_premium + '</td></tr>' + (x.pay_type === 'freelance' ? '<tr><td>사업소득세</td><td>지급총액 × 3% · 지방소득세 0.3%</td></tr>' : (x.short_time || x.pay_type === 'none') ? '<tr><td>근로소득세</td><td>간이세액표 적용</td></tr><tr><td>4대보험</td><td>주 15시간·월 60시간 미만 초단시간 근로자 → 미적용</td></tr>' : '<tr><td>근로소득세</td><td>간이세액표 적용</td></tr><tr><td>지방소득세</td><td>근로소득세 × 10%</td></tr><tr><td>국민연금</td><td>기준소득월액 × ' + S.np_rate + '%</td></tr><tr><td>건강보험</td><td>보수월액 × ' + S.hi_rate + '%</td></tr><tr><td>장기요양보험</td><td>건강보험료 × ' + S.ltc_rate + '%</td></tr><tr><td>고용보험</td><td>보수월액 × ' + S.ei_rate + '%</td></tr>') + '</table>';
     html += '<table class="slip-t"><tr><th>날짜</th><th>인정 시간</th></tr>' + (x.dayList || []).map(function(d){ return '<tr><td>' + esc(fmtDateK(d.date)) + '</td><td class="r">' + fmtH(d.min) + '</td></tr>'; }).join('') + '</table></div>';
     app.innerHTML = html;
