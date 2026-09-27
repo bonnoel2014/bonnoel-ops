@@ -1310,6 +1310,7 @@
     var canRole = isOwner() && s.id !== session.staffId;
     return '<div class="item' + (s.active === false ? ' disabled' : '') + '"><div class="iname"><div class="t">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + (s.active === false ? ' <span class="badge muted">퇴사</span>' : '') + '</div><div class="s">' + (s.branch_id ? esc(branchName(s.branch_id)) : '전체') + ' · ' + (isOwner() ? (s.pin ? '비번 ' + esc(s.pin) : '비밀번호 아직') : (s.pin ? '비밀번호 있음' : '비밀번호 아직')) + '</div></div>' +
       (canRole ? '<select class="in" style="width:auto;padding:6px" data-act="role" data-id="' + esc(s.id) + '"><option value="staff"' + (s.role === 'staff' || !s.role ? ' selected' : '') + '>근무자</option><option value="manager"' + (s.role === 'manager' ? ' selected' : '') + '>매니저</option><option value="owner"' + (s.role === 'owner' ? ' selected' : '') + '>사장</option></select>' : '') +
+      (isOwner() ? '<button class="btn sm" data-act="kiosk-pin" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '">비밀번호 바꾸기</button>' : '') +   // 사장님은 누구든(본인 포함) 원하는 숫자로 바로
       (s.pin && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">1225로 초기화</button>' : '') +
       (s.id !== session.staffId && (isOwner() || s.role === 'staff') ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : '') + '</div>';
   }
@@ -5626,7 +5627,7 @@
         case 'cat-add': await catAdd(); break;
         case 'cat-rename': await catRename(id); break;
         case 'kiosk-add': { var kb = el.getAttribute('data-branch'), kn = branchName(kb).replace(/점$/, '') + ' 매장폰'; if (base.kiosks.some(function(k){ return k.branch_id === kb && k.active !== false; })){ toast('이 매장엔 이미 매장폰 계정이 있어요'); break; } await db.insert('manual_staff', { name: kn, branch_id: kb, role: 'kiosk', pin: '1225', active: true }); toast(kn + ' 만들었어요 (비밀번호 1225)'); render(); break; }
-        case 'kiosk-pin': { var kp = window.prompt('매장폰 새 비밀번호 (숫자 4자리)'); if (kp == null) break; kp = kp.trim(); if (!/^\d{4}$/.test(kp)){ toast('숫자 4자리로 넣어 주세요'); break; } await db.update('manual_staff', { id: id }, { pin: kp }); toast('바꿨어요'); render(); break; }
+        case 'kiosk-pin': { if (!isOwner()){ toast('사장님만 바꿀 수 있어요'); break; } var kp = window.prompt((el.getAttribute('data-name') || '매장폰') + ' 새 비밀번호 (숫자 4자리)'); if (kp == null) break; kp = kp.trim(); if (!/^\d{4}$/.test(kp)){ toast('숫자 4자리로 넣어 주세요'); break; } await db.update('manual_staff', { id: id }, { pin: kp }); toast('바꿨어요'); render(); break; }
         case 'pin-reset': if (window.confirm('비밀번호를 1225로 되돌릴까요?')){ await db.update('manual_staff', { id: id }, { pin: '1225' }); toast('1225로 초기화했어요'); render(); } break;
         case 'staff-toggle': { var on = el.getAttribute('data-on') === '1'; await db.update('manual_staff', { id: id }, { active: on }); render(); break; }
         case 'staff-add': { var nm = document.getElementById('ns-name').value.trim(); if (!nm){ toast('이름을 넣어 주세요'); break; } await db.insert('manual_staff', { name: nm, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast('추가했어요'); render(); break; }
