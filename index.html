@@ -375,7 +375,8 @@
       ops_sub_offers: [],
       ops_branch_notes: [ { branch_id: 'b2', text: '입사 예정: 알바 K 9/25 첫출근\n충원 예정: 주말 오전 1명', updated_by: 'o1', updated_at: daysAgo(1) } ],
       ops_pay_profiles: [ { staff_id: 'm1', hourly_wage: 12000, pay_type: 'insured', dependents: 1 }, { staff_id: 's2', hourly_wage: 10320, pay_type: 'insured', dependents: 1 }, { staff_id: 's1', hourly_wage: 10320, pay_type: 'freelance', dependents: 1 } ],
-      ops_settings: [], ops_pay_runs: [], ops_merchant_rules: [], ops_documents: [],
+      ops_settings: [], ops_pay_runs: [], ops_merchant_rules: [],
+      ops_documents: [ { id: 'up1', batch_id: 'upb1', staff_id: 's2', branch_id: 'b2', doc_key: 'uniform_paper', doc_title: '유니폼 지급 기록 (종이 지급분)', template_version: 'paper', status: 'signed', data: { c: { branchName: '왕십리점' }, uniform: [ { item: '앞치마', size: '', qty: 1 }, { item: '카라티', size: '반팔', qty: 1 } ], staff: { name: '알바 F' } }, created_at: '2026-09-27T00:00:00Z', signed_at: '2026-09-27T00:00:00Z' } ],
       ops_cert_requests: [ { id: 'cr1', staff_id: 's2', kind: 'employment', purpose: '은행 제출용', recipient: '(시연) ○○은행', email: 'demo-f@example.com', status: 'requested', created_at: daysAgo(0) } ],
       managers: [ { id: 'lm1', name: '매니저 M', branch_slug: 'wangsimni', active: true, off_dates: [] }, { id: 'lm2', name: '매니저 K', branch_slug: 'junggye', active: true, off_dates: [] } ],
       branches: [ { slug: 'seongsu', name: '성수점', order_idx: 1 }, { slug: 'junggye', name: '중계점', order_idx: 3 }, { slug: 'wangsimni', name: '왕십리점', order_idx: 4 } ],
@@ -3177,7 +3178,7 @@
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
     var sel = pickBranch(params, true);
-    var all = (await db.select('ops_documents', { order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return' && r.doc_key !== 'uniform_swap' && String(r.doc_key).indexOf('cert_') !== 0; });
+    var all = (await db.select('ops_documents', { order: { col: 'created_at', asc: false } })).filter(function(r){ return !isUniformOnlyRow(r) && String(r.doc_key).indexOf('cert_') !== 0; });
     var settings = await loadDocsSettings();
     var ids = isOwner() ? (sel === 'all' ? base.branches.map(function(b){ return b.id; }) : [sel]) : [session.branchId];
     var batches = docsByBatch(all), latest = {};
@@ -3364,7 +3365,7 @@
   routes['my-docs'] = async function(){
     if (!isOwner()){ toast('내 서류는 사장님만 볼 수 있어요'); nav('#/home'); return; }
     await loadBase();
-    var rows = (await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } })).filter(function(r){ return r.doc_key !== 'uniform_return' && r.doc_key !== 'uniform_swap' && String(r.doc_key).indexOf('cert_') !== 0; });
+    var rows = (await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } })).filter(function(r){ return !isUniformOnlyRow(r) && String(r.doc_key).indexOf('cert_') !== 0; });
     var html = topbar('내 서류', true);
     var batches = docsByBatch(rows);
     if (!batches.length) html += '<div class="empty">아직 서류가 없어요. 사장님·매니저가 준비하면 여기와 매장폰 "서류 서명"에 떠요.</div>';
@@ -3386,10 +3387,13 @@
 
   // --- 유니폼 반납 (퇴사자, 사장님·매니저 확인) ---
   var uretState = null;
-  // 지금 갖고 있는 유니폼 = 입사 지급대장 + 그 뒤 계절 교체(반납은 빼고 수령은 더함)
+  // 유니폼만 다루는 줄(입사 서류 묶음이 아님): 계약서 목록·내 서류에서 빼야 함 (안 빼면 최신 배치로 잘못 잡혀 계약서를 가림)
+  // uniform_paper = 앱 이전에 종이로 지급받은 기록(2026-09-27 전 근무자 앞치마+반팔 일괄 등록)
+  function isUniformOnlyRow(r){ return r.doc_key === 'uniform_return' || r.doc_key === 'uniform_swap' || r.doc_key === 'uniform_paper'; }
+  // 지금 갖고 있는 유니폼 = 입사 지급대장(앱 서명 또는 종이 기록) + 그 뒤 계절 교체(반납은 빼고 수령은 더함)
   function sameUni(a, b){ return a.item === b.item && (a.size || '') === (b.size || ''); }
   async function loadIssuedUniform(staffId){
-    var rows = await db.select('ops_documents', { eq: { staff_id: staffId, doc_key: 'uniform' }, order: { col: 'created_at', asc: false } });
+    var rows = (await db.select('ops_documents', { eq: { staff_id: staffId, doc_key: 'uniform' } })).concat(await db.select('ops_documents', { eq: { staff_id: staffId, doc_key: 'uniform_paper' } })).sort(function(a, b){ return a.created_at < b.created_at ? 1 : -1; });
     var swaps = (await db.select('ops_documents', { eq: { staff_id: staffId, doc_key: 'uniform_swap' } })).sort(function(a, b){ return a.created_at < b.created_at ? -1 : 1; });
     var r = rows[0];
     if (!r && !swaps.length) return null;
@@ -3405,7 +3409,7 @@
   routes['uniform-return'] = async function(){
     await loadBase();
     if (!isManager()){ nav('#/home'); return; }
-    var all = (await db.select('ops_documents', { eq: { doc_key: 'uniform' } })).concat(await db.select('ops_documents', { eq: { doc_key: 'uniform_swap' } }));
+    var all = (await db.select('ops_documents', { eq: { doc_key: 'uniform' } })).concat(await db.select('ops_documents', { eq: { doc_key: 'uniform_paper' } }), await db.select('ops_documents', { eq: { doc_key: 'uniform_swap' } }));
     var returned = await db.select('ops_documents', { eq: { doc_key: 'uniform_return' } });
     var lastReturn = {}; returned.forEach(function(r){ if (!lastReturn[r.staff_id] || r.created_at > lastReturn[r.staff_id].created_at) lastReturn[r.staff_id] = r; });
     var issuedStaffIds = {}; all.forEach(function(r){ issuedStaffIds[r.staff_id] = true; });
