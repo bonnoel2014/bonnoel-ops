@@ -3246,10 +3246,14 @@
   // → 정시·30분만 있고 24시간제(예: "16:30")로 나오는 select로 대신함. 모든 시간 입력에서 재사용.
   function halfHourOptions(sel, emptyLabel){
     var out = '<option value=""' + (sel ? '' : ' selected') + '>' + esc(emptyLabel == null ? '휴무' : emptyLabel) + '</option>';
+    var seen = {}, inserted = false;
     for (var h = 0; h < 24; h++) for (var m = 0; m < 60; m += 30){
       var v = pad(h) + ':' + pad(m);
+      if (sel && !inserted && toMin(sel) < toMin(v)){ out += '<option value="' + esc(sel) + '" selected>' + esc(sel) + '</option>'; inserted = true; }
+      seen[v] = 1;
       out += '<option value="' + v + '"' + (v === sel ? ' selected' : '') + '>' + v + '</option>';
     }
+    if (sel && !seen[sel] && !inserted) out += '<option value="' + esc(sel) + '" selected>' + esc(sel) + '</option>';
     return out;
   }
   function uniformFromArray(arr){
