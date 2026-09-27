@@ -751,7 +751,7 @@
     if (isOwner()) html += row('#/pay', 'tile-yellow', '💰', '급여 초안', '월별 급여 계산·명세서 (사장님만)');
     if (isOwner()) html += row('#/pay-setup', 'tile-gray', '💵', '급여 설정', '시급·고용형태·요율 (사장님만)');
     html += tge();
-    html += grp('서류·보건증');
+    html += grp('근로계약서·유니폼·보건증');
     if (isManager()) html += row('#/docs-admin', 'tile-purple', '📝', '근로계약서 & 입사서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부');
     if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
     if (isManager()) html += row('#/uniform-swap', 'tile-orange', '🔄', '유니폼 교체 (반팔 → 긴팔)', '계절 교체 · 반팔 반납 + 긴팔 수령 · 날짜 · 서명 PDF');
