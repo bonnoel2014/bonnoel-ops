@@ -195,6 +195,21 @@
   @media print{ body{ background:#fff; } .noprint, .topbar, .stickybar, .toast{ display:none !important; } .wrap{ max-width:none; padding:0; } .slip{ border:0; } }
   @media (min-width:900px){ .wrap{ max-width:1100px; } .stickybar .inner{ max-width:1100px; } }
   .vpwrap{ overflow-x:auto; margin-top:4px; border:1px solid var(--line); border-radius:var(--radius-m); background:#fff; }
+  /* 매출·손익 */
+  .pl-t{ width:100%; border-collapse:collapse; font-size:14px; font-variant-numeric:tabular-nums; }
+  .pl-t td{ padding:7px 14px; }
+  .pl-t td:last-child{ text-align:right; white-space:nowrap; }
+  .pl-t tr.big td{ font-weight:700; padding-top:12px; }
+  .pl-t tr.sub td{ color:var(--ink-soft); font-size:13px; padding-top:1px; padding-bottom:1px; }
+  .pl-t tr.sub td:first-child{ padding-left:28px; }
+  .pl-t tr.cost td:first-child::before{ content:'− '; color:var(--ink-faint); }
+  .pl-t tr.cost td{ border-top:1px solid var(--line); }
+  .pl-t tr.tot td{ border-top:2px solid var(--line-strong); font-weight:700; font-size:16px; padding-top:10px; padding-bottom:12px; }
+  .pl-neg{ color:var(--danger); } .pl-pos{ color:var(--ok); }
+  .pl-memo{ padding:8px 14px 12px; font-size:13px; color:var(--ink-soft); border-top:1px solid var(--line); }
+  .pl-grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .pl-live{ margin-top:2px; }
+  .summary .n small{ font-size:13px; font-weight:600; margin-left:1px; }
   .vpaper{ width:720px; background:#fff; color:#231717; padding:28px 30px; font-family:var(--font-sans); font-size:13px; line-height:1.45; }
   .vpaper .vp-top{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #af4c60; padding-bottom:10px; }
   .vpaper .vp-brand{ font-family:var(--font-latin); font-size:20px; color:#af4c60; letter-spacing:1px; line-height:1; }
@@ -860,6 +875,13 @@
     html += tge();
     var certPend = 0;
     if (isOwner()){ try { certPend = (await db.select('ops_cert_requests', { eq: { status: 'requested' } })).length; } catch(e){ console.warn('증명서 신청 표 없음', e); } }
+    html += grp('매출·손익');   // 사장님만
+    if (isOwner()) html += row('#/pnl-dash', 'tile-purple', '📊', '대시보드', '매출·이익 한눈에', true);
+    if (isOwner()) html += row('#/pnl', 'tile-blue', '📈', '일일 보고서', '그날의 손익계산서 · 4매장 합계와 매장별');
+    if (isOwner()) html += row('#/pnl-in', 'tile-green', '✏️', '매출 넣기', '하루 한 번 4매장 매장·배민·쿠팡이츠 매출');
+    if (isOwner()) html += row('#/pnl-month', 'tile-orange', '🧾', '월 정산', '월 손익·급여 정산', true);
+    if (isOwner()) html += row('#/pnl-set', 'tile-gray', '⚙️', '손익 설정', '원가율·배달 수수료·매장별 인건비·고정비');
+    html += tge();
     html += grp('자금');
     if (isOwner()) html += row('#/cash', 'tile-green', '🏦', '자금 흐름', '법인 통장 거래내역 → 들어온 돈·나간 돈·카드 대금·배민·4대보험 (사장님만)');
     html += tge();
@@ -7954,8 +7976,201 @@
     return { ops_vendors: V, ops_vendor_sites: S, ops_vendor_items: I, ops_vendor_deliveries: D, ops_vendor_extras: X, ops_vendor_statements: [] };
   }
 
+  // ===== 매출·손익: 일일 보고서 (supabase-migration-pnl.sql, 기획/매출손익_설계.md) =====
+  // 사장님이 하루 한 번 4매장 매출(매장·배민·쿠팡이츠)을 넣으면 그날 손익계산서가 자동으로 나옴.
+  // 재료비 = 매출 × 원가율(추정), 인건비 = 매장별 하루 고정값(그날만 고칠 수 있음), 배달 수수료 = 채널별 %, 고정비 = 월 고정비 ÷ 그 달 일수
+  var PNL_CFG_DEFAULT = { cost_rate: 32, fee_baemin: 25, fee_coupang: 25, br: {} };
+  var PNL_CH = [ ['store_amt', '매장'], ['baemin_amt', '배민'], ['coupang_amt', '쿠팡이츠'] ];
+  var pnlCfgCache = null;
+  function pnlErr(err){ console.error(err); toast('실패: ' + (err.message || err) + ' (처음이면 supabase-migration-pnl.sql 실행 필요)'); }
+  function pnlNum(v){ var s = String(v == null ? '' : v).replace(/[^\d.\-]/g, ''); return s === '' ? null : num(s); }
+  function pnlWonIn(v){ return v == null || v === '' ? '' : won(v); }
+  async function pnlCfg(){
+    var r = await db.select('ops_settings', { eq: { key: 'pnl_cfg' } }).catch(function(){ return []; });
+    var c = Object.assign({}, PNL_CFG_DEFAULT, r[0] ? r[0].value : (DEMO ? pnlDemoCfg() : {}));
+    c.br = c.br || {};
+    return (pnlCfgCache = c);
+  }
+  function pnlBr(cfg, id){ return Object.assign({ labor_day: 0, fixed_month: 0 }, cfg.br[id] || {}); }
+  // 한 매장 하루 손익 (입력 없으면 null)
+  function pnlCalc(row, cfg){
+    if (!row) return null;
+    var b = pnlBr(cfg, row.branch_id);
+    var st = num(row.store_amt) || 0, bm = num(row.baemin_amt) || 0, cp = num(row.coupang_amt) || 0, sales = st + bm + cp;
+    var custom = row.labor != null && row.labor !== '';
+    var c = { store: st, baemin: bm, coupang: cp, sales: sales,
+      material: Math.round(sales * (num(cfg.cost_rate) || 0) / 100),
+      labor: Math.round(custom ? (num(row.labor) || 0) : (num(b.labor_day) || 0)),
+      fee: Math.round(bm * (num(cfg.fee_baemin) || 0) / 100 + cp * (num(cfg.fee_coupang) || 0) / 100),
+      fixed: Math.round((num(b.fixed_month) || 0) / monthDays(monthOf(row.sale_on)).length),
+      laborCustom: custom };
+    c.profit = c.sales - c.material - c.labor - c.fee - c.fixed;
+    return c;
+  }
+  function pnlSum(list){
+    var t = { store: 0, baemin: 0, coupang: 0, sales: 0, material: 0, labor: 0, fee: 0, fixed: 0, profit: 0 };
+    list.forEach(function(c){ if (c) for (var k in t) t[k] += c[k]; });
+    return t;
+  }
+  function pnlPct(a, b){ return b ? Math.round(a / b * 100) : 0; }
+  function pnlTable(c, cfg){
+    function line(label, v, cls, minus){ return '<tr class="' + (cls || '') + '"><td>' + label + '</td><td>' + (minus ? '− ' : '') + won(v) + '</td></tr>'; }
+    var h = '<table class="pl-t">';
+    h += line('매출', c.sales, 'big');
+    h += line('매장', c.store, 'sub') + line('배민', c.baemin, 'sub') + line('쿠팡이츠', c.coupang, 'sub');
+    h += line('재료비 <span class="muted">(' + esc(cfg.cost_rate) + '% 추정)</span>', c.material, 'cost', true);
+    h += line('인건비' + (c.laborCustom ? ' <span class="badge">그날 고침</span>' : ''), c.labor, 'cost', true);
+    h += line('배달 수수료', c.fee, 'cost', true);
+    h += line('고정비 하루치', c.fixed, 'cost', true);
+    h += '<tr class="tot"><td>남은 돈 <span class="muted">(' + pnlPct(c.profit, c.sales) + '%)</span></td><td class="' + (c.profit < 0 ? 'pl-neg' : 'pl-pos') + '">' + won(c.profit) + '</td></tr>';
+    return h + '</table>';
+  }
+  function pnlDateNav(route, date){
+    return '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="go" data-href="#/' + route + '/' + addDays(date, -1) + '">‹ 전날</button>' +
+      '<input type="date" class="in" id="pnl-date" value="' + date + '" style="width:auto;padding:6px 10px"><button class="btn sm" data-act="go" data-href="#/' + route + '/' + addDays(date, 1) + '">다음날 ›</button></div>' +
+      '<div class="inline" style="justify-content:space-between;margin:0 4px"><b>' + esc(fmtDateK(date)) + (date === todayStr() ? ' 오늘' : '') + '</b>' + (date !== todayStr() ? '<span class="muted" data-act="go" data-href="#/' + route + '" style="cursor:pointer;text-decoration:underline">오늘로</span>' : '') + '</div>';
+  }
+
+  // ----- 화면: 일일 보고서 (그날의 손익계산서) -----
+  routes.pnl = async function(params){
+    await loadBase();
+    var html = topbar('일일 보고서', true, whoChip());
+    if (!isOwner()){ app.innerHTML = html + '<div class="note">사장님만 볼 수 있어요.</div>'; return; }
+    var date = /^\d{4}-\d{2}-\d{2}$/.test(params.arg || '') ? params.arg : todayStr(), ym = monthOf(date);
+    var r = await Promise.all([ pnlCfg(), db.select('ops_daily_sales', { gte: { sale_on: ym + '-01' } }) ]);
+    var cfg = r[0], monthRows = r[1].filter(function(x){ return monthOf(x.sale_on) === ym && x.sale_on <= date; });
+    var per = base.branches.map(function(b){
+      var row = monthRows.filter(function(x){ return x.sale_on === date && x.branch_id === b.id; })[0];
+      return { b: b, row: row, c: pnlCalc(row, cfg) };
+    });
+    var entered = per.filter(function(p){ return p.c; });
+    var tot = pnlSum(entered.map(function(p){ return p.c; }));
+    var mtot = pnlSum(monthRows.map(function(x){ return pnlCalc(x, cfg); }));
+    html += pnlDateNav('pnl', date);
+    html += '<div class="summary">' +
+      '<a href="#/pnl-in/' + date + '"><div class="n">' + (entered.length ? won(Math.round(tot.sales / 10000)) + '<small>만</small>' : '–') + '</div><div class="l">이날 매출</div></a>' +
+      '<a href="#/pnl-in/' + date + '"><div class="n' + (tot.profit < 0 ? ' danger' : '') + '">' + (entered.length ? won(Math.round(tot.profit / 10000)) + '<small>만</small>' : '–') + '</div><div class="l">이날 남은 돈</div></a>' +
+      '<a><div class="n' + (mtot.profit < 0 ? ' danger' : '') + '">' + won(Math.round(mtot.profit / 10000)) + '<small>만</small></div><div class="l">' + (+ym.slice(5, 7)) + '월 1일~이날 남은 돈</div></a></div>';
+    var noSetup = base.branches.filter(function(b){ var x = pnlBr(cfg, b.id); return !(num(x.labor_day) || num(x.fixed_month)); });
+    if (noSetup.length) html += '<div class="note">' + noSetup.map(function(b){ return esc(b.name); }).join('·') + '의 인건비·고정비가 아직 0원이에요. <a href="#/pnl-set" style="text-decoration:underline">[손익 설정]</a>에서 넣어야 남은 돈이 정확해요.</div>';
+    if (!entered.length){
+      html += '<div class="empty" style="margin-top:16px">이날 매출을 아직 안 넣었어요</div>';
+    } else {
+      var miss = per.length - entered.length;
+      html += '<div class="group-title">' + (entered.length === per.length ? per.length + '매장 합계' : '넣은 ' + entered.length + '매장 합계') + (miss ? ' <span class="badge warn">' + miss + '매장 미입력</span>' : '') + '</div>';
+      html += '<div class="card">' + pnlTable(tot, cfg) + '</div>';
+      per.forEach(function(p){
+        html += '<div class="group-title">' + esc(p.b.name) + (p.c ? ' <span class="muted" style="font-weight:400">· 남은 돈 ' + won(p.c.profit) + '원 (' + pnlPct(p.c.profit, p.c.sales) + '%)</span>' : ' <span class="badge muted">미입력</span>') + '</div>';
+        if (p.c) html += '<div class="card">' + pnlTable(p.c, cfg) + (p.row.memo ? '<div class="pl-memo">📝 ' + esc(p.row.memo) + '</div>' : '') + '</div>';
+      });
+    }
+    html += '<div class="inline" style="margin-top:16px;gap:8px"><button class="btn primary" data-act="go" data-href="#/pnl-in/' + date + '">✏️ 이날 매출 넣기</button><button class="btn" data-act="go" data-href="#/pnl-set">⚙️ 손익 설정</button></div>';
+    html += '<div class="muted" style="margin:12px 4px 0;line-height:1.6">재료비는 매출 × 원가율로 어림한 값이에요. 실제 재료비는 월 정산에서 맞출 거예요.</div>';
+    app.innerHTML = html;
+  };
+
+  // ----- 화면: 매출 넣기 (날짜 하나 → 4매장) -----
+  routes['pnl-in'] = async function(params){
+    await loadBase();
+    var html = topbar('매출 넣기', true, whoChip());
+    if (!isOwner()){ app.innerHTML = html + '<div class="note">사장님만 넣을 수 있어요.</div>'; return; }
+    var date = /^\d{4}-\d{2}-\d{2}$/.test(params.arg || '') ? params.arg : todayStr();
+    var r = await Promise.all([ pnlCfg(), db.select('ops_daily_sales', { eq: { sale_on: date } }) ]);
+    var cfg = r[0], rows = r[1];
+    html += pnlDateNav('pnl-in', date);
+    html += '<div class="muted" style="margin:4px 4px 0">금액을 넣고 칸을 벗어나면 바로 저장돼요. 문 닫은 매장은 비워 두세요.</div>';
+    base.branches.forEach(function(b){
+      var row = rows.filter(function(x){ return x.branch_id === b.id; })[0] || {}, bc = pnlBr(cfg, b.id);
+      html += '<div class="group-title">' + esc(b.name) + '</div><div class="form" data-pnlb="' + esc(b.id) + '">';
+      html += '<div class="pl-grid3">' + PNL_CH.map(function(ch){ return '<div><label>' + ch[1] + '</label><input class="in pnl-f" data-k="' + ch[0] + '" inputmode="numeric" placeholder="0" value="' + esc(pnlWonIn(row[ch[0]])) + '"></div>'; }).join('') + '</div>';
+      html += '<div class="grid2"><div><label>인건비 (비우면 ' + won(bc.labor_day) + '원)</label><input class="in pnl-f" data-k="labor" inputmode="numeric" placeholder="' + esc(won(bc.labor_day)) + '" value="' + esc(pnlWonIn(row.labor)) + '"></div>' +
+        '<div><label>메모 (날씨·특이사항)</label><input class="in pnl-f" data-k="memo" placeholder="예) 비 와서 배달 ↑" value="' + esc(row.memo || '') + '"></div></div>';
+      html += '<div class="muted pl-live" id="pnl-live-' + esc(b.id) + '">' + pnlLiveText(row.id ? pnlCalc(Object.assign({ branch_id: b.id, sale_on: date }, row), cfg) : null) + '</div></div>';
+    });
+    html += '<div class="inline" style="margin-top:16px"><button class="btn primary" data-act="go" data-href="#/pnl/' + date + '">📈 이날 보고서 보기</button></div>';
+    app.innerHTML = html;
+  };
+  function pnlLiveText(c){ return c ? '매출 ' + won(c.sales) + '원 → 남은 돈 <b class="' + (c.profit < 0 ? 'pl-neg' : 'pl-pos') + '">' + won(c.profit) + '원</b> (' + pnlPct(c.profit, c.sales) + '%)' : '아직 안 넣었어요'; }
+  async function pnlSave(form){
+    var bid = form.getAttribute('data-pnlb'), dateEl = document.getElementById('pnl-date');
+    var date = dateEl ? dateEl.value : todayStr(), row = { sale_on: date, branch_id: bid }, blank = true;
+    form.querySelectorAll('.pnl-f').forEach(function(i){
+      var k = i.getAttribute('data-k');
+      if (k === 'memo'){ row.memo = i.value.trim() || null; if (row.memo) blank = false; return; }
+      var v = pnlNum(i.value);
+      if (v != null && v < 0){ throw new Error('0 이상 금액으로 넣어 주세요'); }
+      if (v != null) blank = false;
+      row[k] = k === 'labor' ? v : (v || 0);
+      i.value = pnlWonIn(v);
+    });
+    if (blank) await db.remove('ops_daily_sales', { sale_on: date, branch_id: bid });
+    else await db.upsert('ops_daily_sales', [Object.assign(row, { staff_id: session.staffId, updated_at: nowIso() })], 'sale_on,branch_id');
+    var live = document.getElementById('pnl-live-' + bid);
+    if (live) live.innerHTML = pnlLiveText(blank ? null : pnlCalc(row, pnlCfgCache || PNL_CFG_DEFAULT));
+    toast(blank ? '비웠어요' : '저장했어요');
+  }
+
+  // ----- 화면: 손익 설정 (원가율·수수료·매장별 인건비·고정비) -----
+  routes['pnl-set'] = async function(){
+    await loadBase();
+    var html = topbar('손익 설정', true, whoChip());
+    if (!isOwner()){ app.innerHTML = html + '<div class="note">사장님만 볼 수 있어요.</div>'; return; }
+    var cfg = await pnlCfg();
+    function f(k, val, ph, bid){ return '<input class="in" inputmode="decimal" data-pc="' + k + '"' + (bid ? ' data-bid="' + esc(bid) + '"' : '') + ' value="' + esc(val == null ? '' : (bid ? won(val) : val)) + '" placeholder="' + esc(ph || '') + '">'; }
+    html += '<div class="form" id="pnl-cfg">';
+    html += '<div class="group-title" style="margin-top:0">공통 (%)</div>';
+    html += '<div class="pl-grid3"><div><label>원가율</label>' + f('cost_rate', cfg.cost_rate, '32') + '</div><div><label>배민 수수료</label>' + f('fee_baemin', cfg.fee_baemin, '25') + '</div><div><label>쿠팡이츠 수수료</label>' + f('fee_coupang', cfg.fee_coupang, '25') + '</div></div>';
+    html += '<div class="muted" style="line-height:1.6">원가율 = 매출 중 재료비 비율. 배달 수수료는 중개·결제 수수료 + 가게가 내는 배달비 + 광고비를 합친 대략의 %예요. 배달이익노트 정산을 보고 가끔 맞춰 주세요.</div>';
+    base.branches.forEach(function(b){
+      var x = pnlBr(cfg, b.id);
+      html += '<div class="group-title">' + esc(b.name) + ' (원)</div>';
+      html += '<div class="grid2"><div><label>하루 인건비</label>' + f('labor_day', x.labor_day, '예) 310,000', b.id) + '</div><div><label>한 달 고정비</label>' + f('fixed_month', x.fixed_month, '예) 4,500,000', b.id) + '</div></div>';
+    });
+    html += '<div class="muted" style="line-height:1.6">하루 인건비 = 지난달 급여 총액 ÷ 영업일 수 정도로 넣으면 돼요. 한 달 고정비 = 월세·관리비·전기·가스·통신·보험 등 매달 나가는 돈 합계.</div>';
+    html += '<button class="btn primary" data-act="pnl-cfg-save">저장</button></div>';
+    app.innerHTML = html;
+  };
+  async function pnlCfgSave(){
+    var val = { cost_rate: 0, fee_baemin: 0, fee_coupang: 0, br: {} };
+    document.querySelectorAll('#pnl-cfg [data-pc]').forEach(function(i){
+      var k = i.getAttribute('data-pc'), bid = i.getAttribute('data-bid'), v = pnlNum(i.value) || 0;
+      if (bid){ val.br[bid] = val.br[bid] || {}; val.br[bid][k] = v; } else val[k] = v;
+    });
+    if (val.cost_rate > 100 || val.fee_baemin > 100 || val.fee_coupang > 100){ toast('% 칸은 100 이하로 넣어 주세요'); return; }
+    await db.upsert('ops_settings', [{ key: 'pnl_cfg', value: val, updated_at: nowIso() }], 'key');
+    pnlCfgCache = null; toast('저장했어요'); render();
+  }
+
+  app.addEventListener('change', function(e){
+    var t = e.target;
+    if (t.classList && t.classList.contains('pnl-f')) pnlSave(t.closest('[data-pnlb]')).catch(pnlErr);
+    else if (t.id === 'pnl-date' && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) nav('#/' + current.route + '/' + t.value);
+  });
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act]'); if (!el) return;
+    if (el.getAttribute('data-act') !== 'pnl-cfg-save') return;
+    el.disabled = true;
+    try { await pnlCfgSave(); } catch(err){ pnlErr(err); } finally { el.disabled = false; }
+  });
+
+  // 시연 모드용 설정·매출 (지난달 1일부터 오늘까지, 중계는 오늘 미입력)
+  function pnlDemoCfg(){ return { cost_rate: 32, fee_baemin: 25, fee_coupang: 25, br: { b1: { labor_day: 420000, fixed_month: 6200000 }, b2: { labor_day: 260000, fixed_month: 3800000 }, b3: { labor_day: 280000, fixed_month: 4100000 }, b4: { labor_day: 240000, fixed_month: 3500000 } } }; }
+  function pnlDemoSeed(){
+    var S = [], n = 0, base0 = { b1: [1350000, 180000, 90000], b2: [780000, 220000, 120000], b3: [860000, 260000, 150000], b4: [640000, 200000, 110000] };
+    var from = addMonths(monthOf(todayStr()), -1) + '-01';
+    for (var d = from; d <= todayStr(); d = addDays(d, 1)){
+      var wd = dateObj(d).getDay(), k = (wd === 0 || wd === 6) ? 1.3 : wd === 1 ? 0.85 : 1;
+      Object.keys(base0).forEach(function(b, bi){
+        if (d === todayStr() && b === 'b3') return;
+        var w = 1 + 0.12 * Math.sin(++n * 1.7 + bi), a = base0[b];
+        S.push({ id: 'pds' + n, sale_on: d, branch_id: b, store_amt: Math.round(a[0] * k * w / 100) * 100, baemin_amt: Math.round(a[1] * w / 100) * 100, coupang_amt: Math.round(a[2] * (2 - w) / 100) * 100, labor: null, memo: (n % 11 === 0 ? '비 와서 배달 ↑' : null), updated_at: daysAgo(0) });
+      });
+    }
+    return { ops_daily_sales: S };
+  }
+
   // ===== 시작 =====
-  if (DEMO) db = makeMemoryDb(Object.assign(demoSeed(), vdDemoSeed()));
+  if (DEMO) db = makeMemoryDb(Object.assign(demoSeed(), vdDemoSeed(), pnlDemoSeed()));
   else if (window.supabase && typeof window.supabase.createClient === 'function') db = makeSupabaseDb(window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
   if (!db){ app.innerHTML = '<div class="note danger">데이터 창고 연결 스크립트를 못 불러왔어요. 인터넷을 확인하고 새로고침해 주세요.</div>'; return; }
   if (DEMO && session && session.staffId && session.staffId.length > 4) saveSession(null);
