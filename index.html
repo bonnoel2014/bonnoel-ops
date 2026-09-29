@@ -918,9 +918,15 @@
     html += tge();
     var homeGroupsNonEmpty = homeGroups.filter(function(g){ return g.rows.length > 0; });
     if (isOwner()){
-      html += '<div class="pillrow">' + homeGroupsNonEmpty.map(function(g){ return '<span class="tab' + (g.title === homeActiveGroup ? ' on' : '') + '" data-act="home-pill" data-grp="' + esc(g.title) + '">' + esc(g.title) + '</span>'; }).join('') + '</div>';
-      var homeActive = homeGroupsNonEmpty.filter(function(g){ return g.title === homeActiveGroup; })[0];
-      if (homeActive) html += '<div class="card">' + homeActive.rows.join('') + '</div>';
+      var homeLayout = (function(){ try { return localStorage.getItem('bn_home_layout') || 'pill'; } catch(e){ return 'pill'; } })();
+      html += '<div class="inline" style="justify-content:flex-end;margin:8px 0 0"><span class="tabs" style="margin:0"><span class="tab' + (homeLayout === 'pill' ? ' on' : '') + '" data-act="home-layout" data-mode="pill">알약</span><span class="tab' + (homeLayout === 'list' ? ' on' : '') + '" data-act="home-layout" data-mode="list">목록</span></span></div>';
+      if (homeLayout === 'list'){
+        homeGroupsNonEmpty.forEach(function(g){ html += '<div class="group-title">' + esc(g.title) + '</div><div class="card">' + g.rows.join('') + '</div>'; });
+      } else {
+        html += '<div class="pillrow">' + homeGroupsNonEmpty.map(function(g){ return '<span class="tab' + (g.title === homeActiveGroup ? ' on' : '') + '" data-act="home-pill" data-grp="' + esc(g.title) + '">' + esc(g.title) + '</span>'; }).join('') + '</div>';
+        var homeActive = homeGroupsNonEmpty.filter(function(g){ return g.title === homeActiveGroup; })[0];
+        if (homeActive) html += '<div class="card">' + homeActive.rows.join('') + '</div>';
+      }
     } else {
       homeGroupsNonEmpty.forEach(function(g){ html += '<div class="group-title">' + esc(g.title) + '</div><div class="card">' + g.rows.join('') + '</div>'; });
     }
@@ -6028,6 +6034,7 @@
         case 'exp-photo': { var pu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(pu, '_blank'); break; }
         case 'exp-update': await expUpdate(id); break;
         case 'home-pill': { var gname = el.getAttribute('data-grp'); homeActiveGroup = (homeActiveGroup === gname) ? null : gname; render(); break; }
+        case 'home-layout': try { localStorage.setItem('bn_home_layout', el.getAttribute('data-mode')); } catch(e){} render(); break;
         case 'exp-del': if (!isManager()){ toast('삭제할 권한이 없어요'); } else if (window.confirm('이 지출을 지울까요? (사진도 같이 지워져요)')){ var pp = el.getAttribute('data-path'); await db.remove('ops_expenses', { id: id }); if (pp) db.removeFile('receipts', pp).catch(function(){}); toast('지웠어요'); render(); } break;
         case 'exp-csv': downloadCsv(); break;
         // 직원 구매
