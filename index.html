@@ -209,6 +209,9 @@
   .pl-memo{ padding:8px 14px 12px; font-size:13px; color:var(--ink-soft); border-top:1px solid var(--line); }
   .pl-grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
   .pl-live{ margin-top:2px; }
+  .pl-fix{ margin-top:6px; }
+  .pl-fix summary{ cursor:pointer; color:var(--accent); font-size:13px; padding:4px 6px; }
+  .pl-fix .form{ margin-top:6px; }
   .summary .n small{ font-size:13px; font-weight:600; margin-left:1px; }
   .vpaper{ width:720px; background:#fff; color:#231717; padding:28px 30px; font-family:var(--font-sans); font-size:13px; line-height:1.45; }
   .vpaper .vp-top{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #af4c60; padding-bottom:10px; }
@@ -879,7 +882,7 @@
     if (isOwner()) html += row('#/pnl-dash', 'tile-purple', '📊', '대시보드', '매출·이익 한눈에', true);
     if (isOwner()) html += row('#/pnl', 'tile-blue', '📈', '일일 보고서', '그날의 손익계산서 · 4매장 합계와 매장별');
     if (isOwner()) html += row('#/pnl-in', 'tile-green', '✏️', '매출 넣기', '하루 한 번 4매장 매장·배민·쿠팡이츠 매출');
-    if (isOwner()) html += row('#/pnl-month', 'tile-orange', '🧾', '월 정산', '월 손익·급여 정산', true);
+    if (isOwner()) html += row('#/pnl-month', 'tile-orange', '🧾', '월 정산', '월 손익 · 실제 금액 고치기 · 세무사용 엑셀');
     if (isOwner()) html += row('#/pnl-set', 'tile-gray', '⚙️', '손익 설정', '원가율·배달 수수료·매장별 인건비·고정비');
     html += tge();
     html += grp('자금');
@@ -8064,7 +8067,7 @@
         if (p.c) html += '<div class="card">' + pnlTable(p.c, cfg) + (p.row.memo ? '<div class="pl-memo">📝 ' + esc(p.row.memo) + '</div>' : '') + '</div>';
       });
     }
-    html += '<div class="inline" style="margin-top:16px;gap:8px"><button class="btn primary" data-act="go" data-href="#/pnl-in/' + date + '">✏️ 이날 매출 넣기</button><button class="btn" data-act="go" data-href="#/pnl-set">⚙️ 손익 설정</button></div>';
+    html += '<div class="inline" style="margin-top:16px;gap:8px"><button class="btn primary" data-act="go" data-href="#/pnl-in/' + date + '">✏️ 이날 매출 넣기</button><button class="btn" data-act="go" data-href="#/pnl-month/' + ym + '">🧾 월 정산</button><button class="btn" data-act="go" data-href="#/pnl-set">⚙️ 손익 설정</button></div>';
     html += '<div class="muted" style="margin:12px 4px 0;line-height:1.6">재료비는 매출 × 원가율로 어림한 값이에요. 실제 재료비는 월 정산에서 맞출 거예요.</div>';
     app.innerHTML = html;
   };
@@ -8151,6 +8154,128 @@
     if (el.getAttribute('data-act') !== 'pnl-cfg-save') return;
     el.disabled = true;
     try { await pnlCfgSave(); } catch(err){ pnlErr(err); } finally { el.disabled = false; }
+  });
+
+  // ----- 월 정산 (2차): 일일 보고서 한 달 합계 + 급여 초안 + 거래처 납품 → 사장님이 실제 금액으로 고침 → 세무사용 엑셀 -----
+  var PNL_COSTS = [ ['material', '재료비'], ['labor', '인건비'], ['fee', '배달 수수료'], ['fixed', '고정비'], ['other', '기타 비용'] ];
+  function pnlYmLabel(ym){ return ym.slice(0, 4) + '년 ' + (+ym.slice(5, 7)) + '월'; }
+  async function pnlMonthData(ym){
+    var r = await Promise.all([ pnlCfg(), db.select('ops_daily_sales', { gte: { sale_on: ym + '-01' } }), db.select('ops_month_close', { eq: { ym: ym } }),
+      db.select('ops_pay_runs', { eq: { ym: ym } }).catch(function(){ return []; }),
+      vdMaster().catch(function(){ return []; }), vdMonthData(ym).catch(function(){ return { dels: [], extras: [] }; }) ]);
+    var cfg = r[0], rows = r[1].filter(function(x){ return monthOf(x.sale_on) === ym; }), closes = r[2], runs = r[3];
+    // 거래처 납품(우디집·파랜드·앤드밀·카멜)은 성수에서 나가니 성수 매출로 (전달 미입금은 빼고 이 달 납품분만)
+    var vendorAmt = r[4].reduce(function(a, v){ var c = vdCalc(v, ym, r[5], null); return a + c.subtotal + c.extras_total; }, 0);
+    var vendorBr = (base.branches.filter(function(b){ return /성수/.test(b.name); })[0] || {}).id;
+    var per = base.branches.map(function(b){
+      var br = rows.filter(function(x){ return x.branch_id === b.id; }), daily = pnlSum(br.map(function(x){ return pnlCalc(x, cfg); }));
+      var vend = b.id === vendorBr ? vendorAmt : 0, sales = daily.sales + vend;
+      // 급여 초안: 지급총액 + 조정 + 회사 부담 4대보험(직원 공제액과 같다고 어림)
+      var bruns = runs.filter(function(x){ return x.branch_id === b.id && x.data && x.data.gross != null; });
+      var pay = bruns.reduce(function(a, x){ var d = x.data.ded || {}; return a + (num(x.data.gross) || 0) + (num(x.adjust) || 0) + (num(d.np) || 0) + (num(d.hi) || 0) + (num(d.ltc) || 0) + (num(d.ei) || 0); }, 0);
+      var auto = { material: Math.round(sales * (num(cfg.cost_rate) || 0) / 100), labor: bruns.length ? Math.round(pay) : daily.labor, fee: daily.fee, fixed: Math.round(num(pnlBr(cfg, b.id).fixed_month) || 0), other: 0 };
+      var autoSrc = { material: '원가율 ' + cfg.cost_rate + '% 추정', labor: bruns.length ? '급여 초안 ' + bruns.length + '명 · 회사 4대보험 포함' : '일일 합계 (급여 초안 없음)', fee: '일일 합계', fixed: '설정값', other: '' };
+      var close = closes.filter(function(x){ return x.branch_id === b.id; })[0] || {}, cost = {}, real = {}, costSum = 0;
+      PNL_COSTS.forEach(function(k){ var v = close[k[0]], man = v != null && v !== ''; real[k[0]] = man; cost[k[0]] = man ? Math.round(num(v) || 0) : auto[k[0]]; costSum += cost[k[0]]; });
+      var days = {}; br.forEach(function(x){ days[x.sale_on] = 1; });
+      return { b: b, days: Object.keys(days).length, rows: br, store: daily.store, baemin: daily.baemin, coupang: daily.coupang, vendor: vend, sales: sales, auto: auto, autoSrc: autoSrc, cost: cost, real: real, close: close, profit: sales - costSum };
+    });
+    var tot = { store: 0, baemin: 0, coupang: 0, vendor: 0, sales: 0, profit: 0, cost: {}, real: {} };
+    PNL_COSTS.forEach(function(k){ tot.cost[k[0]] = 0; tot.real[k[0]] = true; });
+    per.forEach(function(p){ ['store', 'baemin', 'coupang', 'vendor', 'sales', 'profit'].forEach(function(k){ tot[k] += p[k]; }); PNL_COSTS.forEach(function(k){ tot.cost[k[0]] += p.cost[k[0]]; if (!p.real[k[0]]) tot.real[k[0]] = false; }); });
+    return { cfg: cfg, per: per, tot: tot, rows: rows };
+  }
+  function pnlMonthTable(p, showSrc){
+    function line(label, v, cls, minus){ return '<tr class="' + (cls || '') + '"><td>' + label + '</td><td>' + (minus ? '− ' : '') + won(v) + '</td></tr>'; }
+    var h = '<table class="pl-t">' + line('매출', p.sales, 'big') + line('매장', p.store, 'sub') + line('배민', p.baemin, 'sub') + line('쿠팡이츠', p.coupang, 'sub');
+    if (p.vendor) h += line('거래처 납품', p.vendor, 'sub');
+    PNL_COSTS.forEach(function(k){
+      if (k[0] === 'other' && !p.cost.other) return;
+      var tag = !showSrc ? '' : p.real[k[0]] ? ' <span class="badge ok">실제</span>' : p.autoSrc[k[0]] ? ' <span class="muted" style="font-size:12px">' + esc(p.autoSrc[k[0]]) + '</span>' : '';
+      h += line(k[1] + tag + (k[0] === 'other' && p.close && p.close.other_memo ? ' <span class="muted" style="font-size:12px">' + esc(p.close.other_memo) + '</span>' : ''), p.cost[k[0]], 'cost', true);
+    });
+    h += '<tr class="tot"><td>남은 돈 <span class="muted">(' + pnlPct(p.profit, p.sales) + '%)</span></td><td class="' + (p.profit < 0 ? 'pl-neg' : 'pl-pos') + '">' + won(p.profit) + '</td></tr>';
+    return h + '</table>';
+  }
+  routes['pnl-month'] = async function(params){
+    await loadBase();
+    var html = topbar('월 정산', true, whoChip());
+    if (!isOwner()){ app.innerHTML = html + '<div class="note">사장님만 볼 수 있어요.</div>'; return; }
+    var ym = /^\d{4}-\d{2}$/.test(params.arg || '') ? params.arg : monthOf(todayStr());
+    var m = await pnlMonthData(ym), tot = m.tot;
+    html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="go" data-href="#/pnl-month/' + addMonths(ym, -1) + '">‹ 지난달</button><b>' + pnlYmLabel(ym) + '</b><button class="btn sm" data-act="go" data-href="#/pnl-month/' + addMonths(ym, 1) + '">다음달 ›</button></div>';
+    html += '<div class="summary">' +
+      '<a><div class="n">' + won(Math.round(tot.sales / 10000)) + '<small>만</small></div><div class="l">매출</div></a>' +
+      '<a><div class="n' + (tot.profit < 0 ? ' danger' : '') + '">' + won(Math.round(tot.profit / 10000)) + '<small>만</small></div><div class="l">남은 돈</div></a>' +
+      '<a><div class="n' + (tot.profit < 0 ? ' danger' : '') + '">' + pnlPct(tot.profit, tot.sales) + '<small>%</small></div><div class="l">이익률</div></a></div>';
+    var elapsed = ym < monthOf(todayStr()) ? monthDays(ym).length : ym === monthOf(todayStr()) ? +todayStr().slice(8) : 0;
+    var short = m.per.filter(function(p){ return p.days < elapsed; });
+    if (short.length) html += '<div class="note">매출 넣은 날: ' + m.per.map(function(p){ return esc(p.b.name) + ' ' + p.days + '일'; }).join(' · ') + ' (지난 날 ' + elapsed + '일). 빠진 날은 <a href="#/pnl-in" style="text-decoration:underline">[매출 넣기]</a>에서 채워 주세요.</div>';
+    html += '<div class="group-title">' + m.per.length + '매장 합계</div><div class="card">' + pnlMonthTable(tot, false) + '</div>';
+    m.per.forEach(function(p){
+      html += '<div class="group-title">' + esc(p.b.name) + ' <span class="muted" style="font-weight:400">· 남은 돈 ' + won(p.profit) + '원 (' + pnlPct(p.profit, p.sales) + '%)</span></div>';
+      html += '<div class="card">' + pnlMonthTable(p, true) + (p.close.memo ? '<div class="pl-memo">📝 ' + esc(p.close.memo) + '</div>' : '') + '</div>';
+      html += '<details class="pl-fix"><summary>✏️ 실제 금액으로 고치기</summary><div class="form" data-pnlm="' + esc(p.b.id) + '" data-ym="' + ym + '">';
+      html += '<div class="muted">비워 두면 자동 값을 써요. 칸을 벗어나면 바로 저장돼요.</div><div class="grid2">';
+      PNL_COSTS.forEach(function(k){ html += '<div><label>' + k[1] + '</label><input class="in pnlm-f" data-k="' + k[0] + '" inputmode="numeric" placeholder="자동 ' + esc(won(p.auto[k[0]])) + '" value="' + esc(pnlWonIn(p.close[k[0]])) + '"></div>'; });
+      html += '<div><label>기타 비용 내용</label><input class="in pnlm-f" data-k="other_memo" placeholder="예) 오븐 수리" value="' + esc(p.close.other_memo || '') + '"></div></div>';
+      html += '<div><label>메모</label><input class="in pnlm-f" data-k="memo" value="' + esc(p.close.memo || '') + '"></div></div></details>';
+    });
+    html += '<div class="inline" style="margin-top:16px;gap:8px"><button class="btn primary" data-act="pnl-xlsx" data-id="' + ym + '">📥 세무사용 엑셀</button><button class="btn" data-act="go" data-href="#/pnl">📈 일일 보고서</button></div>';
+    html += '<div class="muted" style="margin:12px 4px 0;line-height:1.6">「자동」은 일일 보고서 합계·급여 초안·손익 설정에서 가져온 값이에요. 재료비는 월말에 실제 금액(거래처 계산서·법인카드 합계)으로 고쳐 주세요. 거래처 납품 매출은 납품 입력 기록으로 계산해 성수에 넣어요.</div>';
+    app.innerHTML = html;
+  };
+  async function pnlCloseSave(form){
+    var bid = form.getAttribute('data-pnlm'), ym = form.getAttribute('data-ym'), row = { ym: ym, branch_id: bid }, blank = true;
+    form.querySelectorAll('.pnlm-f').forEach(function(i){
+      var k = i.getAttribute('data-k');
+      if (k === 'memo' || k === 'other_memo'){ row[k] = i.value.trim() || null; if (row[k]) blank = false; return; }
+      var v = pnlNum(i.value);
+      if (v != null && v < 0) throw new Error('0 이상 금액으로 넣어 주세요');
+      if (v != null) blank = false;
+      row[k] = v; i.value = pnlWonIn(v);
+    });
+    if (blank) await db.remove('ops_month_close', { ym: ym, branch_id: bid });
+    else await db.upsert('ops_month_close', [Object.assign(row, { staff_id: session.staffId, updated_at: nowIso() })], 'ym,branch_id');
+    toast('저장했어요');
+    var y = window.scrollY;
+    await render();
+    var f = document.querySelector('[data-pnlm="' + bid + '"]'); if (f) f.closest('details').open = true;
+    window.scrollTo(0, y);
+  }
+  async function pnlXlsx(ym){
+    var r = await Promise.all([ pnlMonthData(ym), loadExcelJS() ]), m = r[0], ExcelJS = r[1], wb = new ExcelJS.Workbook();
+    var ws = wb.addWorksheet('월 손익');
+    ws.addRow(['본노엘 ' + pnlYmLabel(ym) + ' 손익']).font = { bold: true, size: 13 };
+    ws.addRow(['항목', '합계'].concat(m.per.map(function(p){ return p.b.name; }))).font = { bold: true };
+    function add(label, k, bold){ var row = ws.addRow([label, k(m.tot)].concat(m.per.map(k))); if (bold) row.font = { bold: true }; }
+    add('매출', function(p){ return p.sales; }, true);
+    add('  매장', function(p){ return p.store; }); add('  배민', function(p){ return p.baemin; }); add('  쿠팡이츠', function(p){ return p.coupang; }); add('  거래처 납품', function(p){ return p.vendor; });
+    PNL_COSTS.forEach(function(k){ add(k[1], function(p){ return p.cost[k[0]]; }); });
+    add('남은 돈', function(p){ return p.profit; }, true);
+    ws.addRow(['이익률(%)', pnlPct(m.tot.profit, m.tot.sales)].concat(m.per.map(function(p){ return pnlPct(p.profit, p.sales); })));
+    ws.addRow([]);
+    ws.addRow(['비용 근거 (실제 = 사장님이 넣은 금액, 그 외 = 자동 계산)']).font = { bold: true };
+    PNL_COSTS.forEach(function(k){ ws.addRow([k[1], ''].concat(m.per.map(function(p){ return p.real[k[0]] ? '실제' : (p.autoSrc[k[0]] || '자동'); }))); });
+    ws.columns.forEach(function(c){ c.width = 16; c.numFmt = '#,##0'; });
+    var wd = wb.addWorksheet('날짜별 매출');
+    wd.addRow(['날짜', '매장', '매장 매출', '배민', '쿠팡이츠', '합계', '메모']).font = { bold: true };
+    m.rows.slice().sort(function(a, b){ return a.sale_on < b.sale_on ? -1 : a.sale_on > b.sale_on ? 1 : branchName(a.branch_id).localeCompare(branchName(b.branch_id), 'ko'); }).forEach(function(x){
+      var s = num(x.store_amt) || 0, bm = num(x.baemin_amt) || 0, cp = num(x.coupang_amt) || 0;
+      wd.addRow([x.sale_on, branchName(x.branch_id), s, bm, cp, s + bm + cp, x.memo || '']);
+    });
+    wd.columns.forEach(function(c, i){ c.width = [12, 10, 13, 12, 12, 13, 24][i]; if (i >= 2 && i <= 5) c.numFmt = '#,##0'; });
+    var buf = await wb.xlsx.writeBuffer();
+    downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), '본노엘_월정산_' + ym + '.xlsx');
+  }
+  app.addEventListener('change', function(e){
+    var t = e.target;
+    if (t.classList && t.classList.contains('pnlm-f')) pnlCloseSave(t.closest('[data-pnlm]')).catch(pnlErr);
+  });
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act="pnl-xlsx"]'); if (!el) return;
+    el.disabled = true; var old = el.textContent; el.textContent = '만드는 중…';
+    try { await pnlXlsx(el.getAttribute('data-id')); } catch(err){ pnlErr(err); } finally { el.disabled = false; el.textContent = old; }
   });
 
   // 시연 모드용 설정·매출 (지난달 1일부터 오늘까지, 중계는 오늘 미입력)
