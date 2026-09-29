@@ -708,6 +708,17 @@
                 (buysToday.length ? '<a href="#/buy-list" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">' + buysToday.slice(0, 6).map(function(x){ return esc(branchName(x.branch_id)) + ' ' + esc(buyerLabel(x)); }).join(' · ') + (buysToday.length > 6 ? ' 외 ' + (buysToday.length - 6) + '건' : '') + '</a>' : '') + '</div>';
       } catch(e){ console.warn('직원 구매 테이블 없음', e); }
     }
+    if (isManager() || isKiosk()){
+      try { // 지원자 테이블(bonnoel-hiring)이 아직 없어도 홈은 열리게
+        var newAlba = (await db.select('applicants', { eq: { status: '신규' } })).length;
+        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #E91E63"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">📮 채용</div><div class="summary"' + (isOwner() ? '' : ' style="grid-template-columns:1fr"') + '><a href="https://hiring.bonnoel.com/#admin"><div class="n' + (newAlba ? ' danger' : '') + '">' + newAlba + '</div><div class="l">신규 아르바이트 지원자</div></a>';
+        if (isOwner()){
+          var newBaker = (await db.select('baker_candidates', { eq: { status: '신규' } })).length;
+          html += '<a href="https://hiring.bonnoel.com/#admin"><div class="n' + (newBaker ? ' danger' : '') + '">' + newBaker + '</div><div class="l">신규 베이커·매장관리 지원자</div></a>';
+        }
+        html += '</div></div>';
+      } catch(e){ console.warn('지원자 테이블 없음', e); }
+    }
     // 묶음(그룹)마다 아이콘 줄을 먼저 모아 뒀다가, 다 모으고 나면 한 번에 그림.
     // 사장님: 묶음 이름을 알약(탭)으로 가로 나열 → 누른 것 하나만 아래에 펼침 (스크롤 줄이기)
     // 매니저·알바·매장폰: 묶음 몇 개 안 되니 그냥 다 펼쳐서 보여줌. 묶음 안에 보이는 줄이 하나도 없으면(권한 때문에 다 숨겨지면) 그 묶음 자체를 안 그림.
