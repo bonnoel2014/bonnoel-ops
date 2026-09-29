@@ -144,3 +144,35 @@ end $$;
 -- 명세서 머리글(공급자)·입금 계좌 — 앱의 [거래처 설정]에서 고칠 수 있어요
 insert into ops_settings (key, value) values ('vendor_stmt', '{"supplier":"본노엘","ceo":"손성필","phone":"010-3815-1470","biz_no":"","bank":"","footer":"위 금액으로 입금해 주세요. 감사합니다."}'::jsonb)
 on conflict (key) do nothing;
+
+-- =========================================================
+-- 7. 납품 영수증 사진 (9/30 추가) — 거래처·납품처별 그날 영수증. 사진은 법인카드와 같은 receipts 저장소의 vendor/ 폴더
+-- =========================================================
+create table if not exists ops_vendor_receipts (
+  id uuid primary key default gen_random_uuid(),
+  deliver_on date not null,
+  vendor_id uuid not null references ops_vendors(id) on delete cascade,
+  site_id uuid references ops_vendor_sites(id) on delete set null,
+  photo_path text not null,
+  staff_id uuid references manual_staff(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create index if not exists ops_vendor_receipts_date_idx on ops_vendor_receipts (deliver_on);
+alter table ops_vendor_receipts enable row level security;
+drop policy if exists "anon full access" on ops_vendor_receipts;
+create policy "anon full access" on ops_vendor_receipts for all using (true) with check (true);
+
+-- receipts 저장소 (법인카드 SQL을 이미 했으면 그대로 있음. 없을 때만 만듦)
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('receipts', 'receipts', false, 5242880, array['image/jpeg','image/png','image/webp'])
+on conflict (id) do nothing;
+drop policy if exists "receipts read" on storage.objects;
+create policy "receipts read" on storage.objects for select using (bucket_id = 'receipts');
+drop policy if exists "receipts insert" on storage.objects;
+create policy "receipts insert" on storage.objects for insert with check (bucket_id = 'receipts');
+drop policy if exists "receipts delete" on storage.objects;
+create policy "receipts delete" on storage.objects for delete using (bucket_id = 'receipts');
+
+-- 본노엘 사업자번호 (영수증에서 확인) — 비어 있을 때만 채움
+update ops_settings set value = jsonb_set(value, '{biz_no}', '"354-85-01989"')
+where key = 'vendor_stmt' and coalesce(value->>'biz_no', '') = '';

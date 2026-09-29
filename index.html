@@ -194,6 +194,16 @@
   .slip-t td.r{ text-align:right; }
   @media print{ body{ background:#fff; } .noprint, .topbar, .stickybar, .toast{ display:none !important; } .wrap{ max-width:none; padding:0; } .slip{ border:0; } }
   @media (min-width:900px){ .wrap{ max-width:1100px; } .stickybar .inner{ max-width:1100px; } }
+  .vrc{ padding:8px 14px 12px; border-bottom:1px solid var(--line); background:var(--surface-sunken); }
+  .vrc:last-child{ border-bottom:0; }
+  .vrc-in{ font-size:13px; color:var(--ink-soft); margin-bottom:6px; }
+  .vrc-in b{ color:var(--ink); }
+  .vrc-ph{ display:flex; gap:10px; flex-wrap:wrap; }
+  .vrc-t{ position:relative; }
+  .vrc-t img{ width:64px; height:64px; object-fit:cover; border-radius:10px; border:1px solid var(--line); cursor:pointer; display:block; background:var(--surface); }
+  .vrc-x{ position:absolute; top:-7px; right:-7px; width:22px; height:22px; border-radius:50%; border:0; background:var(--danger); color:#fff; font-size:14px; line-height:22px; padding:0; cursor:pointer; }
+  .vrc-add{ width:64px; height:64px; border:1.5px dashed var(--line-strong); border-radius:10px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:20px; cursor:pointer; color:var(--ink-soft); background:var(--surface); }
+  .vrc-add span{ font-size:11px; }
   .vpwrap{ overflow-x:auto; margin-top:4px; border:1px solid var(--line); border-radius:var(--radius-m); background:#fff; }
   /* 매출·손익 */
   .pl-t{ width:100%; border-collapse:collapse; font-size:14px; font-variant-numeric:tabular-nums; }
@@ -7575,7 +7585,7 @@
     discount: { name: '할인', sign: -1 },
     etc: { name: '기타', sign: 0 }   // 0 = 넣은 부호 그대로 (빼려면 -5000)
   };
-  var VD_CFG_DEFAULT = { supplier: '본노엘', ceo: '', phone: '', biz_no: '', bank: '', footer: '위 금액으로 입금해 주세요. 감사합니다.' };
+  var VD_CFG_DEFAULT = { supplier: '본노엘', ceo: '', phone: '', biz_no: '354-85-01989', bank: '', footer: '위 금액으로 입금해 주세요. 감사합니다.' };
   var vdSt = { exOpen: false };
   function vdCanInput(){ return isOwner() || (isManager() && /성수/.test((session && session.branchName) || '')); }
   function vdErr(err){ console.error(err); toast('실패: ' + (err.message || err) + ' (처음이면 supabase-migration-vendor.sql 실행 필요)'); }
@@ -7606,6 +7616,34 @@
       return rest > 0 ? '<span class="badge warn">일부 입금 · 남은 돈 ' + won(rest) + '원</span>' : '<span class="badge ok">입금 완료 ' + esc(md(st.paid_on)) + '</span>';
     }
     return '<span class="badge">보냄 ' + esc(md(st.sent_at)) + ' · 입금 대기</span>';
+  }
+
+  // ----- 영수증 사진 (거래처·납품처별 그날 영수증, 내부 확인용 · 명세서엔 안 붙임) -----
+  async function vdRcUrls(rcs){ var out = {}; await Promise.all(rcs.map(function(r){ return db.signedUrl('receipts', r.photo_path).then(function(u){ out[r.id] = u; }).catch(function(){}); })); return out; }
+  // 사진 옆에 "앱에 넣은 개수·금액"을 같이 보여 줘서 눈으로 대조
+  function vdRcRow(v, siteId, date, dels, rcs, urls, canEdit){
+    var parts = [], amt = 0;
+    v.items.forEach(function(it){
+      var q = dels.filter(function(d){ return d.deliver_on === date && d.site_id === siteId && d.item_id === it.id; }).reduce(function(a, d){ return a + (num(d.qty) || 0); }, 0);
+      if (q){ parts.push(esc(it.name) + ' ' + won(q) + '개'); amt += Math.round(q * (num(it.price) || 0)); }
+    });
+    var mine = rcs.filter(function(r){ return r.vendor_id === v.id && r.deliver_on === date && (r.site_id || null) === (siteId || null); });
+    var h = '<div class="vrc"><div class="vrc-in">' + (parts.length ? '앱에 넣은 것: <b>' + parts.join(' · ') + '</b> = ' + won(amt) + '원' : '아직 개수 안 넣음') + (mine.length ? '' : canEdit ? ' · <span style="color:var(--warn)">영수증 사진 없음</span>' : '') + '</div><div class="vrc-ph">';
+    mine.forEach(function(r){ h += '<span class="vrc-t">' + (urls[r.id] ? '<img src="' + esc(urls[r.id]) + '" alt="영수증" data-act="vd-rc-open" data-id="' + esc(r.id) + '">' : '<span class="vrc-add">?</span>') + (canEdit ? '<button class="vrc-x" data-act="vd-rc-del" data-id="' + esc(r.id) + '" aria-label="사진 지우기">×</button>' : '') + '</span>'; });
+    if (canEdit) h += '<label class="vrc-add">📷<span>영수증</span><input type="file" accept="image/*" class="hidden vd-rc-file" data-v="' + esc(v.id) + '" data-s="' + esc(siteId || '') + '" data-d="' + esc(date) + '"></label>';
+    return h + '</div></div>';
+  }
+  async function vdRcUpload(input){
+    var f = input.files && input.files[0]; if (!f) return;
+    var lab = input.closest('label'); if (lab) lab.style.opacity = '.5';
+    toast('사진 올리는 중…');
+    try {
+      var img = await resizeImage(f, 1600);
+      var date = input.getAttribute('data-d'), path = 'vendor/' + date + '/' + uid() + '.jpg';
+      await db.upload('receipts', path, img.blob, 'image/jpeg');
+      await db.insert('ops_vendor_receipts', [{ deliver_on: date, vendor_id: input.getAttribute('data-v'), site_id: input.getAttribute('data-s') || null, photo_path: path, staff_id: session.staffId }]);
+    } finally { if (lab) lab.style.opacity = ''; }
+    toast('영수증 올렸어요'); render();
   }
 
   // 한 거래처 한 달 계산 (명세서 한 장에 들어갈 내용 전부)
@@ -7681,13 +7719,13 @@
     var html = topbar('납품 입력', true, whoChip());
     if (!vdCanInput()){ app.innerHTML = html + '<div class="note">납품 입력은 성수점 매장폰·매니저·사장님만 쓸 수 있어요.</div>'; return; }
     var date = /^\d{4}-\d{2}-\d{2}$/.test(params.arg || '') ? params.arg : todayStr();
-    var r = await Promise.all([ vdMaster(), db.select('ops_vendor_deliveries', { eq: { deliver_on: date } }), db.select('ops_vendor_extras', { eq: { on_date: date } }) ]);
-    var vendors = vdOn(r[0]), dels = r[1], extras = r[2];
+    var r = await Promise.all([ vdMaster(), db.select('ops_vendor_deliveries', { eq: { deliver_on: date } }), db.select('ops_vendor_extras', { eq: { on_date: date } }), db.select('ops_vendor_receipts', { eq: { deliver_on: date } }).catch(function(){ return []; }) ]);
+    var vendors = vdOn(r[0]), dels = r[1], extras = r[2], rcs = r[3], urls = await vdRcUrls(rcs);
     var qmap = {}; dels.forEach(function(d){ qmap[d.site_id + '|' + d.item_id] = d.qty; });
     html += '<div class="inline" style="justify-content:space-between;margin:4px 0 8px"><button class="btn sm" data-act="go" data-href="#/vd/' + addDays(date, -1) + '">‹ 전날</button>' +
       '<input type="date" class="in" id="vd-date" value="' + date + '" style="width:auto;padding:6px 10px"><button class="btn sm" data-act="go" data-href="#/vd/' + addDays(date, 1) + '">다음날 ›</button></div>';
     html += '<div class="inline" style="justify-content:space-between;margin:0 4px"><b>' + esc(fmtDateK(date)) + (date === todayStr() ? ' 오늘' : '') + '</b>' + (date !== todayStr() ? '<span class="muted" data-act="go" data-href="#/vd" style="cursor:pointer;text-decoration:underline">오늘로</span>' : '') + '</div>';
-    html += '<div class="muted" style="margin:4px 4px 0">개수를 넣고 칸을 벗어나면 바로 저장돼요. 안 나간 건 비워 두세요.</div>';
+    html += '<div class="muted" style="margin:4px 4px 0">개수를 넣고 칸을 벗어나면 바로 저장돼요. 안 나간 건 비워 두세요. 그날 영수증은 📷로 올리고 옆 숫자와 맞는지 봐 주세요.</div>';
     if (!vendors.length) html += '<div class="note">등록된 거래처가 없어요. ' + (isOwner() ? '[거래처 설정]에서 추가해 주세요.' : '사장님께 거래처 설정을 부탁하세요.') + '</div>';
     vendors.forEach(function(v){
       var sites = vdOn(v.sites), items = vdOn(v.items);
@@ -7699,6 +7737,7 @@
           html += '<div class="item"><div class="iname"><div class="t">' + esc(it.name) + '</div></div><input class="qty' + (q ? ' filled' : '') + '" type="number" inputmode="numeric" min="0" data-vdq="' + esc(k) + '" value="' + (q != null && q !== 0 ? esc(q) : '') + '" placeholder="0"><span class="unit">개</span></div>';
         });
         if (!items.length) html += '<div class="empty">품목이 없어요</div>';
+        html += vdRcRow(v, s.id, date, dels, rcs, urls, true);
       });
       html += '</div>';
     });
@@ -7740,7 +7779,8 @@
     var html = topbar('납품 한 달 보기', true, whoChip());
     if (!vdCanInput()){ app.innerHTML = html + '<div class="note">성수점 매장폰·매니저·사장님만 볼 수 있어요.</div>'; return; }
     var ym = ymOf(params.arg);
-    var r = await Promise.all([ vdMaster(), vdMonthData(ym) ]);
+    var r = await Promise.all([ vdMaster(), vdMonthData(ym), db.select('ops_vendor_receipts', { gte: { deliver_on: ym + '-01' } }).catch(function(){ return []; }) ]);
+    var mrcs = r[2].filter(function(x){ return vdInMonth(x.deliver_on, ym); });
     html += monthNav(ym, function(m){ return '#/vd-month/' + m; });
     html += '<div class="muted" style="margin:0 4px">날짜를 누르면 그 날 입력 화면으로 가요.</div>';
     r[0].forEach(function(v){
@@ -7748,9 +7788,9 @@
       if (v.active === false && !c.days.length) return;
       html += '<div class="group-title">' + esc(v.name) + ' <span class="muted">· ' + c.days.length + '일 납품</span></div>';
       if (!c.days.length){ html += '<div class="card"><div class="empty" style="padding:14px">이 달 납품 기록 없음</div></div>'; return; }
-      html += '<div class="card" style="overflow-x:auto"><table class="pptable"><thead><tr><th>날짜</th>' + c.cols.map(function(col){ return '<th>' + esc(col.label) + '</th>'; }).join('') + '</tr></thead><tbody>';
-      c.days.forEach(function(d){ html += '<tr data-act="go" data-href="#/vd/' + d.date + '" style="cursor:pointer"><td>' + esc(fmtDateK(d.date)) + '</td>' + c.cols.map(function(col){ var q = d.q[col.key]; return '<td>' + (q ? won(q) : '') + '</td>'; }).join('') + '</tr>'; });
-      html += '<tr class="tot"><td>합계</td>' + c.cols.map(function(col){ return '<td>' + won(c.days.reduce(function(a, d){ return a + (d.q[col.key] || 0); }, 0)) + '</td>'; }).join('') + '</tr></tbody></table></div>';
+      html += '<div class="card" style="overflow-x:auto"><table class="pptable"><thead><tr><th>날짜</th>' + c.cols.map(function(col){ return '<th>' + esc(col.label) + '</th>'; }).join('') + '<th>영수증</th></tr></thead><tbody>';
+      c.days.forEach(function(d){ var nrc = mrcs.filter(function(x){ return x.vendor_id === v.id && x.deliver_on === d.date; }).length; html += '<tr data-act="go" data-href="#/vd/' + d.date + '" style="cursor:pointer"><td>' + esc(fmtDateK(d.date)) + '</td>' + c.cols.map(function(col){ var q = d.q[col.key]; return '<td>' + (q ? won(q) : '') + '</td>'; }).join('') + '<td>' + (nrc ? '📷 ' + nrc : '<span style="color:var(--warn)">없음</span>') + '</td></tr>'; });
+      html += '<tr class="tot"><td>합계</td>' + c.cols.map(function(col){ return '<td>' + won(c.days.reduce(function(a, d){ return a + (d.q[col.key] || 0); }, 0)) + '</td>'; }).join('') + '<td></td></tr></tbody></table></div>';
       if (c.extras.length) html += '<div class="muted" style="margin:6px 4px 0">' + c.extras.map(function(e){ return esc(md(e.date) + ' ' + e.name + (e.site ? '(' + e.site + ')' : '') + ' ' + (e.amount > 0 ? '+' : '') + won(e.amount)); }).join(' · ') + '</div>';
     });
     app.innerHTML = html;
@@ -7789,7 +7829,7 @@
     var html = topbar('명세서', true, whoChip());
     if (!isOwner()){ app.innerHTML = html + '<div class="note">사장님만 볼 수 있어요.</div>'; return; }
     var ym = ymOf(params.arg2);
-    var r = await Promise.all([ vdMaster(), vdMonthData(ym), db.select('ops_vendor_statements', { eq: { vendor_id: params.arg } }), vdCfg() ]);
+    var r = await Promise.all([ vdMaster(), vdMonthData(ym), db.select('ops_vendor_statements', { eq: { vendor_id: params.arg } }), vdCfg(), db.select('ops_vendor_receipts', { eq: { vendor_id: params.arg } }).catch(function(){ return []; }) ]);
     var v = r[0].filter(function(x){ return x.id === params.arg; })[0];
     if (!v){ app.innerHTML = html + '<div class="note">거래처를 못 찾았어요.</div>'; return; }
     var st = r[2].filter(function(s){ return s.ym === ym; })[0] || null;
@@ -7829,6 +7869,20 @@
       if (live.extras.length) html += '<div class="card" style="margin-top:8px">' + live.extras.map(function(e){ return '<div class="item"><div class="iname"><div class="t">' + esc(md(e.date) + ' ' + e.name) + (e.site ? ' · ' + esc(e.site) : '') + '</div>' + (e.memo ? '<div class="s">' + esc(e.memo) + '</div>' : '') + '</div><b>' + (e.amount > 0 ? '+' : '') + won(e.amount) + '</b><button class="btn sm danger" data-act="vd-ex-del" data-id="' + esc(e.id) + '">삭제</button></div>'; }).join('') + '</div>';
     }
     html += '<div class="group-title">거래처가 받는 모양 ' + (st ? '(보낸 그대로)' : '(미리보기)') + '</div><div class="vpwrap">' + vdPaper(shown, cfg) + '</div>';
+    // 영수증 사진 (본노엘 내부 확인용 · 거래처에 보내는 명세서엔 안 들어감)
+    var mrc = r[4].filter(function(x){ return vdInMonth(x.deliver_on, ym); }), rurls = await vdRcUrls(mrc);
+    var slots = [];   // 납품한 날 × 납품처
+    r[1].dels.forEach(function(d){ var s = v.sites.filter(function(x){ return x.id === d.site_id; })[0]; if (!s || !(num(d.qty) || 0)) return; var k = d.deliver_on + '|' + s.id; if (slots.indexOf(k) < 0) slots.push(k); });
+    mrc.forEach(function(x){ var k = x.deliver_on + '|' + (x.site_id || ''); if (slots.indexOf(k) < 0) slots.push(k); });
+    slots.sort();
+    var noRc = slots.filter(function(k){ var p = k.split('|'); return !mrc.some(function(x){ return x.deliver_on === p[0] && (x.site_id || '') === p[1]; }); });
+    html += '<div class="group-title">영수증 사진 ' + mrc.length + '장 <span class="muted">· 본노엘 확인용 (명세서엔 안 붙어요)</span></div>';
+    if (noRc.length) html += '<div class="note">영수증 없는 날 ' + noRc.length + '곳: ' + noRc.map(function(k){ var p = k.split('|'); return esc(md(p[0])) + (vdSiteName(v, p[1]) ? ' ' + esc(vdSiteName(v, p[1])) : ''); }).join(', ') + '</div>';
+    if (slots.length){
+      html += '<details class="card" style="margin-top:8px"><summary style="padding:12px 16px;cursor:pointer;font-weight:600">날짜별 사진과 넣은 개수 펼쳐 보기</summary>';
+      slots.forEach(function(k){ var p = k.split('|'); html += '<div class="sec-h">' + esc(fmtDateK(p[0])) + (vdSiteName(v, p[1]) ? ' · ' + esc(vdSiteName(v, p[1])) : '') + '</div>' + vdRcRow(v, p[1] || null, p[0], r[1].dels, mrc, rurls, false); });
+      html += '</details>';
+    }
     if (!cfg.bank) html += '<div class="note">입금 계좌가 비어 있어요. <span data-act="go" data-href="#/vset" style="text-decoration:underline;cursor:pointer">거래처 설정</span>에서 넣으면 명세서 아래에 나와요.</div>';
     app.innerHTML = html;
   };
@@ -7896,6 +7950,7 @@
   app.addEventListener('change', function(e){
     var t = e.target;
     if (t.matches && t.matches('input[data-vdq]')) vdSaveQty(t).catch(vdErr);
+    else if (t.classList && t.classList.contains('vd-rc-file')) vdRcUpload(t).catch(vdErr);
     else if (t.id === 'vd-date' && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) nav('#/vd/' + t.value);
   });
   app.addEventListener('click', async function(e){
@@ -7907,6 +7962,13 @@
         case 'vd-ex-open': vdSt.exOpen = true; render(); break;
         case 'vd-ex-close': vdSt.exOpen = false; render(); break;
         case 'vd-ex-add': el.disabled = true; try { await vdAddExtra(); } finally { el.disabled = false; } break;
+        case 'vd-rc-open': { var u = el.getAttribute('src'); if (u) window.open(u, '_blank'); break; }
+        case 'vd-rc-del': {
+          if (!window.confirm('이 영수증 사진을 지울까요?')) break;
+          var rc = (await db.select('ops_vendor_receipts', { eq: { id: id } }))[0];
+          if (rc){ await db.remove('ops_vendor_receipts', { id: id }); db.removeFile('receipts', rc.photo_path).catch(function(){}); }
+          toast('지웠어요'); render(); break;
+        }
         case 'vd-ex-del': if (!window.confirm('이 금액을 지울까요?')) break; await db.remove('ops_vendor_extras', { id: id }); toast('지웠어요'); render(); break;
         case 'vd-share': {
           var c = vdCur; el.disabled = true; var old = el.textContent; el.textContent = '만드는 중…';
@@ -7976,7 +8038,7 @@
       });
     });
     var X = [ { id: 'vx1', vendor_id: 'v3', site_id: 'vs4', on_date: prev + '-10', kind: 'taxi', amount: -5000, memo: '종각 택시', created_at: daysAgo(20) }, { id: 'vx2', vendor_id: 'v3', site_id: 'vs5', on_date: prev + '-17', kind: 'delivery', amount: 4000, memo: '청담 택배', created_at: daysAgo(15) } ];
-    return { ops_vendors: V, ops_vendor_sites: S, ops_vendor_items: I, ops_vendor_deliveries: D, ops_vendor_extras: X, ops_vendor_statements: [] };
+    return { ops_vendors: V, ops_vendor_sites: S, ops_vendor_items: I, ops_vendor_deliveries: D, ops_vendor_extras: X, ops_vendor_statements: [], ops_vendor_receipts: [] };
   }
 
   // ===== 매출·손익: 일일 보고서 (supabase-migration-pnl.sql, 기획/매출손익_설계.md) =====
