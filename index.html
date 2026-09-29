@@ -853,7 +853,7 @@
     if (isManager()) html += row('#/uniform-swap', 'tile-orange', '🔄', '유니폼 교체 (반팔 → 긴팔)', '계절 교체 · 반팔 반납 + 긴팔 수령 · 날짜 · 서명 PDF');
     if (isManager()) html += row('#/uniform-return', 'tile-purple', '👕', '유니폼 반납', '퇴사자 반납 확인 · 서명 · 반납확인서 PDF');
     if (isOwner()) html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
-    if (!isOwner()) html += row('#/cert', 'tile-blue', '📃', '재직·경력증명서 신청', '은행·관공서 제출용 · 사장님 승인 후 메일로 받기');
+    if (session.role === 'manager') html += row('#/cert', 'tile-blue', '📃', '재직·경력증명서 신청', '은행·관공서 제출용 · 사장님 승인 후 메일로 받기');
     html += row('#/health', 'tile-red', '🩺', '보건증', '내 보건증 만료일 · 새 보건증 사진 올리기');
     if (isManager()) html += row('#/health-admin', 'tile-red', '🩺', '보건증 관리', '만료 임박 빨간 표시 · 제출 확인(완료)');
     if (isManager()) html += row('#/roster-sync', 'tile-purple', '📋', '명부 동기화', '근무자 현황 시트 붙여넣기 한 번으로 신입·퇴사·보건증 정리');
@@ -6521,8 +6521,9 @@
     render();
   }
 
-  // --- 직원: 재직·경력증명서 신청 ---
+  // --- 직원: 재직·경력증명서 신청 (매니저 전용 — 알바·매장폰은 홈에서 안 보이고, 주소로 들어와도 막음) ---
   routes.cert = async function(){
+    if (session.role !== 'manager'){ nav('#/home'); return; }
     await loadBase();
     var mine = await db.select('ops_cert_requests', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } });
     var email = ''; try { var dd = await db.select('ops_documents', { eq: { staff_id: session.staffId }, order: { col: 'created_at', asc: false } }); dd.some(function(r){ if (r.email_to){ email = r.email_to; return true; } return false; }); } catch(e){}
