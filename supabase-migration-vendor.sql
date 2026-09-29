@@ -142,7 +142,7 @@ begin
 end $$;
 
 -- 명세서 머리글(공급자)·입금 계좌 — 앱의 [거래처 설정]에서 고칠 수 있어요
-insert into ops_settings (key, value) values ('vendor_stmt', '{"supplier":"본노엘","ceo":"손성필","phone":"010-3815-1470","biz_no":"","bank":"","footer":"위 금액으로 입금해 주세요. 감사합니다."}'::jsonb)
+insert into ops_settings (key, value) values ('vendor_stmt', '{"supplier":"본노엘","ceo":"","phone":"","biz_no":"","bank":"","footer":"위 금액으로 입금해 주세요. 감사합니다."}'::jsonb)
 on conflict (key) do nothing;
 
 -- =========================================================
@@ -173,6 +173,3 @@ create policy "receipts insert" on storage.objects for insert with check (bucket
 drop policy if exists "receipts delete" on storage.objects;
 create policy "receipts delete" on storage.objects for delete using (bucket_id = 'receipts');
 
--- 본노엘 사업자번호 (영수증에서 확인) — 비어 있을 때만 채움
-update ops_settings set value = jsonb_set(value, '{biz_no}', '"354-85-01989"')
-where key = 'vendor_stmt' and coalesce(value->>'biz_no', '') = '';

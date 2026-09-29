@@ -7585,7 +7585,7 @@
     discount: { name: '할인', sign: -1 },
     etc: { name: '기타', sign: 0 }   // 0 = 넣은 부호 그대로 (빼려면 -5000)
   };
-  var VD_CFG_DEFAULT = { supplier: '본노엘', ceo: '', phone: '', biz_no: '354-85-01989', bank: '', footer: '위 금액으로 입금해 주세요. 감사합니다.' };
+  var VD_CFG_DEFAULT = { supplier: '본노엘', ceo: '', phone: '', biz_no: '', bank: '', footer: '위 금액으로 입금해 주세요. 감사합니다.' };
   var vdSt = { exOpen: false };
   function vdCanInput(){ return isOwner() || (isManager() && /성수/.test((session && session.branchName) || '')); }
   function vdErr(err){ console.error(err); toast('실패: ' + (err.message || err) + ' (처음이면 supabase-migration-vendor.sql 실행 필요)'); }
