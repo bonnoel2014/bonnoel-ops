@@ -654,18 +654,23 @@
       var nowIds = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
       var td = todayStr(), nm = nowMin();
       var nr = await Promise.all([ db.select('ops_attendance', { in: { branch_id: nowIds }, gte: { work_date: addDays(td, -1) } }), loadSchedule(nowIds, td, td) ]);
+      var ownerIds = base.staff.filter(function(s){ return s.role === 'owner'; }).map(function(s){ return s.id; });
       var nowRows = nowIds.map(function(b){
-        var recsB = nr[0].filter(function(r){ return r.branch_id === b; }), late = [], noOut = [], working = [];
+        var recsB = nr[0].filter(function(r){ return r.branch_id === b; }), late = [], noOut = [], working = [], workingIds = [];
         recsB.filter(isOpenRec).forEach(function(r){
           var se = r.sched_end ? toMin(hm5(r.sched_end)) : null, ss = r.sched_start ? toMin(hm5(r.sched_start)) : null;
           if (se != null && ss != null && se <= ss) se += 1440;
-          if (r.work_date === td && se != null && nm >= se + 30) noOut.push(esc(staffName(r.staff_id)) + ' (' + hm5(r.sched_end) + ' 끝)');
-          else working.push(esc(staffName(r.staff_id)) + ' ' + hm(r.clock_in));
+          if (r.work_date === td && se != null && nm >= se + 30){ if (ownerIds.indexOf(r.staff_id) < 0) noOut.push(esc(staffName(r.staff_id)) + ' (' + hm5(r.sched_end) + ' 끝)'); }
+          else { working.push(esc(staffName(r.staff_id)) + ' ' + hm(r.clock_in)); workingIds.push(r.staff_id); }
         });
         shiftsOn(nr[1], b, td).forEach(function(s){
           if (s.kind === 'off' || s.kind === 'covering') return;
           var who = s.kind === 'sub' ? (s.req && s.req.sub_staff_id) : s.staffId; if (!who) return;
           var sm = toMin(s.start), em = toMin(s.end); if (em <= sm) em += 1440;
+          if (ownerIds.indexOf(who) >= 0){   // 사장님은 출근 안 눌러도 됨: 근무표 시간 안이면 근무 중으로
+            if (nm >= sm && nm < em && workingIds.indexOf(who) < 0){ working.push(esc(staffName(who)) + ' ' + hm5(s.start) + '~'); workingIds.push(who); }
+            return;
+          }
           if (nm < sm + 5 || nm >= em) return;   // 시작 5분 지나고 아직 근무 시간 안
           if (!recsB.some(function(r){ return r.staff_id === who && r.work_date === td && r.clock_in; })) late.push(esc(staffName(who)) + ' ' + hm5(s.start) + '~ (' + (nm - sm) + '분 지남)');
         });
