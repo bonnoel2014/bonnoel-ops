@@ -888,15 +888,8 @@
     html += tge();
     var certPend = 0;
     if (isOwner()){ try { certPend = (await db.select('ops_cert_requests', { eq: { status: 'requested' } })).length; } catch(e){ console.warn('증명서 신청 표 없음', e); } }
-    html += grp('매출·손익');   // 사장님만
-    if (isOwner()) html += row('#/pnl-dash', 'tile-purple', '📊', '대시보드', '매출·이익 한눈에', true);
-    if (isOwner()) html += row('#/pnl', 'tile-blue', '📈', '일일 보고서', '그날의 손익계산서 · 4매장 합계와 매장별');
-    if (isOwner()) html += row('#/pnl-in', 'tile-green', '✏️', '매출 넣기', '하루 한 번 4매장 매장·배민·쿠팡이츠 매출');
-    if (isOwner()) html += row('#/pnl-month', 'tile-orange', '🧾', '월 정산', '월 손익 · 실제 금액 고치기 · 세무사용 엑셀');
-    if (isOwner()) html += row('#/pnl-set', 'tile-gray', '⚙️', '손익 설정', '원가율·배달 수수료·매장별 인건비·고정비');
-    html += tge();
-    html += grp('자금');
-    if (isOwner()) html += row('#/cash', 'tile-green', '🏦', '자금 흐름', '법인 통장 거래내역 → 들어온 돈·나간 돈·카드 대금·배민·4대보험 (사장님만)');
+    html += grp('매출·자금');   // 사장님만 — 2026-09-30 사장님 앱(owner.bonnoel.com)으로 옮김
+    if (isOwner()) html += row('https://owner.bonnoel.com', 'tile-purple', '🔐', '사장님 앱 (옮겼어요)', '일일 매출·월 정산·손익 설정·자금 흐름 → owner.bonnoel.com');
     html += tge();
     html += grp('법인');
     if (isOwner()) html += row('#/corp', 'tile-purple', '🏛️', '법인 서류', certPend ? '⚠ 증명서 신청 ' + certPend + '건 · 재직·경력증명서 · 주주명부 · 서류함' : '재직·경력증명서 · 주주명부 · 서류함 · 발급 대장 (사장님만)');
@@ -8362,6 +8355,15 @@
     }
     return { ops_daily_sales: S };
   }
+
+  // ===== 사장님 앱으로 옮긴 화면 (2026-09-30) =====
+  // 매출·손익·자금 흐름은 owner.bonnoel.com (비공개 저장소 bonnoel-owner, 이메일 로그인)에서. 위 코드는 사장님 앱 ops.html을 만들 때 가져가는 원본이라 남겨 둠.
+  async function movedToOwner(){
+    app.innerHTML = topbar('사장님 앱으로 옮겼어요', true) +
+      '<div class="note ok">일일 매출·월 정산·손익 설정·자금 흐름은 이제 <b>사장님 앱</b>에서 봐요.<br>사장님 이메일 로그인으로만 열려서 더 안전해요.</div>' +
+      '<a class="btn primary block" style="margin-top:12px" href="https://owner.bonnoel.com" target="_blank" rel="noopener">🔐 owner.bonnoel.com 열기</a>';
+  }
+  ['pnl', 'pnl-in', 'pnl-set', 'pnl-month', 'pnl-dash', 'cash', 'cash-month', 'cash-review', 'cash-upload', 'cash-settings'].forEach(function(r){ routes[r] = movedToOwner; });
 
   // ===== 시작 =====
   if (DEMO) db = makeMemoryDb(Object.assign(demoSeed(), vdDemoSeed(), pnlDemoSeed()));
