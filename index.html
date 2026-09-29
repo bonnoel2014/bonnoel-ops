@@ -144,6 +144,13 @@
   .hist:last-child{ border-bottom:0; }
   .hist .sp{ flex:1; }
   .hidden{ display:none !important; }
+  .clrow{ cursor:pointer; user-select:none; align-items:flex-start; }
+  .clbox{ flex:0 0 26px; height:26px; border:2px solid var(--line-strong); border-radius:8px; display:flex; align-items:center; justify-content:center; color:transparent; font-size:17px; margin-top:1px; }
+  .clrow.on{ background:var(--accent-soft); }
+  .clrow.on .clbox{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .clrow.on .clt{ color:var(--ink-soft); text-decoration:line-through; }
+  .clrow.sub{ padding-left:34px; }
+  .clnote{ font-size:13px; color:var(--warn); margin-top:2px; }
   .sigpad{ width:100%; height:170px; border:1px dashed var(--line-strong); border-radius:var(--radius-m); background:#fff; touch-action:none; display:block; }
   .sigprev{ background:#fff; border:1px solid var(--line); border-radius:var(--radius-m); padding:6px; text-align:center; }
   .sigprev img{ height:60px; }
@@ -687,6 +694,17 @@
         html += '</div>';
       }
     } catch(e){ console.warn('알바 로그북 표 없음', e); }
+    if (isManager()) try { // 오늘 체크리스트 제출 현황 (supabase-migration-checklist.sql 전이어도 홈은 열리게)
+      var clIds = (isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId]).filter(function(b){ return CL_LISTS[branchName(b)]; });
+      if (clIds.length){
+        var clRuns = (await db.select('ops_checklist_runs', { eq: { run_date: todayStr() } })).filter(function(r){ return r.list_key === 'main'; });
+        html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #00BCD4"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:2px">📋 오늘 체크리스트</div>' + clIds.map(function(b){
+          var r = clRuns.filter(function(x){ return x.branch_id === b; })[0];
+          var st = !r ? '<span class="badge warn">아직 안 함</span>' : r.status === 'submitted' ? '<span class="badge ok">✓ 제출 ' + esc(staffName(r.staff_id) || '') + ' ' + esc(hm(r.submitted_at)) + '</span>' + (r.total - r.done ? ' <span style="color:var(--danger)">못 한 ' + (r.total - r.done) + '개</span>' : '') : '<span class="badge">진행 중 ' + (r.done || 0) + '/' + (r.total || 0) + '</span>';
+          return '<a href="#/checklist/' + esc(b) + '" class="card" style="display:block;margin:6px 0 0;padding:8px 12px;font-size:13px"><b>' + esc(branchName(b)) + '</b> · ' + st + '</a>';
+        }).join('') + '</div>';
+      }
+    } catch(e){ console.warn('체크리스트 표 없음', e); }
     if (isManager()){
       var ids = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
       var st = await loadStock(ids);
@@ -769,6 +787,7 @@
     if (isOwner()) html += row('#/pay-setup', 'tile-gray', '💵', '급여 설정', '시급·고용형태·요율 (사장님만)');
     html += tge();
     html += grp('로그북(업무일지)');
+    if (isManager()) html += row('#/checklist', 'tile-green', '📋', '마감·오픈 체크리스트', '매장폰에서 알바가 체크 → 이름 고르고 제출하고 퇴근 · 매니저·사장님은 제출 현황 확인');
     html += row('#/alog', 'tile-yellow', '✍️', '근무자 일지 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
     if (isManager()) html += row('#/alog-admin', 'tile-orange', '📒', '로그북 확인', '근무자·매니저 일지 · 확인 체크 · 처리 안 된 것 · 종류별 모아보기');
     if (isManager()) html += row(LINKS.logbook, 'tile-blue', '👔', '매니저 일지 쓰기', '매니저 로그북 · 업무일지·공지사항·행사·업무요청 (새 창, 알바는 안 보임)');
@@ -7361,6 +7380,121 @@
     }
     return { accounts: A, rules: [], tx: tx };
   }
+
+  // ===== 체크리스트 (마감·오픈미들 등) =====
+  // 알바는 로그인 없이 "매장폰"에서 체크 → 이름 고르고 [제출하고 퇴근]. 보이는 사람: 매장폰·매니저·사장님 (알바 개인 계정에는 안 보임).
+  // 표: supabase-migration-checklist.sql. 항목 내용은 아래 CL_LISTS 를 고치면 됨 (매장 이름이 열쇠).
+  var CL_LISTS = {"성수점":{"shift":"마감","intro":"","sections":[{"title":"마감 청소·정리","items":[{"t":"포장 마무리 + 포장지 제자리로 정리"},{"t":"진열장 아래 보관 장에 비품채우기"},{"t":"빵비닐 8장 자르기"},{"t":"쇼케이스 마늘바게트 비닐 교체"},{"t":"리뷰 마들렌 확인하고 만들기"},{"t":"포스 주변 물티슈로 닦기 + QR결제판 닦기"},{"t":"쇼케이스 물받이 비우기 ( 2개 )"},{"t":"파운드 케이크 맛별로 총 10개씩 미리 준비해놓기"},{"t":"고메 버터 채우기"},{"t":"앙버터·프레첼 덮개 비닐정리"},{"t":"소금빵 전부 밀봉하기"},{"t":"칼 세척"},{"t":"식빵기계 닦고 부스러기 + 주변 정리","note":"( 서랍 빼놓고 기계 밑에 쓸기 )"},{"t":"단과자 + 식빵 선반 물티슈로 닦기"},{"t":"홀 모든 철판 닦기"},{"t":"홀·매장 밖 바닥 쓸고 + 걸레질 하기 + 매트 털기"},{"t":"화이트롤, 카스테라, 앙금과자 뚜껑에 스티커 붙이기"},{"t":"뜨아컵에 스티커 붙이기","note":"( 1줄 이상 있어야 함 )"},{"t":"소금빵 재고 많으면 초코소금빵용 남기기","note":"( 포장실 보관 12개 ~ 15개 )"},{"t":"아이스박스 정리 + 아이스팩 얼리기 (평평하게)"},{"t":"물통에 물 채우기 ( 3통 )"},{"t":"커피 찌꺼기 물받침 세척해서 엎어놓기"},{"t":"배민·쿠팡 → 퇴근 20분 전 / 커피, 커피세트, 선물세트 품절하기","note":"* 평일만 1시간 전 품절처리"},{"t":"배민·쿠팡 → 퇴근 30분 전 실수량으로 잔여 수정"},{"t":"남은 바게트 비닐 씌워서 뜨개방으로 이동"},{"t":"주방 버터냉동고에 얼음 2봉지 보관","note":"( 얼음은 뜨개방에서 가져오기 )"},{"t":"소금빵 전부 밀봉하기"}]},{"title":"20시 ~ 20시 30분 정산","items":[{"t":"남은빵 재고 영수증 발행"},{"t":"배민, 쿠팡 금액 30% 할인 처리"},{"t":"포스 시재 확인 + 답십리 시재"},{"t":"쿠키 3종 답십리 재고 적기","note":"( 20시 재고표 확인 )"},{"head":"빵재고 영수증 하단에"},{"t":"1. 배달 배민+쿠팡 30% 입력","sub":true},{"t":"2. 남은빵 영수증 입력 + 반품 완료했습니다","sub":true}]},{"title":"퇴근 전","items":[{"t":"퇴근 15분 전 \"홀 배 쿠\" 올리기"},{"t":"퇴근 전 사장님 다음날 스케줄 전달하기"},{"t":"주차장 꼬깔 + 안내판 에어컨호수 양옆으로 비치하기"},{"t":"긴바게트 컷팅 + 비컷팅 옵션 품절하기"}]},{"title":"사진 찍고 퇴근 전 톡방에 올리기","items":[{"t":"쓰레기 분리수거"},{"t":"도마 세척 (포스 쪽 흰 도마 + 작은 도마 2개)"},{"t":"창틀 내·외부 물티슈로 닦기"},{"t":"정면 유리문 + 손잡이 닦기"},{"t":"손님 쟁반, 선반, 집게 닦기 + 유산지 채우기"},{"t":"쇼케이스 정면 유리 + 문 틀 닦기"},{"t":"포장지, 비품채우기 + 손잡이 봉투 채우기","note":"📷 포스쪽 + 커피쪽 + 포장실 = 사진 총 4장"},{"t":"물, 원두, 컵, 케리어, 스트로우 채우기","note":"( 커피 배달 마감 후 )"},{"t":"빵렉 정리"},{"t":"빵렉 밑에 선풍기 끈 체크"},{"t":"진열장 1 + 2 + 쇼케이스 정리 후 사진","note":"📷 사진 총 3장"},{"t":"사진 찍어서 톡방에 올리기"}]},{"title":"●중계점 물류 챙기기●","items":[{"t":"1. 8시 재고표 후에 본→중 리스트 올라오면 물류용 손잡이 봉투에 담기"},{"t":"2. 포장실 선반에 올려두고 봉투마다 본→중 적어서 붙이기"},{"t":"3. 챙긴 물류 사진 찍어서 성수점 알바톡방에 올리기"},{"t":"4. 물류 이동하는 요일 오픈근무자 태그해서 올리기"}]}]},"왕십리점":{"shift":"오픈-미들","intro":"","sections":[{"title":"청소구역","items":[{"t":"내·외 유리창 (문 손잡이 포함)"},{"t":"셀프바 먼지 닦기"},{"t":"구움과자 진열판 닦기"},{"t":"카운터 손님 트레이 두는 쪽 닦기"},{"t":"엘리베이터 문, 버튼"},{"t":"쟁반(앞/뒤), 집게 닦기"},{"t":"카운터 돈통 위, 모니터, 키보드 먼지 청소"},{"t":"분리수거 비닐 교체"},{"t":"음쓰 비우기","note":"(2인 교대)"},{"t":"바닥 지저분하면 쓸기","note":"(손님 안 계실 때)"},{"t":"공기청정기, 키오스크 위 먼지 청소"}]},{"title":"공통업무","items":[{"t":"스티커 붙이기","note":"(몰드, 쌀식빵, 앙버터 하트)"},{"t":"러스크용 자르기"}]},{"title":"※ 별도사항","items":[{"t":"냉장 쇼케이스 파란 물 버리기"}]}],"footer":"추가·수정 업무가 있다면 종이에 작성해주시고 왕십리 톡방에 올려주세요 (오픈톡 ×)"},"답십리점":{"shift":"업무","intro":"공통 업무: 출근하면 전타임 근무자가 배달 품절처리 실수할 수 있으니 새로고침해서 꼭 볼 것.\n모든 포장지류 깨끗이 사용하고, 제자리 놓고 정리하고 퇴근하기. 마감조에게 모두 맡기지 말 것.","sections":[{"title":"알바 공통","items":[{"t":"월·수·금 마감알바: 비닐, 캔, 플라스틱 대문 밖에 내놓기","note":"오후 8~9시 사이 (퇴근할 때 들고 나가는 거 아님!!)"},{"t":"매일: 종이류는 요일, 시간 상관없이 내놓기"},{"t":"자기가 마신 컵은 자기가 버리고 퇴근"},{"t":"사용한 포장지, 기물 등은 제자리에 둘 것"},{"t":"오전, 오후, 마감 상관없이 업무 도와주고 처리한 일에는 체크해줄 것"}]},{"title":"오후 + 마감조 (서로 도와주기)","items":[{"t":"매주 화·수 중에 1회 비품 리스트 올리고 요청할 것"},{"t":"오후조가 남긴 포장 최대한 할 것"},{"t":"고메버터 자르기"},{"t":"손잡이, 빵봉투 등 비품 채우기"},{"t":"유산지 채우기"},{"t":"얼음컵 1판 항상 만들고, 얼음 부족 시 본점에 톡 남겨놓기"},{"t":"쇼케이스, 유리창 닦고, 물티슈로 닦기","note":"10분"},{"t":"오전 + 오후 사용한 포장지류 종류별로 끼워서 정리 및 보충"},{"t":"바게트류 최대한 컷팅"},{"t":"파운드 조각, 홀 채우기","note":"이후 포장 못 하면 저녁조가 포장 (냉동실에서 꺼내놓는 건 오전, 오후 근무자가 해놓을 것)"}]},{"title":"마감조 (17시 ~ 마감)","items":[{"t":"데스크 옆에 일반쓰레기 주방에 종량제 봉투에 담기"},{"t":"퇴근 30분 전에 커피 품절하고 마감할 것"},{"t":"커피 물, 원두, 컵, 컵홀더, 비닐케리어, 빨대, 물 2통 보충"},{"t":"찌꺼기 버리고, 물받이 세척해서 엎어놓기"},{"t":"제과류 날짜 지난 거 폐기해서 푸드 보내기"},{"t":"제과 재고표 작성 (빨간 받침)"},{"t":"남은 빵, 푸드뱅크 영수증 발행","note":"→ 반품 꼭 할 것"},{"t":"배민, 쿠팡 30% 할인 입력","note":"(반품 금지)"},{"t":"시제 ① 본점에 보내는 거 ② 돈통에 넣은 시제 → 리스트 작성"},{"t":"손님 쟁반쪽 우드 선반 쓸고, 닦기"},{"t":"식빵기계, 데스크 물티슈로 닦기"},{"t":"홀에 바게트 올려놓은 선반 부스러기 쓸기"},{"t":"고메 버터 자르기 + 냉장고에 채우기"},{"t":"빵 덮는 비닐 잘라놓기"},{"t":"빵 이름표 종류별로 분류해서 놓기"},{"t":"제과류 채우기","note":"(날짜 도장 찍기)"},{"t":"배달 잔여 지우기","note":"(식빵은 잔여 1 유지)"},{"t":"냉·난방기 끄기"},{"t":"바닥 쓸고 닦기"},{"t":"도마 2개 식빵 기계 위에 올려서 말리기"}]},{"title":"최종 사진 보내기 (9장)","items":[{"head":"ⓐ 4장"},{"t":"포스, 럭카, 냉장 + 냉동 문 열고, 천장 난방기 2대 사진","sub":true},{"head":"ⓑ 남은 사진"},{"t":"남은빵 영수증, 시재파일, 다이어리 (빵 + 시재돈)","sub":true},{"t":"사진 9장 톡방에 보내기"}]}],"memo":"전달 사항 (상세하게)"}};
+  var clSt = { key: null, b: null, date: null, run: null, checked: {}, memo: '', pick: false, editing: false, timer: null };
+  function clItems(list){
+    var out = [];
+    list.sections.forEach(function(s, si){ s.items.forEach(function(it, ii){ if (!it.head) out.push({ id: si + '-' + ii, t: it.t }); }); });
+    return out;
+  }
+  function clDone(items){ return items.filter(function(i){ return clSt.checked[i.id]; }).length; }
+  function clScheduleSave(){ clearTimeout(clSt.timer); clSt.timer = setTimeout(function(){ clSaveDraft().catch(function(e){ console.error(e); toast('저장 실패: ' + (e.message || e)); }); }, 500); }
+  async function clSaveDraft(){
+    var st = clSt, list = st.b ? CL_LISTS[branchName(st.b)] : null;
+    if (!list || (st.run && st.run.status === 'submitted' && !st.editing)) return;
+    var items = clItems(list);
+    var saved = await db.upsert('ops_checklist_runs', [{ run_date: st.date, branch_id: st.b, list_key: 'main', checked: st.checked, memo: st.memo || null, total: items.length, done: clDone(items), status: 'draft', updated_at: nowIso() }], 'run_date,branch_id,list_key');
+    st.run = Object.assign({}, st.run || {}, { status: 'draft' });
+    return saved;
+  }
+  async function clSubmit(staffId){
+    var st = clSt, list = CL_LISTS[branchName(st.b)], items = clItems(list);
+    var missing = items.filter(function(i){ return !st.checked[i.id]; }).map(function(i){ return i.t; });
+    if (missing.length && !window.confirm('아직 안 한 게 ' + missing.length + '개 있어요.\n그래도 제출할까요? (못 한 항목은 매니저·사장님에게 표시돼요)')) return;
+    clearTimeout(st.timer);
+    var now = nowIso();
+    await db.upsert('ops_checklist_runs', [{ run_date: st.date, branch_id: st.b, list_key: 'main', checked: st.checked, memo: st.memo || null, total: items.length, done: items.length - missing.length, missing: missing, status: 'submitted', staff_id: staffId, submitted_at: now, updated_at: now }], 'run_date,branch_id,list_key');
+    st.run = { status: 'submitted', staff_id: staffId, submitted_at: now }; st.pick = false; st.editing = false;
+    toast('제출했어요! 이제 퇴근을 눌러 주세요');
+    nav('#/clock');
+  }
+
+  routes.checklist = async function(params){
+    await loadBase();
+    var html = topbar('체크리스트', true, whoChip());
+    if (!isManager()){ app.innerHTML = html + '<div class="note">체크리스트는 매장폰(또는 매니저·사장님 계정)에서만 쓸 수 있어요. 근무 중에는 매장폰으로 들어가서 체크해 주세요.</div>'; return; }
+    var b = pickBranch(params, false);
+    if (!b){ app.innerHTML = html + '<div class="note">매장을 골라서 들어와야 해요. 오른쪽 위 이름을 눌러 다시 들어와 주세요.</div>'; return; }
+    var bname = branchName(b), list = CL_LISTS[bname], date = todayStr();
+    html = topbar('체크리스트 · ' + bname, true, whoChip()) + branchTabs(b, false);
+    if (!list){ app.innerHTML = html + '<div class="note">이 매장 체크리스트는 아직 준비 중이에요.</div>'; return; }
+    var key = b + '|' + date;
+    if (clSt.key !== key){
+      var rows = await db.select('ops_checklist_runs', { eq: { branch_id: b, run_date: date } });
+      var run = rows.filter(function(r){ return r.list_key === 'main'; })[0] || null;
+      clSt = { key: key, b: b, date: date, run: run, checked: (run && run.checked) || {}, memo: (run && run.memo) || '', pick: false, editing: false, timer: null };
+    }
+    var items = clItems(list), done = clDone(items), submitted = !!(clSt.run && clSt.run.status === 'submitted' && !clSt.editing);
+    html += '<div class="inline" style="justify-content:space-between;margin:8px 4px 0"><b>' + esc(bname) + ' · ' + esc(list.shift) + ' · ' + esc(fmtDateK(date)) + ' 오늘</b><span class="badge' + (done === items.length ? ' ok' : '') + '" id="cl-count">' + done + ' / ' + items.length + '</span></div>';
+    if (list.intro) html += '<div class="muted" style="margin:6px 4px 0;white-space:pre-line">' + esc(list.intro) + '</div>';
+    if (submitted){
+      html += '<div class="note ok">✓ 제출 완료 · ' + esc(staffName(clSt.run.staff_id) || '') + ' · ' + esc(fmtDT(clSt.run.submitted_at)) + '<div style="margin-top:8px"><button class="btn sm" data-act="cl-reopen">다시 열어서 고치기</button></div></div>';
+    }
+    list.sections.forEach(function(s, si){
+      html += '<div class="group-title">' + esc(s.title) + '</div><div class="card">';
+      s.items.forEach(function(it, ii){
+        if (it.head){ html += '<div class="item" style="font-weight:600;color:var(--accent);border-bottom:0;padding-bottom:2px">' + esc(it.head) + '</div>'; return; }
+        var id = si + '-' + ii;
+        html += '<div class="item clrow' + (it.sub ? ' sub' : '') + (clSt.checked[id] ? ' on' : '') + '"' + (submitted ? '' : ' data-act="cl-toggle" data-id="' + id + '"') + '><div class="clbox">✓</div><div><div class="clt">' + esc(it.t) + '</div>' + (it.note ? '<div class="clnote">' + esc(it.note) + '</div>' : '') + '</div></div>';
+      });
+      html += '</div>';
+    });
+    html += '<div class="group-title">' + esc(list.memo || '전달 사항 (선택)') + '</div><textarea class="in" id="cl-memo" rows="3"' + (submitted ? ' disabled' : '') + ' placeholder="다음 근무자·매니저에게 알릴 것">' + esc(clSt.memo) + '</textarea>';
+    if (list.footer) html += '<div class="muted" style="margin:10px 4px">' + esc(list.footer) + '</div>';
+    if (!submitted){
+      if (!clSt.pick){
+        html += '<div style="margin-top:16px"><button class="btn primary block" style="padding:16px;font-size:17px" data-act="cl-pick">제출하고 퇴근</button></div>';
+      } else {
+        var people = base.staff.filter(function(s){ return s.active !== false && (s.branch_id === b || s.role === 'owner' || !s.branch_id); });
+        html += '<div class="group-title">누가 작성했어요? 내 이름을 눌러 주세요</div><div class="name-grid">';
+        people.forEach(function(s){ html += '<button class="btn" data-act="cl-who" data-id="' + esc(s.id) + '">' + esc(s.name) + '</button>'; });
+        html += '</div><div style="text-align:center;margin-top:10px"><span class="muted" data-act="cl-pick-cancel" style="cursor:pointer;text-decoration:underline">아직 더 할게요</span></div>';
+      }
+    }
+    // 최근 2주 제출 현황
+    try {
+      var hist = await db.select('ops_checklist_runs', { eq: { branch_id: b }, gte: { run_date: addDays(date, -14) }, order: { col: 'run_date', asc: false } });
+      html += '<div class="group-title">최근 2주 제출 현황</div><div class="card">';
+      for (var k = 1; k <= 14; k++){
+        var d = addDays(date, -k), r = hist.filter(function(x){ return x.run_date === d && x.list_key === 'main'; })[0];
+        var badge = !r ? '<span class="badge danger">기록 없음</span>' : r.status === 'submitted' ? '<span class="badge ok">✓ ' + esc(staffName(r.staff_id) || '제출') + ' ' + esc(hm(r.submitted_at)) + '</span>' : '<span class="badge warn">제출 안 함</span>';
+        var miss = (r && r.status === 'submitted' ? (r.missing || []) : []);
+        html += '<div class="item" style="display:block"><div class="inline" style="justify-content:space-between"><b>' + esc(fmtDateK(d)) + '</b><span>' + (r ? '<span class="muted">' + (r.done || 0) + '/' + (r.total || 0) + '</span> ' : '') + badge + '</span></div>' +
+          (miss.length ? '<div style="font-size:13px;color:var(--danger);margin-top:4px">못 한 것: ' + miss.slice(0, 6).map(esc).join(' · ') + (miss.length > 6 ? ' 외 ' + (miss.length - 6) + '개' : '') + '</div>' : '') +
+          (r && r.memo ? '<div style="font-size:13px;margin-top:4px;white-space:pre-wrap">📝 ' + esc(r.memo) + '</div>' : '') + '</div>';
+      }
+      html += '</div>';
+    } catch(e){ console.warn('체크리스트 기록 없음', e); }
+    app.innerHTML = html;
+  };
+
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act]'); if (!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    if (!/^cl-/.test(act)) return;
+    try {
+      switch (act){
+        case 'cl-toggle': {
+          if (clSt.checked[id]) delete clSt.checked[id]; else clSt.checked[id] = true;
+          el.classList.toggle('on', !!clSt.checked[id]);
+          var list = CL_LISTS[branchName(clSt.b)], items = clItems(list), cnt = document.getElementById('cl-count');
+          if (cnt){ var dn = clDone(items); cnt.textContent = dn + ' / ' + items.length; cnt.classList.toggle('ok', dn === items.length); }
+          clScheduleSave(); break;
+        }
+        case 'cl-pick': clSt.pick = true; render(); break;
+        case 'cl-pick-cancel': clSt.pick = false; render(); break;
+        case 'cl-who': el.disabled = true; try { await clSubmit(id); } finally { el.disabled = false; } break;
+        case 'cl-reopen': clSt.editing = true; clSt.run = Object.assign({}, clSt.run, { status: 'draft' }); await clSaveDraft(); render(); break;
+      }
+    } catch(err){ console.error(err); toast('실패: ' + (err.message || err) + ' (SQL을 아직 안 했다면 supabase-migration-checklist.sql 실행 필요)'); }
+  });
+  app.addEventListener('input', function(e){
+    if (e.target.id === 'cl-memo'){ clSt.memo = e.target.value; clScheduleSave(); }
+  });
 
   // ===== 시작 =====
   if (DEMO) db = makeMemoryDb(demoSeed());
