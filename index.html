@@ -3468,7 +3468,7 @@
       var c = (old && old.c) || {};
       var wage = c.wage; if (wage == null){ try { var pp = await db.select('ops_pay_profiles', { eq: { staff_id: s.id } }); wage = pp[0] && num(pp[0].hourly_wage) ? num(pp[0].hourly_wage) : 10320; } catch(e){ wage = 10320; } }
       var days = c.days;
-      if (!days){ days = {}; try { var pats = await db.select('ops_shift_patterns', { eq: { staff_id: s.id } }); pats.forEach(function(p){ if (p.active === false || p.week_start) return; var brk = p.break_start && p.break_end ? toMin(p.break_end) - toMin(p.break_start) : 0; days[p.weekday] = { s: p.start_time.slice(0, 5), e: p.end_time.slice(0, 5), brk: brk >= 45 ? 60 : brk > 0 ? 30 : 0 }; }); } catch(e){} }
+      if (!days){ days = {}; try { var pats = await db.select('ops_shift_patterns', { eq: { staff_id: s.id } }); pats.forEach(function(p){ if (p.active === false || p.week_start) return; var pStart = p.start_time.slice(0, 5), pEnd = p.end_time.slice(0, 5), pDur = toMin(pEnd) - toMin(pStart); days[p.weekday] = { s: pStart, e: pEnd, brk: pDur >= 480 ? 60 : pDur >= 240 ? 30 : 0 }; }); } catch(e){} }
       var start = c.start || todayStr();
       prepState.f = { branchId: c.branchId || s.branch_id || session.branchId || base.branches[0].id, start: start, end: c.end || '', noEnd: c.end ? false : true, probation: c.probation !== false, duty: c.duty || '매장관리 및 운영업무', wage: wage, wageEnd: c.wageEnd || '', wageNoEnd: c.wageEnd ? false : true, payDay: c.payDay || 10, meal: c.meal == null ? 200000 : c.meal, days: days, minor: !!(old && old.minor) };
       prepState.uniform = uniformFromArray(old && old.uniform);
@@ -6071,6 +6071,17 @@
     } catch(err){ console.error(err); toast('실패했어요: ' + (err.message || err)); }
   });
   app.addEventListener('change', async function(e){
+    if (e.target.classList.contains('pp-ds') || e.target.classList.contains('pp-de')){
+      var ppd = e.target.getAttribute('data-d');
+      var ppS = app.querySelector('.pp-ds[data-d="' + ppd + '"]').value, ppE = app.querySelector('.pp-de[data-d="' + ppd + '"]').value;
+      if (ppS && ppE){
+        var ppDur = toMin(ppE) - toMin(ppS);
+        var ppBrk = ppDur >= 480 ? 60 : ppDur >= 240 ? 30 : 0;
+        var ppBSel = app.querySelector('.pp-db[data-d="' + ppd + '"]');
+        if (ppBSel) ppBSel.value = String(ppBrk);
+      }
+      return;
+    }
     if (e.target.id === 'ptg-staff'){ patGridStaff = e.target.value; render(); return; }
     if (e.target.id === 'ex-who'){ nav('#/' + e.target.getAttribute('data-route') + '/' + e.target.value); return; }
     if (e.target.id === 'ex-rec' || e.target.id === 'ex-kind'){ extraFill(); return; }
