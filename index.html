@@ -643,6 +643,32 @@
           (myHst.level === 'danger' && !myHc.pending ? ' <span class="muted" style="font-size:12px">→ 눌러서 새 사진 올리기</span>' : '') + '</a></div>';
       }
     } catch(e){ console.warn('내 현황 없음', e); }
+    if (isManager() && !isKiosk()) try { // 지금 출근 현황: 근무 중 / 근무표상 시작했는데 출근 안 누름 / 끝났는데 퇴근 안 누름
+      var nowIds = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
+      var td = todayStr(), nm = nowMin();
+      var nr = await Promise.all([ db.select('ops_attendance', { in: { branch_id: nowIds }, gte: { work_date: addDays(td, -1) } }), loadSchedule(nowIds, td, td) ]);
+      var nowRows = nowIds.map(function(b){
+        var recsB = nr[0].filter(function(r){ return r.branch_id === b; }), late = [], noOut = [], working = [];
+        recsB.filter(isOpenRec).forEach(function(r){
+          var se = r.sched_end ? toMin(hm5(r.sched_end)) : null, ss = r.sched_start ? toMin(hm5(r.sched_start)) : null;
+          if (se != null && ss != null && se <= ss) se += 1440;
+          if (r.work_date === td && se != null && nm >= se + 30) noOut.push(esc(staffName(r.staff_id)) + ' (' + hm5(r.sched_end) + ' 끝)');
+          else working.push(esc(staffName(r.staff_id)) + ' ' + hm(r.clock_in));
+        });
+        shiftsOn(nr[1], b, td).forEach(function(s){
+          if (s.kind === 'off' || s.kind === 'covering') return;
+          var who = s.kind === 'sub' ? (s.req && s.req.sub_staff_id) : s.staffId; if (!who) return;
+          var sm = toMin(s.start), em = toMin(s.end); if (em <= sm) em += 1440;
+          if (nm < sm + 5 || nm >= em) return;   // 시작 5분 지나고 아직 근무 시간 안
+          if (!recsB.some(function(r){ return r.staff_id === who && r.work_date === td && r.clock_in; })) late.push(esc(staffName(who)) + ' ' + hm5(s.start) + '~ (' + (nm - sm) + '분 지남)');
+        });
+        return '<a href="#/hours/' + esc(b) + '" class="card" style="display:block;margin:6px 0 0;padding:8px 12px;font-size:13px">' +
+          (isOwner() ? '<b>' + esc(branchName(b)) + '</b> · ' : '') + '근무 중 <b>' + working.length + '</b>명' + (working.length ? ': ' + working.join(', ') : '') +
+          (late.length ? '<div style="color:var(--danger);margin-top:3px">⚠ 출근 안 누름: ' + late.join(', ') + '</div>' : '') +
+          (noOut.length ? '<div style="color:var(--warn);margin-top:3px">퇴근 안 누름: ' + noOut.join(', ') + '</div>' : '') + '</a>';
+      });
+      html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #009688"><div class="muted" style="font-size:12px;font-weight:600">⏱ 지금 출근 현황 · ' + hm(nowIso()) + '</div>' + nowRows.join('') + '</div>';
+    } catch(e){ console.warn('출근 현황 없음', e); }
     try { // 알바 로그북 표(supabase-migration-alog.sql)가 아직 없어도 홈은 열리게
       var alIds = isOwner() ? base.branches.map(function(b){ return b.id; }) : [session.branchId];
       var alLogs = await loadAlogs(addDays(todayStr(), -30), todayStr(), isManager() ? alIds : [session.branchId]);
@@ -738,6 +764,10 @@
     html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '근무표보다 더 일했을 때 직접 올리기');
     html += row('#/extra-early', 'tile-orange', '🏃', '조퇴·조기 마감 올리기', '근무표보다 일찍 마쳤을 때 (수락되면 시간 줄어듦)');
     html += tge();
+    html += grp('급여');   // 사장님만 보이는 줄뿐이라 매니저·알바 화면엔 묶음 자체가 안 나옴
+    if (isOwner()) html += row('#/pay', 'tile-yellow', '💰', '급여 초안', '월별 급여 계산·명세서 (사장님만)');
+    if (isOwner()) html += row('#/pay-setup', 'tile-gray', '💵', '급여 설정', '시급·고용형태·요율 (사장님만)');
+    html += tge();
     html += grp('로그북(업무일지)');
     html += row('#/alog', 'tile-yellow', '✍️', '근무자 일지 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
     if (isManager()) html += row('#/alog-admin', 'tile-orange', '📒', '로그북 확인', '근무자·매니저 일지 · 확인 체크 · 처리 안 된 것 · 종류별 모아보기');
@@ -765,8 +795,6 @@
     if (isManager()) html += row('#/buy-list', 'tile-orange', '🧮', '직원 구매 내역', '날짜별 할인·낸 금액 합계 (마감용) · 사람별');
     html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
     if (isManager()) html += row('#/prepay-admin', 'tile-gray', '📊', '선결제 관리', '매장별 충전·사용 합계 · 손님 잔액 · 옮기기 · 코드');
-    if (isOwner()) html += row('#/pay', 'tile-yellow', '💰', '급여 초안', '월별 급여 계산·명세서 (사장님만)');
-    if (isOwner()) html += row('#/pay-setup', 'tile-gray', '💵', '급여 설정', '시급·고용형태·요율 (사장님만)');
     html += tge();
     html += grp('근로계약서·유니폼·보건증');
     if (isOwner()) html += row('#/docs-admin', 'tile-purple', '📝', '근로계약서 & 입사서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부 (사장님만)');
