@@ -4215,6 +4215,30 @@
     return html;
   }
   function buyExtraPaths(x){ var v = x.extra_photo_paths; if (!v) return []; if (typeof v === 'string'){ try { v = JSON.parse(v); } catch(e){ v = [v]; } } return Array.isArray(v) ? v.filter(Boolean) : []; }
+  // 등록한 뒤에 늦게 사진 추가: 영수증(총 3장까지) · 결제 증빙(계좌이체·카드·카카오페이인데 아직 없을 때)
+  function buyLateAddHtml(x){
+    var n = (x.photo_path ? 1 : 0) + buyExtraPaths(x).length, html = '';
+    if (n < BUY_MAX_RECEIPTS) html += '<label class="btn sm" style="cursor:pointer">📷 영수증 추가 (' + n + '/' + BUY_MAX_RECEIPTS + ')<input type="file" accept="image/*" class="hidden buy-late-file" data-id="' + esc(x.id) + '" data-kind="receipt"></label>';
+    if (buyNeedsProof(x.pay_method) && !x.pay_proof_path) html += '<label class="btn sm" style="cursor:pointer">💳 결제 증빙 추가<input type="file" accept="image/*" class="hidden buy-late-file" data-id="' + esc(x.id) + '" data-kind="proof"></label>';
+    return html ? '<div class="inline" style="flex-wrap:wrap;gap:6px;margin-top:6px">' + html + '</div>' : '';
+  }
+  async function buyLateAdd(id, kind, file){
+    if (!file) return;
+    var x = (await db.select('ops_staff_purchases', { eq: { id: id } }))[0];
+    if (!x){ toast('그 구매 기록을 못 찾았어요'); return; }
+    var extras = buyExtraPaths(x);
+    if (kind === 'receipt' && (x.photo_path ? 1 : 0) + extras.length >= BUY_MAX_RECEIPTS){ toast('영수증은 ' + BUY_MAX_RECEIPTS + '장까지 넣을 수 있어요'); return; }
+    var img = await resizeImage(file, kind === 'proof' ? 1200 : 1600);
+    var path = 'staff/' + (x.branch_id || 'none') + '/' + String(x.bought_on).slice(0, 7) + '/' + (kind === 'proof' ? 'proof-' : '') + uid() + '.jpg';
+    await db.upload('receipts', path, img.blob, 'image/jpeg');
+    var patch = { updated_at: nowIso() };
+    if (kind === 'proof') patch.pay_proof_path = path;
+    else if (!x.photo_path) patch.photo_path = path;
+    else patch.extra_photo_paths = extras.concat([path]);
+    await db.update('ops_staff_purchases', { id: id }, patch);
+    toast(kind === 'proof' ? '결제 증빙을 추가했어요' : '영수증을 추가했어요');
+    render();
+  }
   function buyReceiptsRefresh(){ var box = document.getElementById('buy-receipts-box'); if (box) box.outerHTML = buyReceiptsHtml(); else render(); }
   async function buyExtraPicked(file){
     if (!file) return;
@@ -4316,7 +4340,7 @@
       html += '<div class="group-title">내가 이번 달에 넣은 구매 · ' + s.n + '건 · 할인 ' + won(s.disc) + '원 · 낸 금액 ' + won(s.paid) + '원</div><div class="card">';
       mine.forEach(function(x){
         var today = x.bought_on === todayStr() && (x.created_at || '').slice(0, 10) === new Date().toISOString().slice(0, 10);
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(fmtDateK(x.bought_on)) + ' · ' + esc(buyerLabel(x)) + (x.items ? ' · ' + esc(x.items) : '') + '</div><div class="s">' + esc(branchName(x.branch_id)) + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '원 − 할인 ' + won(x.discount) + '원</div></div><b style="white-space:nowrap">' + won(x.paid) + '원</b>' + (today ? '<button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">지움</button>' : '') + '</div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(fmtDateK(x.bought_on)) + ' · ' + esc(buyerLabel(x)) + (x.items ? ' · ' + esc(x.items) : '') + '</div><div class="s">' + esc(branchName(x.branch_id)) + ' · ' + esc(buyMethodName(x.pay_method)) + ' ' + x.discount_rate + '% · 정가 ' + won(x.list_total) + '원 − 할인 ' + won(x.discount) + '원</div>' + buyLateAddHtml(x) + '</div><b style="white-space:nowrap">' + won(x.paid) + '원</b>' + (today ? '<button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">지움</button>' : '') + '</div>';
       });
       html += '</div><div class="muted" style="margin:6px 4px">오늘 올린 건 바로 지울 수 있어요. 지난 건은 매니저·사장님께 말해 주세요.</div>';
     }
@@ -4417,6 +4441,7 @@
           '<div class="grid2" style="margin-top:8px"><div><label class="muted">낸 금액</label><input class="in" type="number" id="bp-' + esc(x.id) + '" value="' + esc(x.paid) + '"></div><div><label class="muted">산 것</label><input class="in" id="bi-' + esc(x.id) + '" value="' + esc(x.items || '') + '"></div></div>' +
           '<div class="note danger hidden" id="bw-' + esc(x.id) + '"></div>' +
           '<div style="margin-top:8px"><label class="muted">메모</label><input class="in" id="bo-' + esc(x.id) + '" value="' + esc(x.memo || '') + '"></div>' +
+          buyLateAddHtml(x) +
           '<div class="inline" style="margin-top:10px">' + (x.photo_path ? '<button class="btn sm" data-act="buy-photo" data-path="' + esc(x.photo_path) + '">📷 영수증 보기</button>' : '') + buyExtraPaths(x).map(function(p, i){ return '<button class="btn sm" data-act="buy-photo" data-path="' + esc(p) + '">📷 영수증 ' + (i + 2) + '</button>'; }).join('') + (x.pay_proof_path ? '<button class="btn sm" data-act="buy-photo" data-path="' + esc(x.pay_proof_path) + '">💳 결제 증빙 보기</button>' : (buyProofMissing(x) ? '<span class="badge danger">결제 증빙 없음</span>' : '')) + '<button class="btn sm primary" data-act="buy-update" data-id="' + esc(x.id) + '">저장</button><span style="flex:1"></span><button class="btn sm danger" data-act="buy-del" data-id="' + esc(x.id) + '" data-path="' + esc(x.photo_path || '') + '">삭제</button></div></div>';
       });
     });
@@ -6203,6 +6228,7 @@
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'buy-proof-file'){ await buyProofPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'buy-extra-file'){ await buyExtraPicked(e.target.files && e.target.files[0]); return; }
+    if (e.target.classList.contains('buy-late-file')){ try { await buyLateAdd(e.target.getAttribute('data-id'), e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); } catch(err){ console.error(err); toast('사진 추가가 안 됐어요: ' + (err.message || err)); } return; }
     if (e.target.id === 'pp-use-file'){ await ppUsePhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('alog-file')){ await alogPhotoPicked(+e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'mlog-file'){ await mlogPhotoPicked(e.target.files && e.target.files[0]); return; }
