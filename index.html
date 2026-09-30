@@ -986,6 +986,7 @@
                 '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
                 (hasAlt ? '<input class="in ct-alt" type="number" step="1" min="0" placeholder="' + esc(x.item.count_unit) + '" data-item="' + esc(x.item.id) + '" data-factor="' + x.item.count_per_unit + '" style="width:52px;padding:8px 4px;text-align:center" title="' + esc(x.item.count_per_unit + x.item.count_unit + ' = ' + x.item.unit + ' 1') + '">' : '') +
                 '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + (todayUnlimited ? ' disabled' : '') + ' placeholder="-">' +
+                (todayUnlimited ? '' : '<button type="button" class="btn sm" data-act="qty-add" data-item="' + esc(x.item.id) + '" title="여러 자리에 나뉜 걸 더하기 (예: 10+5)" style="padding:6px 10px">+</button>') +
                 '<span class="unit">' + esc(x.item.unit) + '</span>' +
                 '<label class="muted" style="display:flex;align-items:center;gap:2px;font-size:12px;cursor:pointer" title="세기 어려울 만큼 충분함"><input type="checkbox" class="qty-unlimited" data-item="' + esc(x.item.id) + '" data-orig="' + (todayUnlimited ? '1' : '') + '"' + (todayUnlimited ? ' checked' : '') + '>α</label>' +
                 '</div></div>';
@@ -4110,6 +4111,7 @@
   var BUY_METHODS = [
     { id: 'cash', name: '현금', rate: 30 },
     { id: 'transfer', name: '계좌이체', rate: 30 },
+    { id: 'kakaopay', name: '카카오페이', rate: 30 },
     { id: 'card', name: '카드', rate: 20 },
     { id: 'stale50', name: '할인빵(전날) 50%', rate: 50 },
     { id: 'farewell', name: '퇴사빵', rate: 100 },
@@ -4149,13 +4151,14 @@
     toast('정가 ' + won(listSum) + '원 · 할인 ' + won(discSum) + '원으로 채웠어요');
   }
   function buyBranchOptions(sel){ return base.branches.map(function(b){ return '<option value="' + esc(b.id) + '"' + (sel === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join(''); }
-  var buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null, payProof: null };
+  var buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null, payProof: null, extraPhotos: [] };
+  var BUY_MAX_RECEIPTS = 3;
   async function buyPhotoPicked(file){
     if (!file) return;
-    var keepProof = buyState.payProof;
-    buyState = { photo: null, ocr: null, ocrBusy: true, ocrError: null, payProof: keepProof };
+    var keepProof = buyState.payProof, keepExtra = buyState.extraPhotos || [];
+    buyState = { photo: null, ocr: null, ocrBusy: true, ocrError: null, payProof: keepProof, extraPhotos: keepExtra };
     try { buyState.photo = await resizeImage(file, 1600); }
-    catch(e){ buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null, payProof: keepProof }; toast(e.message || '사진을 열 수 없어요'); return; }
+    catch(e){ buyState = { photo: null, ocr: null, ocrBusy: false, ocrError: null, payProof: keepProof, extraPhotos: keepExtra }; toast(e.message || '사진을 열 수 없어요'); return; }
     render();
     try { var r = await db.ocr(buyState.photo.dataUrl.split(',')[1], buyState.photo.mime, 'staff_purchase'); if (r && r.error) throw new Error(r.error); buyState.ocr = r; }
     catch(e){ console.warn('자동 읽기 실패', e); buyState.ocrError = e.message || String(e); }
@@ -4164,7 +4167,7 @@
   }
   // 계좌이체·카드는 "이체했다/카드로 냈다"는 거짓말을 막기 위해 결제 증빙(이체 완료 화면·카드 승인 문자 캡처)을 따로 받음
   // 알바만 필수 — 사장님·매니저는 자기가 직접 확인하고 넣는 것이므로 증빙 없이도 등록 가능
-  function buyNeedsProof(methodId){ return methodId === 'transfer' || methodId === 'card'; }
+  function buyNeedsProof(methodId){ return methodId === 'transfer' || methodId === 'card' || methodId === 'kakaopay'; }
   function buyProofRequired(methodId){ return buyNeedsProof(methodId) && !isManager(); }
   // 내역 화면에서 증빙 없음 경고: 그 건을 실제로 입력한 사람(entered_by)이 매니저·사장님이면 증빙 없어도 경고 안 함
   function buyProofMissing(x){
@@ -5860,6 +5863,16 @@
         case 'pin-go': await pinGo(); break;
         case 'tab-branch': nav('#/' + current.route + '/' + id); break;
         case 'save-check': el.disabled = true; try { await saveCheck(el.getAttribute('data-branch')); } finally { el.disabled = false; } break;
+        case 'qty-add': {
+          var qaItemId = el.getAttribute('data-item');
+          var qaInp = app.querySelector('.qty[data-item="' + qaItemId + '"]'); if (!qaInp) break;
+          var qaAdd = window.prompt('더할 수량 (다른 자리에 있는 것)', ''); if (qaAdd === null) break;
+          var qaN = num(qaAdd); if (qaN == null) break;
+          var qaCur = num(qaInp.value) || 0;
+          qaInp.value = String(Math.round((qaCur + qaN) * 100) / 100);
+          qaInp.dispatchEvent(new Event('input', { bubbles: true }));
+          break;
+        }
         case 'order-open': { var ex = document.getElementById('ex-' + el.getAttribute('data-branch') + '-' + el.getAttribute('data-item')); ex.classList.toggle('hidden'); break; }
         case 'order-save': { var b1 = el.getAttribute('data-branch'), i1 = el.getAttribute('data-item'); await orderSave(b1, i1, num(document.getElementById('oq-' + b1 + '-' + i1).value), num(document.getElementById('od-' + b1 + '-' + i1).value) || 0); break; }
         case 'order-online': await orderSave(el.getAttribute('data-branch'), el.getAttribute('data-item'), num(el.getAttribute('data-qty')), 3, '온라인 구매'); break;
