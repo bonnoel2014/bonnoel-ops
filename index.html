@@ -281,6 +281,17 @@
   function isToday(s){ if (!s) return false; var d = new Date(s); if (isNaN(d)) return false; var t = new Date(); return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate(); }
   function localDateKey(s){ var d = new Date(s); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function num(v){ var n = parseFloat(v); return isNaN(n) ? null : n; }
+  // "10+10+10" 처럼 여러 자리에 나눠 있는 걸 더해서 넣을 수 있게. 그냥 숫자만 있으면 그 숫자 그대로.
+  function sumExpr(v){
+    if (v == null) return null;
+    var parts = String(v).split('+'), total = 0;
+    for (var i = 0; i < parts.length; i++){
+      var t = parts[i].trim(); if (t === '') return null;
+      var n = parseFloat(t); if (isNaN(n)) return null;
+      total += n;
+    }
+    return Math.round(total * 100) / 100;
+  }
   function fmtQ(n){ if (n == null) return '-'; return (Math.round(n * 100) / 100).toString(); }
   function daysAgo(n){ var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); }
 
@@ -985,8 +996,8 @@
         html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><div class="iname"><div class="t">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + '</div><div class="s">' + sub + (x.item.note ? ' · ' + esc(x.item.note) : '') + '</div></div>' +
                 '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
                 (hasAlt ? '<input class="in ct-alt" type="number" step="1" min="0" placeholder="' + esc(x.item.count_unit) + '" data-item="' + esc(x.item.id) + '" data-factor="' + x.item.count_per_unit + '" style="width:52px;padding:8px 4px;text-align:center" title="' + esc(x.item.count_per_unit + x.item.count_unit + ' = ' + x.item.unit + ' 1') + '">' : '') +
-                '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="number" inputmode="decimal" step="0.5" min="0" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + (todayUnlimited ? ' disabled' : '') + ' placeholder="-">' +
-                (todayUnlimited ? '' : '<button type="button" class="btn sm" data-act="qty-add" data-item="' + esc(x.item.id) + '" title="여러 자리에 나뉜 걸 더하기 (예: 10+5)" style="padding:6px 10px">+</button>') +
+                '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="text" inputmode="decimal" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + (todayUnlimited ? ' disabled' : '') + ' placeholder="-">' +
+                (todayUnlimited ? '' : '<button type="button" class="btn sm" data-act="qty-plus" data-item="' + esc(x.item.id) + '" title="여러 자리에 나뉜 걸 더하기: 10+10+10 처럼 이어서 넣기" style="padding:6px 10px">+</button>') +
                 '<span class="unit">' + esc(x.item.unit) + '</span>' +
                 '<label class="muted" style="display:flex;align-items:center;gap:2px;font-size:12px;cursor:pointer" title="세기 어려울 만큼 충분함"><input type="checkbox" class="qty-unlimited" data-item="' + esc(x.item.id) + '" data-orig="' + (todayUnlimited ? '1' : '') + '"' + (todayUnlimited ? ' checked' : '') + '>α</label>' +
                 '</div></div>';
@@ -1017,7 +1028,7 @@
         rows.push({ branch_id: b, item_id: itemId, qty: 0, unlimited: true, staff_id: staffId, checked_at: new Date().toISOString() });
         return;
       }
-      var v = num(inp.value); if (v == null || inp.value === '') return;
+      var v = sumExpr(inp.value); if (v == null || inp.value === '') return;
       var orig = inp.getAttribute('data-orig'); var origNum = (orig && !origUnlimited) ? num(orig) : null;
       if (origNum != null && v === origNum) return;   // 오늘 이미 이 값으로 기록됨 · 다시 안 넣어도 돼요
       rows.push({ branch_id: b, item_id: itemId, qty: v, unlimited: false, staff_id: staffId, checked_at: new Date().toISOString() });
@@ -5891,14 +5902,11 @@
         case 'pin-go': await pinGo(); break;
         case 'tab-branch': nav('#/' + current.route + '/' + id); break;
         case 'save-check': el.disabled = true; try { await saveCheck(el.getAttribute('data-branch')); } finally { el.disabled = false; } break;
-        case 'qty-add': {
-          var qaItemId = el.getAttribute('data-item');
-          var qaInp = app.querySelector('.qty[data-item="' + qaItemId + '"]'); if (!qaInp) break;
-          var qaAdd = window.prompt('더할 수량 (다른 자리에 있는 것)', ''); if (qaAdd === null) break;
-          var qaN = num(qaAdd); if (qaN == null) break;
-          var qaCur = num(qaInp.value) || 0;
-          qaInp.value = String(Math.round((qaCur + qaN) * 100) / 100);
-          qaInp.dispatchEvent(new Event('input', { bubbles: true }));
+        case 'qty-plus': {
+          var qpInp = app.querySelector('.qty[data-item="' + el.getAttribute('data-item') + '"]'); if (!qpInp) break;
+          var qpV = qpInp.value;
+          if (qpV && !/\+\s*$/.test(qpV)) qpInp.value = qpV + '+';
+          qpInp.focus();
           break;
         }
         case 'order-open': { var ex = document.getElementById('ex-' + el.getAttribute('data-branch') + '-' + el.getAttribute('data-item')); ex.classList.toggle('hidden'); break; }
@@ -6283,6 +6291,16 @@
     }
     if (current.route !== 'check' || !e.target.classList.contains('qty')) return;
     e.target.classList.toggle('filled', e.target.value !== '');
+    checkUpdateCount();
+  });
+  app.addEventListener('focusout', function(e){
+    if (current.route !== 'check' || !e.target.classList.contains('qty')) return;
+    var raw = e.target.value;
+    if (raw.trim() === ''){ e.target.classList.remove('filled'); checkUpdateCount(); return; }
+    var v = sumExpr(raw);
+    if (v == null){ toast('숫자와 +만 써주세요 (예: 10+10)'); return; }
+    e.target.value = String(v);
+    e.target.classList.add('filled');
     checkUpdateCount();
   });
 
