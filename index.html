@@ -2238,7 +2238,7 @@
   }
   function attShow(r){ // 직원에게 보여주는 시간(근무표 기준 기록이면 근무표 시간만)
     if (r.sched_start) return hm5(r.sched_start) + ' ~ ' + hm5(r.sched_end) + (r.fill_status === 'requested' ? ' (채움 · 수락 대기)' : r.fill_status === 'rejected' ? ' (채움 · 거절)' : '');
-    if (r.no_schedule) return '근무표 없는 출근';
+    if (r.no_schedule) return '근무표 없는 근무' + (r.clock_out ? ' ' + hm(r.clock_in) + '~' + hm(r.clock_out) + ' (추가 근무 수락분만 인정)' : '');
     return hm(r.clock_in) + ' ~ ' + hm(r.clock_out);
   }
   async function schedFields(b, staffId, dateStr, refMin){ // 근무표를 못 읽으면(표 없음) null → 예전처럼 실제 시각 기준
@@ -2276,14 +2276,24 @@
   function missHtml(list, act){
     return list.map(function(m){ return '<div class="hist"><span>' + esc(fmtDateK(m.date)) + '</span><span class="sp">' + esc(staffName(m.who)) + ' · ' + m.start + '~' + m.end + ' <span class="muted">기록 없음</span></span><button class="btn sm" data-act="' + act + '" data-key="' + esc(missKey(m)) + '">근무표대로 채우기</button></div>'; }).join('');
   }
-  async function fillShift(key, b, byStaff, status){ // status: requested(본인) / approved(매니저·사장님)
+  // 본인이 채울 때: 어제·오늘 근무는 바로 인정, 그보다 전은 사장님 수락
+  function selfFillStatus(d){ return d >= addDays(todayStr(), -1) ? 'approved' : 'requested'; }
+  async function fillShift(key, b, byStaff, status, self){ // status: requested / approved, self: 본인이 채움
     var k = key.split('|'), d = k[0], who = k[1], st = k[2], en = k[3], bk = parseInt(k[4], 10) || 0;
     var ed = toMin(en) < toMin(st) ? addDays(d, 1) : d;
+    if (self) status = selfFillStatus(d);
     try {
       await db.insert('ops_attendance', { staff_id: who, branch_id: b, work_date: d, clock_in: localIso(d, st), clock_out: localIso(ed, en), in_by: byStaff, out_by: byStaff, sched_start: st, sched_end: en, sched_break_min: bk, no_schedule: false, fill_status: status, filled_by: byStaff, filled_at: nowIso(),
-        edits: [{ at: nowIso(), by: staffName(byStaff), field: '채움', from: '-', to: st + '~' + en, reason: status === 'requested' ? '본인이 나중에 채움' : '매니저·사장님이 채움' }] });
+        edits: [{ at: nowIso(), by: staffName(byStaff), field: '채움', from: '-', to: st + '~' + en, reason: self ? '본인이 나중에 채움' : '매니저·사장님이 채움' }] });
     } catch(e){ toast('저장 실패: 사장님이 SQL(supabase-migration-extras.sql)을 실행해야 해요'); return false; }
-    toast(status === 'requested' ? '채웠어요. 사장님이 수락하면 인정돼요' : '근무표대로 채웠어요'); return true;
+    toast(status === 'requested' ? '채웠어요. 사장님이 수락하면 인정돼요' : '근무표대로 채웠어요. 인정됐어요'); return true;
+  }
+  async function closeSelf(id){ // 어제 퇴근을 안 누른 기록을 본인이 근무표 끝 시각으로 닫음
+    var r = (await db.select('ops_attendance', { eq: { id: id } }))[0]; if (!r || r.clock_out || !r.sched_end) return false;
+    var out = schedIso(r, r.sched_end); if (new Date(out) < new Date(r.clock_in)) out = r.clock_in;
+    var edits = (r.edits || []).slice(); edits.push({ at: nowIso(), by: staffName(clockState.staffId), field: '퇴근', from: '-', to: hm(out), reason: '퇴근을 깜빡해서 다음 날 본인이 근무표대로 처리' });
+    await db.update('ops_attendance', { id: id }, { clock_out: out, out_by: clockState.staffId, edits: edits });
+    toast(fmtDateK(r.work_date) + ' 퇴근을 ' + hm5(r.sched_end) + '로 처리했어요'); return true;
   }
   async function fillDecide(id, status){ // 직원이 채운 근무 수락·거절, 또는 매니저가 기존 기록을 근무표대로 인정
     var r = (await db.select('ops_attendance', { eq: { id: id } }))[0]; if (!r) return;
@@ -2300,22 +2310,27 @@
   }
   function extraMinLabel(x){ return (x.kind === 'earlyLeave' ? '-' : '+') + x.minutes + '분'; }
   // early=true면 "조퇴·조기 마감" 전용(종류 고정, 끝=근무표 끝, 시작=실제로 마친 시각)
-  async function extraFormHtml(staffId, early){
+  // opts.branchId: "근무표에 없는 날" 근무를 올릴 매장, opts.pickNew: 그 항목을 처음부터 골라 둠
+  async function extraFormHtml(staffId, early, opts){
+    opts = opts || {};
     var from = addDays(todayStr(), -62);
     var recs = (await db.select('ops_attendance', { eq: { staff_id: staffId }, gte: { work_date: from }, order: { col: 'work_date', asc: false } })).filter(function(r){ return r.clock_in; });
     var mine = []; try { mine = await db.select('ops_attendance_extras', { eq: { staff_id: staffId }, gte: { work_date: addDays(todayStr(), -40) }, order: { col: 'created_at', asc: false } }); } catch(e){ return '<div class="note danger">추가 근무 표가 아직 준비 안 됐어요. 사장님께 알려 주세요.</div>'; }
     app._exRecs = recs;
-    var byOwner = isOwner();
+    var byOwner = isOwner() && current.route !== 'clock', canNew = !early && !!opts.branchId;
     var html = '<div class="card section" style="text-align:left"><div class="sec-h">' + (early ? '조퇴·조기 마감 올리기' : '추가 근무 올리기') + '</div>';
-    if (!recs.length) html += '<div class="empty">최근 두 달 안에 출근 기록이 없어요' + (early ? ' (출근을 찍은 근무만 조퇴로 올릴 수 있어요)' : '') + '</div>';
+    if (!recs.length && !canNew) html += '<div class="empty">최근 두 달 안에 출근 기록이 없어요' + (early ? ' (출근을 찍은 근무만 조퇴로 올릴 수 있어요)' : '') + '</div>';
     else {
-      html += '<div class="form" style="box-shadow:none;margin:0"><label>어느 근무</label><select class="in" id="ex-rec">' + recs.map(function(r){ return '<option value="' + esc(r.id) + '">' + esc(fmtDateK(r.work_date)) + ' ' + esc(branchName(r.branch_id)) + ' · ' + esc(attShow(r)) + '</option>'; }).join('') + '</select>';
+      var pickNew = canNew && (opts.pickNew || !recs.length);
+      html += '<div class="form" style="box-shadow:none;margin:0"><label>어느 근무</label><select class="in" id="ex-rec">' + recs.map(function(r){ return '<option value="' + esc(r.id) + '">' + esc(fmtDateK(r.work_date)) + ' ' + esc(branchName(r.branch_id)) + ' · ' + esc(attShow(r)) + '</option>'; }).join('') +
+        (canNew ? '<option value="__new"' + (pickNew ? ' selected' : '') + '>근무표에 없는 날 일했어요 (' + esc(branchName(opts.branchId)) + ')</option>' : '') + '</select>';
+      if (canNew) html += '<div id="ex-new-wrap"' + (pickNew ? '' : ' style="display:none"') + '><label>일한 날</label><input class="in" id="ex-date" type="date" value="' + todayStr() + '" max="' + todayStr() + '" min="' + addDays(todayStr(), -62) + '"></div>';
       if (early) html += '<input type="hidden" id="ex-kind" value="earlyLeave">';
-      else html += '<label>종류</label><select class="in" id="ex-kind">' + Object.keys(EXTRA_KIND).map(function(k){ return '<option value="' + k + '">' + EXTRA_KIND[k] + '</option>'; }).join('') + '</select>';
+      else html += '<div id="ex-kind-wrap"' + (pickNew ? ' style="display:none"' : '') + '><label>종류</label><select class="in" id="ex-kind">' + Object.keys(EXTRA_KIND).map(function(k){ return '<option value="' + k + '">' + EXTRA_KIND[k] + '</option>'; }).join('') + '</select></div>';
       html += '<div class="grid2"><div><label>' + (early ? '실제로 마친 시각' : '시작') + '</label><input class="in" id="ex-start" type="time"></div><div><label>' + (early ? '원래 끝나는 시각' : '끝') + '</label><input class="in" id="ex-end" type="time"></div></div>';
       html += '<label>' + (early ? '줄어드는 시간' : '시간') + ' (분, ' + EXTRA_STEP + '분 단위)</label><input class="in" id="ex-min" type="number" min="' + EXTRA_STEP + '" step="' + EXTRA_STEP + '" inputmode="numeric">';
       html += '<label>사유 (꼭 적어 주세요)</label><textarea class="in" id="ex-reason" rows="2" placeholder="' + (early ? '예: 빵 소진으로 조기 마감, 몸이 안 좋아 조퇴' : '') + '"></textarea>';
-      html += '<div class="muted" style="margin:6px 0">' + (byOwner ? '사장님이 올리면 바로 반영돼요.' : '사장님이 수락해야 근무 시간에 반영돼요.') + (early ? ' 수락되면 그만큼 인정 시간이 줄어요.' : ' "조기 퇴근"은 그만큼 인정 시간이 줄어요.') + '</div><button class="btn primary block" data-act="extra-submit" data-staff="' + esc(staffId) + '">올리기</button></div>';
+      html += '<div class="muted" style="margin:6px 0">' + (byOwner ? '사장님이 올리면 바로 반영돼요.' : '사장님이 수락해야 근무 시간에 반영돼요.') + (early ? ' 수락되면 그만큼 인정 시간이 줄어요.' : ' "조기 퇴근"은 그만큼 인정 시간이 줄어요.') + '</div><button class="btn primary block" data-act="extra-submit" data-staff="' + esc(staffId) + '" data-branch="' + esc(opts.branchId || '') + '">올리기</button></div>';
     }
     if (mine.length){
       html += '<div class="sec-h" style="margin-top:16px">올린 기록</div>';
@@ -2325,6 +2340,10 @@
   }
   function extraFill(){ // 근무·종류를 고르면 근무표 쪽 시각을 채워 둠(직원이 고칠 수 있음)
     var sel = document.getElementById('ex-rec'); if (!sel) return;
+    var isNew = sel.value === '__new', nw = document.getElementById('ex-new-wrap'), kw = document.getElementById('ex-kind-wrap');
+    if (nw) nw.style.display = isNew ? '' : 'none';
+    if (kw) kw.style.display = isNew ? 'none' : '';
+    if (isNew){ document.getElementById('ex-start').value = ''; document.getElementById('ex-end').value = ''; document.getElementById('ex-min').value = ''; return; }
     var r = (app._exRecs || []).filter(function(x){ return x.id === sel.value; })[0]; if (!r) return;
     var k = document.getElementById('ex-kind').value, st = document.getElementById('ex-start'), en = document.getElementById('ex-end');
     if (k === 'early' && r.sched_start){ st.value = ''; en.value = hm5(r.sched_start); }
@@ -2338,21 +2357,35 @@
     var m = toMin(en) - toMin(st); if (m < 0) m += 1440;
     document.getElementById('ex-min').value = Math.floor(m / EXTRA_STEP) * EXTRA_STEP || '';
   }
-  async function extraSubmit(staffId){
-    var r = (app._exRecs || []).filter(function(x){ return x.id === document.getElementById('ex-rec').value; })[0]; if (!r){ toast('근무를 골라 주세요'); return false; }
-    var kind = document.getElementById('ex-kind').value, st = document.getElementById('ex-start').value, en = document.getElementById('ex-end').value;
+  async function extraSubmit(staffId, newBranch){
+    var isNew = document.getElementById('ex-rec').value === '__new';
+    var r = isNew ? null : (app._exRecs || []).filter(function(x){ return x.id === document.getElementById('ex-rec').value; })[0]; if (!isNew && !r){ toast('근무를 골라 주세요'); return false; }
+    var kind = isNew ? 'other' : document.getElementById('ex-kind').value, st = document.getElementById('ex-start').value, en = document.getElementById('ex-end').value;
     var min = parseInt(document.getElementById('ex-min').value, 10), reason = document.getElementById('ex-reason').value.trim();
     if (!st || !en){ toast('시작·끝 시각을 넣어 주세요'); return false; }
     if (!(min > 0) || min % EXTRA_STEP){ toast('시간은 ' + EXTRA_STEP + '분 단위로 넣어 주세요'); return false; }
     var span = toMin(en) - toMin(st); if (span < 0) span += 1440;
     if (min > span){ toast('시간이 두 시각 사이보다 길어요'); return false; }
     if (!reason){ toast('사유를 적어 주세요'); return false; }
+    if (isNew){ // 근무표에 없는 날: 출근 기록을 "근무표 없음"으로 만들고, 시간은 추가 근무(사장님 수락분)로만 인정
+      var d = (document.getElementById('ex-date') || {}).value;
+      if (!d || d > todayStr() || d < addDays(todayStr(), -62)){ toast('일한 날을 골라 주세요 (오늘부터 두 달 전까지)'); return false; }
+      if (!newBranch){ toast('매장을 알 수 없어요'); return false; }
+      var sfD = await schedFields(newBranch, staffId, d, toMin(st));
+      if (sfD && !sfD.no_schedule){ toast('그날은 근무표에 ' + sfD.sched_start + '~' + sfD.sched_end + ' 근무가 있어요. 위 목록에서 그 근무를 고르거나, 출퇴근을 깜빡했다면 "근무표대로 채우기"를 써 주세요'); return false; }
+      var by = current.route === 'clock' ? clockState.staffId : session.staffId;
+      var ed0 = toMin(en) < toMin(st) ? addDays(d, 1) : d;
+      var made = await db.insert('ops_attendance', { staff_id: staffId, branch_id: newBranch, work_date: d, clock_in: localIso(d, st), clock_out: localIso(ed0, en), in_by: by, out_by: by, sched_start: null, sched_end: null, sched_break_min: null, no_schedule: true,
+        edits: [{ at: nowIso(), by: staffName(by), field: '근무표 없는 근무', from: '-', to: st + '~' + en, reason: reason }] });
+      r = made && made[0]; if (!r){ toast('저장 실패'); return false; }
+    }
     var sd = r.work_date; if (kind === 'late' && r.sched_start && toMin(st) < toMin(r.sched_start)) sd = addDays(sd, 1); // 자정 넘은 연장
     var ed = sd; if (toMin(en) < toMin(st)) ed = addDays(sd, 1);
     var row = { attendance_id: r.id, staff_id: staffId, branch_id: r.branch_id, work_date: r.work_date, kind: kind, start_at: localIso(sd, st), end_at: localIso(ed, en), minutes: min, reason: reason, status: 'requested' };
-    if (isOwner()) Object.assign(row, { status: 'approved', decided_by: session.staffId, decided_at: nowIso() });   // 사장님이 올린 건 바로 확정
+    var byOwner = isOwner() && current.route !== 'clock';   // 매장 출퇴근 화면에서 올린 건 알바 본인 신청
+    if (byOwner) Object.assign(row, { status: 'approved', decided_by: session.staffId, decided_at: nowIso() });   // 사장님이 올린 건 바로 확정
     await db.insert('ops_attendance_extras', row);
-    toast(isOwner() ? '올리고 바로 반영했어요' : '올렸어요. 사장님이 수락하면 반영돼요'); return true;
+    toast(byOwner ? '올리고 바로 반영했어요' : '올렸어요. 사장님이 수락하면 반영돼요'); return true;
   }
   // 사장님·매니저는 직원 대신 올릴 수 있음(가게 사정으로 일찍 보낸 경우 등). 알바는 본인만.
   async function extraPage(params, early){
@@ -2364,7 +2397,8 @@
       var ppl = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (isOwner() || s.branch_id === session.branchId || !s.branch_id); }).sort(function(a, b){ return a.name.localeCompare(b.name, 'ko'); });
       html += '<div class="form" style="margin-bottom:10px"><label>누구 근무예요?</label><select class="in" id="ex-who" data-route="' + (early ? 'extra-early' : 'extra') + '"><option value="' + esc(session.staffId) + '"' + (who === session.staffId ? ' selected' : '') + '>본인 (' + esc(session.name) + ')</option>' + ppl.filter(function(s){ return s.id !== session.staffId; }).map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === who ? ' selected' : '') + '>' + esc(s.name) + (isOwner() && s.branch_id ? ' · ' + esc(branchName(s.branch_id)) : '') + '</option>'; }).join('') + '</select></div>';
     }
-    app.innerHTML = html + await extraFormHtml(who, early);
+    var whoS = base.staff.filter(function(s){ return s.id === who; })[0];
+    app.innerHTML = html + await extraFormHtml(who, early, { branchId: (whoS && whoS.branch_id) || session.branchId || null });
     extraFill();
   }
   routes.extra = function(params){ return extraPage(params, false); };
@@ -2389,7 +2423,7 @@
       var a = atts[x.attendance_id] || {};
       html += '<div class="item" style="flex-wrap:wrap;align-items:flex-start"><div class="iname" style="flex:1 1 100%"><div class="t">' + esc(staffName(x.staff_id)) + ' · ' + esc(branchName(x.branch_id)) + ' · ' + esc(fmtDateK(x.work_date)) + '</div>' +
         '<div class="s"><b>' + esc(EXTRA_KIND[x.kind] || x.kind) + ' ' + extraMinLabel(x) + '</b> (' + hm(x.start_at) + '~' + hm(x.end_at) + ')</div>' +
-        '<div class="s">근무표 ' + (a.sched_start ? esc(hm5(a.sched_start) + '~' + hm5(a.sched_end)) : '없음') + ' · 실제 누른 시각 ' + hm(a.clock_in) + '~' + hm(a.clock_out) + '</div>' +
+        '<div class="s">' + (a.no_schedule && !a.sched_start ? '<span class="badge warn">근무표에 없는 날</span>' : '근무표 ' + (a.sched_start ? esc(hm5(a.sched_start) + '~' + hm5(a.sched_end)) : '없음') + ' · 실제 누른 시각 ' + hm(a.clock_in) + '~' + hm(a.clock_out)) + '</div>' +
         '<div class="s">사유: ' + esc(x.reason) + '</div></div>' +
         '<div class="inline" style="gap:6px;margin-top:6px"><button class="btn sm primary" data-act="extra-ok" data-id="' + esc(x.id) + '">수락</button><button class="btn sm" data-act="extra-ok-edit" data-id="' + esc(x.id) + '" data-min="' + x.minutes + '">시간 고쳐서 수락</button><button class="btn sm" data-act="extra-no" data-id="' + esc(x.id) + '">거절</button></div></div>';
     });
@@ -2476,7 +2510,7 @@
         html += '<div style="margin-top:18px"><button class="btn primary" data-act="clock-pin">확인</button></div><div style="margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">다른 이름</span></div></div>';
       } else {
         if (st.extra){
-          html += '<div class="pin-wrap" style="padding-bottom:0"><div style="font-size:20px;font-weight:700">' + esc(s.name) + '</div></div>' + await extraFormHtml(s.id, st.extra === 'early') + '<div style="text-align:center;margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">닫기</span></div>';
+          html += '<div class="pin-wrap" style="padding-bottom:0"><div style="font-size:20px;font-weight:700">' + esc(s.name) + '</div></div>' + await extraFormHtml(s.id, st.extra === 'early', { branchId: b, pickNew: st.extra === 'new' }) +'<div style="text-align:center;margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">닫기</span></div>';
           app.innerHTML = html; extraFill(); return;
         }
         var open = openRecordOf(recs, s.id);
@@ -2484,15 +2518,18 @@
         html += '<div class="pin-wrap"><div style="font-size:22px;font-weight:700">' + esc(s.name) + '</div><div class="muted" style="margin:4px 0 18px">' + esc(fmtDateK(today)) + ' 지금 ' + hm(nowIso()) + '</div>';
         if (pendDocIds[s.id]) html += '<div class="note" style="text-align:left;margin:0 0 14px">입사 서류(근로계약서 등)를 아직 안 썼어요. 출근은 되지만 오늘 안에 <a href="#/sign" style="text-decoration:underline;font-weight:600">서류 서명</a>을 꼭 해 주세요.</div>';
         var unclosedMe = !open && unclosedRecordOf(recs, s.id);
-        if (unclosedMe) html += '<div class="note" style="text-align:left;margin:0 0 14px">' + esc(fmtDateK(unclosedMe.work_date)) + ' 퇴근을 안 눌렀어요. 매니저에게 퇴근 시각을 고쳐 달라고 말해 주세요.</div>';
-        if (open) html += '<div class="muted" style="margin-bottom:10px">' + (open.sched_start ? '오늘 근무 ' + hm5(open.sched_start) + '~' + hm5(open.sched_end) : open.no_schedule ? '오늘 근무표에 없는 출근이에요' : '출근 ' + hm(open.clock_in) + ' (' + fmtH(minutesBetween(open.clock_in, nowIso())) + ' 지남)') + '</div><button class="btn primary" data-act="clock-out" data-id="' + esc(open.id) + '" style="font-size:22px;padding:18px 40px">퇴근하기</button>';
+        if (unclosedMe) html += '<div class="note" style="text-align:left;margin:0 0 14px">' + esc(fmtDateK(unclosedMe.work_date)) + ' 퇴근을 안 눌렀어요.' + (unclosedMe.sched_end ? '<div style="margin-top:8px"><button class="btn sm primary" data-act="close-self" data-id="' + esc(unclosedMe.id) + '">근무표대로 ' + hm5(unclosedMe.sched_end) + ' 퇴근 처리</button></div>' : ' 매니저에게 퇴근 시각을 고쳐 달라고 말해 주세요.') + '</div>';
+        var noSchedToday = false;
+        if (!open && await schedReady()){ var sfNow = await schedFields(b, s.id, today, nowMin()); noSchedToday = !!(sfNow && sfNow.no_schedule); }
+        if (noSchedToday) html += '<div class="note" style="text-align:left;margin:0 0 14px">오늘 근무표에 없어서 출근을 누를 수 없어요.<br>근무표에 없는데 일했다면 아래 버튼으로 <b>추가 근무</b>를 올려 주세요. 사장님이 확인하면 급여에 들어가요.<div style="margin-top:10px"><button class="btn primary" data-act="extra-open-new">근무표에 없는 근무 올리기</button></div></div>';
+        else if (open) html +='<div class="muted" style="margin-bottom:10px">' + (open.sched_start ? '오늘 근무 ' + hm5(open.sched_start) + '~' + hm5(open.sched_end) : open.no_schedule ? '오늘 근무표에 없는 출근이에요' : '출근 ' + hm(open.clock_in) + ' (' + fmtH(minutesBetween(open.clock_in, nowIso())) + ' 지남)') + '</div><button class="btn primary" data-act="clock-out" data-id="' + esc(open.id) + '" style="font-size:22px;padding:18px 40px">퇴근하기</button>';
         else html += '<button class="btn primary" data-act="clock-in" style="font-size:22px;padding:18px 40px;background:var(--ok);border-color:var(--ok)">출근하기</button>';
         html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div><div style="margin-top:36px"><span class="muted" data-act="extra-open" style="cursor:pointer;font-size:13px;text-decoration:underline">추가 근무 올리기</span> <span class="muted" style="font-size:13px">·</span> <span class="muted" data-act="extra-open-early" style="cursor:pointer;font-size:13px;text-decoration:underline">조퇴·조기 마감 올리기</span></div><div style="margin-top:10px"><span class="muted" data-act="pin-change" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:13px;text-decoration:underline">비밀번호 바꾸기 (다른 사람이 대신 못 찍게)</span></div></div>';
         if (await schedReady()){
           try {
             var mFrom = addMonths(monthOf(today), -1) + '-01', mRecs = await db.select('ops_attendance', { eq: { staff_id: s.id, branch_id: b }, gte: { work_date: mFrom } });
             var miss = missingShifts(await loadSchedule([b], mFrom, today), b, mRecs, mFrom, today, s.id);
-            if (miss.length) html += '<div class="card section"><div class="sec-h">출퇴근을 깜빡한 근무 ' + miss.length + '건</div><div class="muted" style="margin:0 0 6px">근무표대로 채우면 사장님이 수락한 뒤 인정돼요.</div>' + missHtml(miss, 'fill-self') + '</div>';
+            if (miss.length) html += '<div class="card section"><div class="sec-h">출퇴근을 깜빡한 근무 ' + miss.length + '건</div><div class="muted" style="margin:0 0 6px">어제·오늘 근무는 근무표대로 채우면 바로 인정돼요. 그보다 전 근무는 사장님이 수락해야 인정돼요.</div>' + missHtml(miss, 'fill-self') + '</div>';
           } catch(e){ console.warn('빠진 근무 못 읽음', e); }
         }
         if (mine.length){ html += '<div class="card section"><div class="sec-h">내 최근 기록</div>'; mine.forEach(function(r){ var mn = (r.sched_start || r.no_schedule) ? recNet(r) : null; html += '<div class="hist"><span>' + esc(fmtDateK(r.work_date)) + '</span><span class="sp">' + esc(attShow(r)) + '</span><span>' + (mn ? (r.no_schedule || mn.fillWait ? '' : fmtH(mn.net)) : r.clock_out ? fmtH(minutesBetween(r.clock_in, r.clock_out)) : '') + '</span></div>'; }); html += '</div>'; }
@@ -2525,10 +2562,11 @@
     var recent = await db.select('ops_attendance', { eq: { staff_id: s }, gte: { work_date: addDays(todayStr(), -1) } });
     if (openRecordOf(recent, s)){ toast('이미 출근 중이에요. 퇴근을 눌러 주세요'); render(); return; }
     var sf = (await schedReady()) ? await schedFields(b, s, todayStr(), nowMin()) : null;
+    if (sf && sf.no_schedule){ toast('오늘 근무표에 없어서 출근을 누를 수 없어요. 추가 근무로 올려 주세요'); clockState.extra = 'new'; render(); return; }
     if (sf && !sf.no_schedule && toMin(sf.sched_end) > toMin(sf.sched_start) && nowMin() >= toMin(sf.sched_end)){
       if (recent.some(function(r){ return r.work_date === todayStr() && r.sched_start && hm5(r.sched_start) === sf.sched_start; })){ toast('오늘 ' + sf.sched_start + '~' + sf.sched_end + ' 근무는 이미 기록돼 있어요'); render(); return; }
-      if (!window.confirm('오늘 ' + sf.sched_start + '~' + sf.sched_end + ' 근무가 이미 끝났어요.\n근무표대로 채울까요? (사장님이 수락하면 인정돼요)')){ render(); return; }
-      if (await fillShift([todayStr(), s, sf.sched_start, sf.sched_end, sf.sched_break_min || 0].join('|'), b, s, 'requested')) clockDone(); else render();
+      if (!window.confirm('오늘 ' + sf.sched_start + '~' + sf.sched_end + ' 근무가 이미 끝났어요.\n근무표대로 채울까요? (채우면 바로 인정돼요)')){ render(); return; }
+      if (await fillShift([todayStr(), s, sf.sched_start, sf.sched_end, sf.sched_break_min || 0].join('|'), b, s, 'requested', true)) clockDone(); else render();
       return;
     }
     await insertAttendance({ staff_id: s, branch_id: b, work_date: todayStr(), clock_in: nowIso(), in_by: s, edits: [] }, sf);
@@ -6065,13 +6103,15 @@
         case 'clock-back': clockState.staffId = null; clockState.ok = false; clockState.extra = false; render(); break;
         case 'extra-open': clockState.extra = true; render(); break;
         case 'extra-open-early': clockState.extra = 'early'; render(); break;
-        case 'extra-submit': el.disabled = true; try { if (await extraSubmit(el.getAttribute('data-staff'))){ if (current.route === 'clock') clockDone(); else render(); } } finally { el.disabled = false; } break;
+        case 'extra-submit': el.disabled = true; try { if (await extraSubmit(el.getAttribute('data-staff'), el.getAttribute('data-branch'))){ if (current.route === 'clock') clockDone(); else render(); } } finally { el.disabled = false; } break;
         case 'extra-ok': await extraDecide(id, 'approved', null); break;
         case 'extra-ok-edit': { var em = window.prompt('인정할 분 (' + EXTRA_STEP + '분 단위)', el.getAttribute('data-min')); if (em === null) break; em = parseInt(em, 10); if (!(em > 0) || em % EXTRA_STEP){ toast(EXTRA_STEP + '분 단위로 넣어 주세요'); break; } await extraDecide(id, 'approved', em); } break;
         case 'extra-no': { var er = window.prompt('거절 사유 (직원에게 보여요)', ''); if (er === null) break; await extraDecide(id, 'rejected', null, er.trim()); } break;
         case 'extra-undo': if (window.confirm('승인 대기로 되돌릴까요?')) await extraDecide(id, 'requested', null); break;
         case 'att-resched': await attResched(id); break;
-        case 'fill-self': el.disabled = true; if (await fillShift(el.getAttribute('data-key'), clockState.branchId, clockState.staffId, 'requested')) clockDone(); else el.disabled = false; break;
+        case 'fill-self': el.disabled = true; if (await fillShift(el.getAttribute('data-key'), clockState.branchId, clockState.staffId, 'requested', true)) clockDone(); else el.disabled = false; break;
+        case 'close-self': el.disabled = true; if (await closeSelf(el.getAttribute('data-id'))) render(); else el.disabled = false; break;
+        case 'extra-open-new': clockState.extra = 'new'; render(); break;
         case 'fill-mgr': el.disabled = true; if (await fillShift(el.getAttribute('data-key'), isOwner() ? (current.params.arg || session.branchId) : session.branchId, session.staffId, 'approved')) render(); else el.disabled = false; break;
         case 'fill-ok': await fillDecide(id, 'approved'); break;
         case 'fill-no': if (window.confirm('거절할까요? 거절하면 이 근무는 인정되지 않아요.')) await fillDecide(id, 'rejected'); break;
