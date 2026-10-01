@@ -6550,10 +6550,12 @@
       '<div class="muted">발행주식 총수·1주 금액은 법인등기부등본 "발행주식의 총수" 칸에 있어요. 주주명부 합계와 다르면 경고가 떠요.</div>' +
       '<button class="btn primary block" data-act="corp-info-save">저장</button></div>';
     var seal = s.has_seal ? await corpSeal() : null;
+    var docSeal = null; try { docSeal = (await loadDocsSettings()).seal || null; } catch(e){}
     html += '<div class="group-title">직인 (사용인감)</div><div class="form">' +
       (seal ? '<div class="inline" style="align-items:center;gap:12px"><div style="width:90px;height:90px;border:1px dashed var(--line,#ddd);border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center"><img src="' + seal + '" alt="직인" style="max-width:80px;max-height:80px"></div><div style="flex:1"><b>직인이 등록돼 있어요</b><div class="muted">서류를 만들 때 "직인 찍기"를 체크한 것만 찍혀요.</div></div><button class="btn sm danger" data-act="corp-seal-remove">지우기</button></div>'
             : '<div class="muted">흰 종이에 도장을 찍고 사진을 찍어 올리면, 종이 배경은 지우고 빨간 도장만 남겨요. 서류를 만들 때마다 <b>직인을 찍을지 말지 고를 수 있어요</b> (해외라 도장이 없을 때만 찍기).</div>') +
-      '<div><label>' + (seal ? '다른 사진으로 바꾸기' : '도장 사진 올리기') + '</label><input class="in" type="file" id="ci-seal" accept="image/*"></div>' +
+      (docSeal && !seal ? '<button class="btn primary block" data-act="corp-seal-from-docs">근로계약서에 쓰는 회사 직인 그대로 가져오기</button><div class="muted">입사 서류(근로계약서)에 이미 등록해 둔 직인이에요. 누르면 바로 등록돼요.</div>' : '') +
+      '<div><label>' + (seal ? '다른 사진으로 바꾸기' : docSeal ? '또는 새 도장 사진 올리기' : '도장 사진 올리기') + '</label><input class="in" type="file" id="ci-seal" accept="image/*"></div>' +
       '<div class="muted">직인은 사장님 코드로 잠긴 곳에만 보관돼요. 법인인감(등기소에 등록한 도장)은 올리지 마세요.</div></div>';
     app.innerHTML = html;
     var sf = document.getElementById('ci-seal');
@@ -6577,12 +6579,12 @@
       : '<div class="muted">도장 자리는 비어 있어요. <a href="#/corp-info" style="text-decoration:underline">회사 정보</a>에 직인을 등록하면 서류마다 찍을지 고를 수 있어요.</div>';
   }
   // 도장 사진 → 종이 배경을 지우고 빨간 도장만 남긴 작은 PNG
-  function sealFromFile(file){
+  function sealFromFile(file){ var u = URL.createObjectURL(file); return sealFromSrc(u).finally(function(){ URL.revokeObjectURL(u); }); }
+  function sealFromSrc(u){
     return new Promise(function(res, rej){
-      var img = new Image(), u = URL.createObjectURL(file);
-      img.onerror = function(){ URL.revokeObjectURL(u); rej(new Error('사진을 읽지 못했어요')); };
+      var img = new Image();
+      img.onerror = function(){ rej(new Error('사진을 읽지 못했어요')); };
       img.onload = function(){
-        URL.revokeObjectURL(u);
         var k = Math.min(1, 1200 / Math.max(img.width, img.height)), w = Math.max(1, Math.round(img.width * k)), h = Math.max(1, Math.round(img.height * k));
         var c = document.createElement('canvas'); c.width = w; c.height = h; var g = c.getContext('2d'); g.drawImage(img, 0, 0, w, h);
         var d = g.getImageData(0, 0, w, h), p = d.data, x0 = w, y0 = h, x1 = -1, y1 = -1;
@@ -6987,6 +6989,11 @@
         case 'corp-login': await corpLogin(); break;
         case 'corp-lock': corpSt = { code: null, data: null, asOf: null, issued: null, certForm: null, holderEdit: null, eventFor: null, fileForm: false, linkFor: null, lastLink: null, shared: null }; toast('잠갔어요'); nav('#/home'); break;
         case 'corp-info-save': await corpInfoSave(); break;
+        case 'corp-seal-from-docs': { var dseal = (await loadDocsSettings()).seal; if (!dseal){ toast('근로계약서에 등록한 직인이 없어요'); break; }
+          var cseal; try { cseal = await sealFromSrc(dseal); } catch(e){ cseal = dseal; } // 빨간 도장이 아니면 그림 그대로
+          try { await corpCall('corp_seal_set', { p_seal: cseal }); corpSt.seal = cseal; toast('직인을 등록했어요'); render(); }
+          catch(e){ toast(/corp_seal_set|function|schema/i.test(e.message || '') ? '직인 준비(SQL)를 먼저 실행해 주세요' : (e.message || '직인을 등록하지 못했어요')); }
+          break; }
         case 'corp-seal-remove': if (confirm('등록한 직인을 지울까요?')){ await corpCall('corp_seal_set', { p_seal: null }); corpSt.seal = null; toast('직인을 지웠어요'); render(); } break;
         case 'corp-holder-new': corpSt.holderEdit = {}; corpSt.eventFor = null; render(); break;
         case 'corp-holder-edit': corpSt.holderEdit = (corpSt.data.holdings || []).filter(function(h){ return h.id === id; })[0] || null; corpSt.eventFor = null; render(); break;
