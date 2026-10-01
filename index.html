@@ -6698,8 +6698,8 @@
     html += issuedCard();
     if (req && req.status !== 'requested'){ html += '<div class="note">이미 처리한 신청이에요 (' + esc(req.status === 'issued' ? '발급 ' + (req.issue_no || '') : req.status === 'rejected' ? '반려' : '직원이 취소') + ')</div><a class="btn block" href="#/corp-certs">신청 목록으로</a>'; app.innerHTML = html; return; }
     var people = base.staff.filter(function(s){ return s.role !== 'owner'; }).sort(function(a, b){ return (a.active === false) - (b.active === false) || (a.name > b.name ? 1 : -1); });
-    if (!req) html += '<div class="form" style="margin-top:0"><div><label>누구 증명서예요?</label><select class="in" id="cf-staff"><option value="">사람 고르기</option>' + people.map(function(s){ return '<option value="' + esc(s.id) + '"' + (f.staffId === s.id ? ' selected' : '') + '>' + esc(s.name) + ' · ' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + (s.active === false ? ' (퇴사)' : '') + '</option>'; }).join('') + '</select></div></div>';
-    if (!f.staffId){ app.innerHTML = html; certBind(); return; }
+    if (!req) html += '<div class="form" style="margin-top:0"><div><label>누구 증명서예요?</label><select class="in" id="cf-staff"><option value="">사람 고르기</option><option value="__manual"' + (f.manual ? ' selected' : '') + '>기타 — 직접 입력 (대표·임원 등 목록에 없는 사람)</option>' + people.map(function(s){ return '<option value="' + esc(s.id) + '"' + (f.staffId === s.id ? ' selected' : '') + '>' + esc(s.name) + ' · ' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + (s.active === false ? ' (퇴사)' : '') + '</option>'; }).join('') + '</select></div></div>';
+    if (!f.staffId && !f.manual){ app.innerHTML = html; certBind(); return; }
     function inp(id, label, v, ph, t){ return '<div><label>' + label + '</label><input class="in" id="' + id + '"' + (t ? ' type="' + t + '"' : '') + ' value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></div>'; }
     html += '<div class="form">' +
       '<div><label>종류</label><select class="in" id="cf-kind"><option value="employment"' + (f.kind === 'employment' ? ' selected' : '') + '>재직증명서 (지금 다니는 사람)</option><option value="career"' + (f.kind === 'career' ? ' selected' : '') + '>경력증명서 (퇴사한 사람)</option></select></div>' +
@@ -6709,7 +6709,7 @@
       '<div class="grid2">' + inp('cf-branch', '소속', f.branch) + inp('cf-pos', '직위', f.position) + '</div>' +
       inp('cf-duty', '담당업무', f.duty) +
       '<div class="grid2">' + inp('cf-hire', '입사일', f.hireOn, '', 'date') + (f.kind === 'career' ? inp('cf-leave', '퇴사일', f.leaveOn, '', 'date') : '<div></div>') + '</div>' +
-      (!f.hireOn ? '<div class="note danger" style="margin:0">입사일이 비어 있어요. 직원 명부에 입사일이 없어서 그래요 — 직접 넣어 주세요.</div>' : '') +
+      (!f.hireOn && !f.manual ? '<div class="note danger" style="margin:0">입사일이 비어 있어요. 직원 명부에 입사일이 없어서 그래요 — 직접 넣어 주세요.</div>' : '') +
       '<div class="grid2"><div><label>용도</label><select class="in" id="cf-purpose">' + CERT_PURPOSES.map(function(p){ return '<option' + (f.purpose === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') + '</select></div>' + inp('cf-purpose-etc', '기타 용도', f.purposeEtc, '용도가 "기타"일 때') + '</div>' +
       inp('cf-recipient', '제출처 (선택)', f.recipient, '예: ○○은행') +
       inp('cf-email', '받을 이메일', f.email, '직원 이메일', 'email') +
@@ -6722,7 +6722,7 @@
   };
   function certBind(){
     var ss = document.getElementById('cf-staff');
-    if (ss) ss.addEventListener('change', async function(){ corpSt.issued = null; corpSt.certForm = ss.value ? await certFormFor(ss.value, null) : { reqId: null, staffId: null }; render(); });
+    if (ss) ss.addEventListener('change', async function(){ corpSt.issued = null; corpSt.certForm = ss.value === '__manual' ? { reqId: null, staffId: null, manual: true, kind: 'employment', name: '', birth: '', address: '', withAddr: false, branch: '본사', branchId: null, position: '', duty: '', hireOn: '', leaveOn: '', purpose: '은행 제출용', purposeEtc: '', recipient: '', email: '', sendMail: true } : ss.value ? await certFormFor(ss.value, null) : { reqId: null, staffId: null }; render(); });
     var k = document.getElementById('cf-kind');
     if (k) k.addEventListener('change', function(){ certRead(); render(); });
   }
@@ -6746,9 +6746,10 @@
     var blob = await pdfFromHtml(BNC().render(type, certCtx(f, { company: iss.company || ctx0.company, issueNo: iss.issue_no, verifyKey: iss.verify_key, verifyUrl: vurl, qr: qrDataUrl(vurl) })));
     var sha = await sha256(blob); if (sha) await corpCall('corp_issue_set_sha', { p_issue_no: iss.issue_no, p_sha: sha });
     // 직원이 "증명서 신청" 화면에서 다시 받을 수 있게 입사 서류와 같은 저장소에도 둠
-    var path = 'cert/' + f.staffId + '/' + iss.issue_no + '.pdf', now = nowIso(), batchId = uuid4();
+    var sid = f.staffId || session.staffId; // 직접 입력한 사람은 명부에 없으니 발급한 사장님 이름으로 보관
+    var path = 'cert/' + sid + '/' + iss.issue_no + '.pdf', now = nowIso(), batchId = uuid4();
     await db.upload(DOCS_BUCKET, path, blob, 'application/pdf');
-    await db.insert('ops_documents', { batch_id: batchId, staff_id: f.staffId, branch_id: f.branchId || null, doc_key: 'cert_' + f.kind, doc_title: type + ' (' + iss.issue_no + ')', template_version: BNC().version, data: { issue_no: iss.issue_no, purpose: ctx0.purpose, recipient: f.recipient }, status: 'signed', pdf_path: path, pdf_sha256: sha, signed_at: now, email_to: f.email || null, prepared_by: session.staffId });
+    await db.insert('ops_documents', { batch_id: batchId, staff_id: sid, branch_id: f.branchId || null, doc_key: 'cert_' + f.kind, doc_title: type + ' (' + iss.issue_no + ')', template_version: BNC().version, data: { issue_no: iss.issue_no, purpose: ctx0.purpose, recipient: f.recipient }, status: 'signed', pdf_path: path, pdf_sha256: sha, signed_at: now, email_to: f.email || null, prepared_by: session.staffId });
     if (f.reqId) await db.update('ops_cert_requests', { id: f.reqId }, { status: 'issued', issue_no: iss.issue_no, pdf_path: path, decided_at: now });
     var mail = null;
     if (f.sendMail && f.email){ try { await db.sendDocs(batchId); mail = 'sent'; } catch(e){ mail = e.message || String(e); } }
