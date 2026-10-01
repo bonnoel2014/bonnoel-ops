@@ -55,8 +55,7 @@
   function foot(ctx){
     return '<div class="foot kp">' + (ctx.qr ? '<img src="' + ctx.qr + '" alt="QR">' : '') +
       '<div>발급번호 <b>' + esc(ctx.issueNo || '') + '</b> · 확인 글자 <b>' + esc(ctx.verifyKey || '') + '</b><br>' +
-      '이 서류가 진짜인지는 왼쪽 QR을 휴대폰 카메라로 비추거나 아래 주소에서 확인할 수 있습니다.<br>' +
-      '<span style="word-break:break-all">' + esc(ctx.verifyUrl || '') + '</span></div></div>';
+      '이 서류가 진짜인지는 왼쪽 QR을 휴대폰 카메라로 비추면 확인할 수 있습니다.</div></div>';
   }
 
   function certificate(type, ctx){
