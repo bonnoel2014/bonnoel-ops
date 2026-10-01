@@ -1211,7 +1211,7 @@
             if (!byBranch[p.from]){ byBranch[p.from] = []; branchOrder.push(p.from); }
             byBranch[p.from].push(s.item.name + ' ' + fmtQ(p.qty) + s.item.unit);
           } else {
-            orderLines.push(s.item.name + ' ' + fmtQ(p.qty) + s.item.unit + (p.eta ? ' (' + md(p.eta) + ' 도착 예정)' : ''));
+            orderLines.push(s.item.name + ' ' + fmtQ(p.qty) + s.item.unit + (p.memo ? ' · ' + p.memo : '') + (p.eta ? ' (' + md(p.eta) + ' 도착 예정)' : ''));
           }
         });
       }
