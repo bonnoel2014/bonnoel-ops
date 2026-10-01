@@ -546,7 +546,7 @@
     var map = {};
     base.itemBranch.forEach(function(ib){ if (ib.branch_id === branchId) map[ib.item_id] = ib; });
     return base.items.filter(function(it){ return it.active !== false && map[it.id] && map[it.id].active !== false; })
-      .map(function(it){ return { item: it, target: num(map[it.id].target_qty) || 0 }; });
+      .map(function(it){ return { item: it, target: num(map[it.id].target_qty) || 0, note: map[it.id].note || null }; });
   }
   function groupByCategory(list){ // list: [{item,...}]
     var groups = [];
@@ -592,7 +592,7 @@
         });
         if (est != null && est < 0) est = 0;   // 보낸 게 종이 재고보다 많으면 0으로 봄
         var shortage = (est != null && x.target > 0 && !it.unlimited && !(last && last.unlimited)) ? Math.max(0, x.target - est - pending) : 0;
-        m[it.id] = { item: it, target: x.target, last: last, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
+        m[it.id] = { item: it, target: x.target, note: x.note, last: last, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
       });
       out[b] = m;
     });
@@ -996,7 +996,7 @@
         if (todayVal != null || todayUnlimited) doneCount++;
         var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + (s.last.unlimited ? '충분(α)' : fmtQ(num(s.last.qty))) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
         var hasAlt = x.item.count_unit && x.item.count_per_unit;
-        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><div class="iname"><div class="t">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + '</div><div class="s">' + sub + '</div>' + (x.item.note ? '<div class="s" style="margin-top:2px"><span class="badge danger">⚠️ ' + esc(x.item.note) + '</span></div>' : '') + (isManager() ? '<div class="s"><span data-act="item-hide-branch" data-branch="' + esc(b) + '" data-item="' + esc(x.item.id) + '" style="cursor:pointer"><u>여기선 안 씀</u></span></div>' : '') + '</div>' +
+        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><div class="iname"><div class="t">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + '</div><div class="s">' + sub + '</div>' + (x.note ? '<div class="s" style="margin-top:2px"><span class="badge danger">⚠️ ' + esc(x.note) + '</span></div>' : '') + (isManager() ? '<div class="s"><span data-act="item-hide-branch" data-branch="' + esc(b) + '" data-item="' + esc(x.item.id) + '" style="cursor:pointer"><u>여기선 안 씀</u></span></div>' : '') + '</div>' +
                 '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
                 (hasAlt ? '<input class="in ct-alt" type="number" step="1" min="0" placeholder="' + esc(x.item.count_unit) + '" data-item="' + esc(x.item.id) + '" data-factor="' + x.item.count_per_unit + '" style="width:52px;padding:8px 4px;text-align:center" title="' + esc(x.item.count_per_unit + x.item.count_unit + ' = ' + x.item.unit + ' 1') + '">' : '') +
                 '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="text" inputmode="decimal" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + (todayUnlimited ? ' disabled' : '') + ' placeholder="-">' +
@@ -1118,13 +1118,13 @@
     ids.forEach(function(b){
       var m = st.byBranch[b];
       var rows = [], pendingRows = [], noteRows = [];
-      for (var k in m){ var s = m[k]; if (s.target <= 0) noTarget++; else if (s.est == null) noCheck++; if (s.shortage > 0) rows.push(s); else if (s.pending > 0){ if (s.item.note) noteRows.push(s); else pendingRows.push(s); } }
+      for (var k in m){ var s = m[k]; if (s.target <= 0) noTarget++; else if (s.est == null) noCheck++; if (s.shortage > 0) rows.push(s); else if (s.pending > 0){ if (s.note) noteRows.push(s); else pendingRows.push(s); } }
       if (!rows.length && !pendingRows.length && !noteRows.length) return;
       any = true;
       html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + '<span class="sp"></span>' + (rows.length ? '<button class="btn sm" data-act="copy" data-branch="' + esc(b) + '">카톡용 복사</button>' : '<span class="badge ok">부족 없음</span>') + ((pendingRows.length || noteRows.length) ? '<button class="btn sm" data-act="copy-resolved" data-branch="' + esc(b) + '">처리 결과 복사</button>' : '') + '</div>';
       rows.forEach(function(s){
         var otherBranches = base.branches.filter(function(x){ return x.id !== b; });
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크' + (s.item.vendor ? ' · ' + esc(s.item.vendor) : '') + '</div>' + (s.item.note ? '<div class="s"><span class="badge danger">⚠️ ' + esc(s.item.note) + '</span></div>' : '') + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>' + (s.item.note ? '메모 고치기' : '+ 메모(대체품·품절 등)') + '</u></span>' + (s.item.note ? '' : ' · <span data-act="item-note-quick" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>일시 품절</u></span>') + '</div>' : '') + '</div>' +
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크' + (s.item.vendor ? ' · ' + esc(s.item.vendor) : '') + '</div>' + (s.note ? '<div class="s"><span class="badge danger">⚠️ ' + esc(s.note) + '</span></div>' : '') + (isManager() ? '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>' + (s.note ? '메모 고치기' : '+ 메모(대체품·품절 등)') + '</u></span>' + (s.note ? '' : ' · <span data-act="item-note-quick" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>일시 품절</u></span>') + '</div>' : '') + '</div>' +
                 '<span class="badge danger">' + fmtQ(s.shortage) + ' ' + esc(s.item.unit) + ' 부족</span>' + (isManager() ?
                 '<div class="inline" style="gap:4px;flex-wrap:wrap">' +
                   '<button class="btn sm primary" data-act="order-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">발주</button>' +
@@ -1136,12 +1136,12 @@
       });
       pendingRows.forEach(function(s){
         var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.memo ? ' · ' + p.memo : '') + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + (s.item.vendor ? ' · ' + esc(s.item.vendor) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>+ 메모(대체품·품절 등)</u></span> · <span data-act="item-note-quick" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>일시 품절</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + (s.item.vendor ? ' · ' + esc(s.item.vendor) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>+ 메모(대체품·품절 등)</u></span> · <span data-act="item-note-quick" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>일시 품절</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
       });
       if (noteRows.length) html += '<div class="sec-h" style="background:var(--surface-sunken);font-size:12px">기타 (메모 있음)</div>';
       noteRows.forEach(function(s){
         var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.memo ? ' · ' + p.memo : '') + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + '</div><div class="s"><span class="badge danger">⚠️ ' + esc(s.item.note) + '</span></div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>메모 고치기</u></span></div>' : '') + '</div><span class="badge muted">확인 필요</span></div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + '</div><div class="s"><span class="badge danger">⚠️ ' + esc(s.note) + '</span></div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>메모 고치기</u></span></div>' : '') + '</div><span class="badge muted">확인 필요</span></div>';
       });
       html += '</div>';
     });
@@ -1195,7 +1195,7 @@
     var byBranch = {}, branchOrder = [], orderLines = [], noteLines = [];
     for (var k in m){
       var s = m[k];
-      if (s.item.note){ noteLines.push(s.item.name + ': ' + s.item.note); continue; }
+      if (s.note){ noteLines.push(s.item.name + ': ' + s.note); continue; }
       if (s.pending > 0){
         s.pendingList.forEach(function(p){
           if (p.kind === 'transfer'){
@@ -1355,7 +1355,7 @@
         html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + ' · <u>고치기</u></div>' +
                 '<div class="s" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><select class="in unit-select" data-item="' + esc(x.item.id) + '" style="width:auto;padding:3px 6px;font-size:12px">' + unitOptionsHtml(x.item.unit) + '</select><select class="in vendor-select" data-item="' + esc(x.item.id) + '" style="width:auto;padding:3px 6px;font-size:12px">' + vendorOptionsHtml(x.item.vendor) + '</select></div>' +
                 '<div class="s">' + (x.item.count_unit ? esc(x.item.count_per_unit + x.item.count_unit + ' = ' + x.item.unit + ' 1') + ' · ' : '') + '<span data-act="item-count-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.count_unit ? '세는 단위 고치기' : '+ 세는 단위 환산') + '</u></span></div>' +
-                (x.item.note ? '<div class="s">' + esc(x.item.note) + '</div>' : '') +
+                (ib && ib.note ? '<div class="s"><span class="badge danger">⚠️ ' + esc(ib.note) + '</span> · <span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>고치기</u></span></div>' : '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>+ 메모(이 매장만)</u></span></div>') +
                 '<div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-toggle-unlimited" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.unlimited ? 'α 해제' : 'α 무제한으로') + '</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
       });
       html += '</div>';
@@ -1426,20 +1426,24 @@
     var it = itemById(id); if (!it) return;
     var name = window.prompt('품목 이름 (비우면 이 품목을 숨겨요)', it.name); if (name === null) return;
     if (!name.trim()){ if (window.confirm('"' + it.name + '"을(를) 모든 매장에서 숨길까요? 기록은 남아요.')){ await db.update('ops_items', { id: id }, { active: false }); toast('숨겼어요'); render(); } return; }
-    var note = window.prompt('메모 (요청처 등, 없으면 비움)', it.note || ''); if (note === null) note = it.note;
-    await db.update('ops_items', { id: id }, { name: name.trim(), note: (note || '').trim() || null });
+    await db.update('ops_items', { id: id }, { name: name.trim() });
     toast('고쳤어요'); render();
   }
-  async function itemNoteEdit(id){
+  function itemBranchNote(itemId, branchId){
+    var ib = base.itemBranch.filter(function(x){ return x.item_id === itemId && x.branch_id === branchId; })[0];
+    return ib ? ib.note : null;
+  }
+  async function itemNoteEdit(id, branchId){
     var it = itemById(id); if (!it) return;
-    var note = window.prompt('메모 (대체 품목, 거래처 품절 안내 등 · 없으면 비워 두기)', it.note || '');
+    var current = itemBranchNote(id, branchId);
+    var note = window.prompt('메모 (이 매장에서만 보여요 · 대체 품목, 거래처 품절 안내 등 · 없으면 비워 두기)', current || '');
     if (note === null) return;
-    await db.update('ops_items', { id: id }, { note: note.trim() || null });
+    await db.upsert('ops_item_branch', [{ item_id: id, branch_id: branchId, note: note.trim() || null }], 'item_id,branch_id');
     toast('메모를 저장했어요'); render();
   }
-  async function itemNoteQuick(id){
+  async function itemNoteQuick(id, branchId){
     var it = itemById(id); if (!it) return;
-    await db.update('ops_items', { id: id }, { note: '일시 품절' });
+    await db.upsert('ops_item_branch', [{ item_id: id, branch_id: branchId, note: '일시 품절' }], 'item_id,branch_id');
     toast('일시 품절로 표시했어요'); render();
   }
   var UNIT_CHOICES = ['묶음', '개', '박스', '봉지', '포대', '줄', '병'];
@@ -6030,8 +6034,8 @@
         case 'ch-jump': checkHistState.date = id; checkHistState.ym = id.slice(0, 7); render(); break;
         case 'ch-month': checkHistState.ym = id; render(); break;
         case 'ch-toggle-all': checkHistState.showAllDates = !checkHistState.showAllDates; render(); break;
-        case 'item-note': await itemNoteEdit(id); break;
-        case 'item-note-quick': await itemNoteQuick(id); break;
+        case 'item-note': await itemNoteEdit(id, el.getAttribute('data-branch')); break;
+        case 'item-note-quick': await itemNoteQuick(id, el.getAttribute('data-branch')); break;
         case 'order-cancel': { var reason = window.prompt('취소 사유 (품절·대체 등, 없으면 비워 두기)', ''); if (reason === null) break; var baseMemo = el.getAttribute('data-memo') || ''; var newMemo = reason ? (baseMemo ? baseMemo + ' · ' + reason : reason) : baseMemo; await db.update('ops_orders', { id: id }, { status: 'cancelled', memo: newMemo || null }); toast('취소했어요'); render(); break; }
         case 'tf-photo': { var tu = await db.signedUrl('receipts', el.getAttribute('data-path')); window.open(tu, '_blank'); break; }
         case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
