@@ -1124,7 +1124,7 @@
       html += '<div class="card section"><div class="sec-h">' + esc(branchName(b)) + '<span class="sp"></span>' + (rows.length ? '<button class="btn sm" data-act="copy" data-branch="' + esc(b) + '">카톡용 복사</button>' : '<span class="badge ok">부족 없음</span>') + ((pendingRows.length || noteRows.length) ? '<button class="btn sm" data-act="copy-resolved" data-branch="' + esc(b) + '">처리 결과 복사</button>' : '') + '</div>';
       rows.forEach(function(s){
         var otherBranches = base.branches.filter(function(x){ return x.id !== b; });
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크' + (s.item.note ? ' · ' + esc(s.item.note) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>' + (s.item.note ? '메모 고치기' : '+ 메모(대체품·품절 등)') + '</u></span></div>' : '') + '</div>' +
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '') + ' · ' + md(s.last.checked_at) + ' 체크' + (s.item.vendor ? ' · ' + esc(s.item.vendor) : '') + (s.item.note ? ' · ' + esc(s.item.note) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>' + (s.item.note ? '메모 고치기' : '+ 메모(대체품·품절 등)') + '</u></span></div>' : '') + '</div>' +
                 '<span class="badge danger">' + fmtQ(s.shortage) + ' ' + esc(s.item.unit) + ' 부족</span>' + (isManager() ?
                 '<div class="inline" style="gap:4px;flex-wrap:wrap">' +
                   '<button class="btn sm primary" data-act="order-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">발주</button>' +
@@ -1136,7 +1136,7 @@
       });
       pendingRows.forEach(function(s){
         var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>+ 메모(대체품·품절 등)</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + (s.item.vendor ? ' · ' + esc(s.item.vendor) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>+ 메모(대체품·품절 등)</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
       });
       if (noteRows.length) html += '<div class="sec-h" style="background:var(--surface-sunken);font-size:12px">기타 (메모 있음)</div>';
       noteRows.forEach(function(s){
@@ -1346,7 +1346,11 @@
       html += '<div class="card section" id="cat-' + esc(g.cat.id || 'none') + '" style="scroll-margin-top:64px"><div class="sec-h">' + esc(g.cat.name) + '<span class="sp"></span>' + (isOwner() ? '<button class="btn sm" data-act="cat-rename" data-id="' + esc(g.cat.id || '') + '">이름</button>' : '') + '</div>';
       g.rows.forEach(function(x){
         var ib = map[x.item.id]; var on = ib ? ib.active !== false : false; var t = ib ? num(ib.target_qty) : 0;
-        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + ' · <u>고치기</u></div><div class="s" data-act="item-edit-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + esc(x.item.unit) + (x.item.count_unit ? ' (' + esc(x.item.count_per_unit + x.item.count_unit) + '=' + esc(x.item.unit) + ' 1)' : '') + (x.item.note ? ' · ' + esc(x.item.note) : '') + ' · <u>고치기</u></div><div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-toggle-unlimited" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.unlimited ? 'α 해제' : 'α 무제한으로') + '</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
+        html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + ' · <u>고치기</u></div>' +
+                '<div class="s" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><select class="in unit-select" data-item="' + esc(x.item.id) + '" style="width:auto;padding:3px 6px;font-size:12px">' + unitOptionsHtml(x.item.unit) + '</select><select class="in vendor-select" data-item="' + esc(x.item.id) + '" style="width:auto;padding:3px 6px;font-size:12px">' + vendorOptionsHtml(x.item.vendor) + '</select></div>' +
+                '<div class="s">' + (x.item.count_unit ? esc(x.item.count_per_unit + x.item.count_unit + ' = ' + x.item.unit + ' 1') + ' · ' : '') + '<span data-act="item-count-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.count_unit ? '세는 단위 고치기' : '+ 세는 단위 환산') + '</u></span></div>' +
+                (x.item.note ? '<div class="s">' + esc(x.item.note) + '</div>' : '') +
+                '<div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-toggle-unlimited" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.unlimited ? 'α 해제' : 'α 무제한으로') + '</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
       });
       html += '</div>';
     });
@@ -1427,21 +1431,40 @@
     await db.update('ops_items', { id: id }, { note: note.trim() || null });
     toast('메모를 저장했어요'); render();
   }
+  var UNIT_CHOICES = ['묶음', '개', '박스', '봉지', '포대', '줄', '봉', '병', '팩', 'box'];
+  var VENDOR_CHOICES = ['새로 피앤엘', '11번가', '쿠팡', '네이버', '기타'];
+  function unitOptionsHtml(current){
+    var list = UNIT_CHOICES.slice();
+    if (current && list.indexOf(current) < 0) list.unshift(current);
+    return list.map(function(u){ return '<option' + (u === current ? ' selected' : '') + '>' + esc(u) + '</option>'; }).join('') + '<option value="__custom__">직접 입력...</option>';
+  }
+  function vendorOptionsHtml(current){
+    var html = '<option value=""' + (!current ? ' selected' : '') + '>거래처 미지정</option>';
+    var list = VENDOR_CHOICES.slice();
+    if (current && list.indexOf(current) < 0) list.push(current);
+    return html + list.map(function(v){ return '<option' + (v === current ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('');
+  }
   async function itemEditUnit(id){
     var it = itemById(id); if (!it) return;
-    var unit = window.prompt('단위 (예: 묶음, 개, box)', it.unit); if (unit === null) return;
+    var unit = window.prompt('단위 직접 입력', it.unit); if (unit === null) return;
     if (!unit.trim()){ toast('단위를 입력해 주세요'); return; }
+    await db.update('ops_items', { id: id }, { unit: unit.trim() });
+    toast('고쳤어요'); render();
+  }
+  async function itemEditCountUnit(id){
+    var it = itemById(id); if (!it) return;
     var altDefault = it.count_unit ? (it.count_unit + ',' + (it.count_per_unit || '')) : '';
-    var alt = window.prompt('세기 쉬운 다른 단위가 있나요? "단위,갯수" 형식으로 (예: 박스,2 → 박스 2개 = ' + unit.trim() + ' 1개). 없으면 비워 두세요', altDefault);
+    var alt = window.prompt('세기 쉬운 다른 단위가 있나요? "단위,갯수" 형식으로 (예: 박스,2 → 박스 2개 = ' + it.unit + ' 1개). 없으면 비워 두세요', altDefault);
+    if (alt === null) return;
     var countUnit = null, countPerUnit = null;
-    if (alt !== null && alt.trim()){
+    if (alt.trim()){
       var parts = alt.split(',');
       countUnit = (parts[0] || '').trim() || null;
       countPerUnit = num(parts[1]) || null;
-      if (!countUnit || !countPerUnit || countPerUnit <= 0){ toast('형식이 맞지 않아 세는 단위는 저장하지 않았어요 (예: 박스,2)'); countUnit = null; countPerUnit = null; }
+      if (!countUnit || !countPerUnit || countPerUnit <= 0){ toast('형식이 맞지 않아 저장하지 않았어요 (예: 박스,2)'); return; }
     }
-    await db.update('ops_items', { id: id }, { unit: unit.trim(), count_unit: countUnit, count_per_unit: countPerUnit });
-    toast('고쳤어요'); render();
+    await db.update('ops_items', { id: id }, { count_unit: countUnit, count_per_unit: countPerUnit });
+    toast('저장했어요'); render();
   }
   async function catAdd(){ var name = window.prompt('새 분류 이름'); if (!name || !name.trim()) return; await db.insert('ops_categories', { name: name.trim(), sort_order: base.categories.length + 1 }); toast('추가했어요'); render(); }
   function nameSearchFilter(containerId, q){
@@ -6001,7 +6024,7 @@
         case 'items-save': await itemsSave(el.getAttribute('data-branch')); break;
         case 'item-add': await itemAdd(); break;
         case 'item-edit-name': await itemEditName(id); break;
-        case 'item-edit-unit': await itemEditUnit(id); break;
+        case 'item-count-unit': await itemEditCountUnit(id); break;
         case 'item-toggle-unlimited': await itemToggleUnlimited(id); break;
         case 'item-move': await itemMove(id); break;
         case 'item-delete': await itemDelete(id); break;
@@ -6281,6 +6304,16 @@
     if (e.target.id === 'hc-file'){ await hcPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-file'){ await tfPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'tf-item'){ var tfu = document.getElementById('tf-unit'); if (tfu) tfu.textContent = (e.target.selectedOptions[0] && e.target.selectedOptions[0].getAttribute('data-unit')) || ''; return; }
+    if (e.target.classList.contains('unit-select')){
+      var usId = e.target.getAttribute('data-item');
+      if (e.target.value === '__custom__'){ await itemEditUnit(usId); return; }
+      await db.update('ops_items', { id: usId }, { unit: e.target.value });
+      toast('단위를 바꿨어요'); render(); return;
+    }
+    if (e.target.classList.contains('vendor-select')){
+      await db.update('ops_items', { id: e.target.getAttribute('data-item') }, { vendor: e.target.value || null });
+      toast('거래처를 저장했어요'); render(); return;
+    }
     if (e.target.classList.contains('qty-unlimited')){
       var uItemId = e.target.getAttribute('data-item');
       var uQtyInp = app.querySelector('.qty[data-item="' + uItemId + '"]');
