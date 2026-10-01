@@ -1431,8 +1431,8 @@
     await db.update('ops_items', { id: id }, { note: note.trim() || null });
     toast('메모를 저장했어요'); render();
   }
-  var UNIT_CHOICES = ['묶음', '개', '박스', '봉지', '포대', '줄', '봉', '병', '팩', 'box'];
-  var VENDOR_CHOICES = ['새로 피앤엘', '11번가', '쿠팡', '네이버', '기타'];
+  var UNIT_CHOICES = ['묶음', '개', '박스', '봉지', '포대', '줄', '병'];
+  var VENDOR_CHOICES = ['새로 피앤엘', '11번가', '쿠팡', '네이버', '제작봉투', '기타'];
   function unitOptionsHtml(current){
     var list = UNIT_CHOICES.slice();
     if (current && list.indexOf(current) < 0) list.unshift(current);
@@ -6308,11 +6308,14 @@
       var usId = e.target.getAttribute('data-item');
       if (e.target.value === '__custom__'){ await itemEditUnit(usId); return; }
       await db.update('ops_items', { id: usId }, { unit: e.target.value });
-      toast('단위를 바꿨어요'); render(); return;
+      var usIt = itemById(usId); if (usIt) usIt.unit = e.target.value;
+      toast('단위를 바꿨어요'); return;
     }
     if (e.target.classList.contains('vendor-select')){
-      await db.update('ops_items', { id: e.target.getAttribute('data-item') }, { vendor: e.target.value || null });
-      toast('거래처를 저장했어요'); render(); return;
+      var vsId = e.target.getAttribute('data-item');
+      await db.update('ops_items', { id: vsId }, { vendor: e.target.value || null });
+      var vsIt = itemById(vsId); if (vsIt) vsIt.vendor = e.target.value || null;
+      toast('거래처를 저장했어요'); return;
     }
     if (e.target.classList.contains('qty-unlimited')){
       var uItemId = e.target.getAttribute('data-item');
