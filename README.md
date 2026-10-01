@@ -147,7 +147,7 @@ Supabase 대시보드 → SQL Editor → New query → [`supabase-setup.sql`](su
 1. **테이블 만들기**: SQL Editor → [`supabase-migration-corp.sql`](supabase-migration-corp.sql) 전체 붙여넣기 → Run (선결제 SQL이 먼저 돼 있어야 해요. 여러 번 실행해도 안전)
 2. **메일 함수 다시 붙여넣기**: Edge Functions → `send-document` → Code 탭에 [`supabase/functions/send-document/index.ts`](supabase/functions/send-document/index.ts) 전체 붙여넣기 → Deploy (증명서 메일 제목·본문이 따로 나오게 바뀜)
 3. **회사 정보·주주 넣기**: 사장님 → 홈 → 법인 → 법인 서류 → 회사 정보(발행주식 총수·1주 금액) → 주주명부(주주 추가 → 변동 기록 "설립")
-4. 직인(사용인감)은 나중에 — 지금은 서류에 빈 도장 자리만 있음
+4. **직인(사용인감)**: SQL Editor → [`supabase-migration-corp-seal.sql`](supabase-migration-corp-seal.sql) Run → 법인 서류 → 회사 정보에서 도장 사진 올리기(종이 배경은 자동으로 지움). 서류를 만들 때 "직인 찍기"를 체크한 것만 찍히고, 안 하면 빈 도장 자리
 
 ## 시연 모드
 

@@ -6549,9 +6549,59 @@
       '<div class="grid2">' + f('ci-total', '발행주식 총수 (주)', s.total_shares, '예: 10000', ' type="number" inputmode="numeric"') + f('ci-par', '1주의 금액 (원)', s.par_value, '예: 5000', ' type="number" inputmode="numeric"') + '</div>' +
       '<div class="muted">발행주식 총수·1주 금액은 법인등기부등본 "발행주식의 총수" 칸에 있어요. 주주명부 합계와 다르면 경고가 떠요.</div>' +
       '<button class="btn primary block" data-act="corp-info-save">저장</button></div>';
-    html += '<div class="note">직인(사용인감)은 나중에 넣기로 해서 지금은 서류에 <b>빈 도장 자리</b>만 있어요.</div>';
+    var seal = s.has_seal ? await corpSeal() : null;
+    html += '<div class="group-title">직인 (사용인감)</div><div class="form">' +
+      (seal ? '<div class="inline" style="align-items:center;gap:12px"><div style="width:90px;height:90px;border:1px dashed var(--line,#ddd);border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center"><img src="' + seal + '" alt="직인" style="max-width:80px;max-height:80px"></div><div style="flex:1"><b>직인이 등록돼 있어요</b><div class="muted">서류를 만들 때 "직인 찍기"를 체크한 것만 찍혀요.</div></div><button class="btn sm danger" data-act="corp-seal-remove">지우기</button></div>'
+            : '<div class="muted">흰 종이에 도장을 찍고 사진을 찍어 올리면, 종이 배경은 지우고 빨간 도장만 남겨요. 서류를 만들 때마다 <b>직인을 찍을지 말지 고를 수 있어요</b> (해외라 도장이 없을 때만 찍기).</div>') +
+      '<div><label>' + (seal ? '다른 사진으로 바꾸기' : '도장 사진 올리기') + '</label><input class="in" type="file" id="ci-seal" accept="image/*"></div>' +
+      '<div class="muted">직인은 사장님 코드로 잠긴 곳에만 보관돼요. 법인인감(등기소에 등록한 도장)은 올리지 마세요.</div></div>';
     app.innerHTML = html;
+    var sf = document.getElementById('ci-seal');
+    if (sf) sf.addEventListener('change', async function(){
+      var file = sf.files && sf.files[0]; if (!file) return;
+      try {
+        var url = await sealFromFile(file);
+        await corpCall('corp_seal_set', { p_seal: url });
+        corpSt.seal = url; toast('직인을 등록했어요'); render();
+      } catch(e){ toast(/corp_seal_set|function|schema/i.test(e.message || '') ? '직인 준비(SQL)를 먼저 실행해 주세요' : (e.message || '직인을 올리지 못했어요')); }
+    });
   };
+  async function corpSeal(){
+    if (corpSt.seal) return corpSt.seal;
+    try { var r = await corpCall('corp_seal_get'); corpSt.seal = r.seal || null; } catch(e){ corpSt.seal = null; }
+    return corpSt.seal;
+  }
+  function corpHasSeal(){ return !!(corpSt.data && corpSt.data.settings && corpSt.data.settings.has_seal); }
+  function sealCheck(id, on){
+    return corpHasSeal() ? '<label class="inline" style="gap:6px"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> 직인 찍기 (도장을 직접 못 찍을 때 — 체크 안 하면 빈 도장 자리)</label>'
+      : '<div class="muted">도장 자리는 비어 있어요. <a href="#/corp-info" style="text-decoration:underline">회사 정보</a>에 직인을 등록하면 서류마다 찍을지 고를 수 있어요.</div>';
+  }
+  // 도장 사진 → 종이 배경을 지우고 빨간 도장만 남긴 작은 PNG
+  function sealFromFile(file){
+    return new Promise(function(res, rej){
+      var img = new Image(), u = URL.createObjectURL(file);
+      img.onerror = function(){ URL.revokeObjectURL(u); rej(new Error('사진을 읽지 못했어요')); };
+      img.onload = function(){
+        URL.revokeObjectURL(u);
+        var k = Math.min(1, 1200 / Math.max(img.width, img.height)), w = Math.max(1, Math.round(img.width * k)), h = Math.max(1, Math.round(img.height * k));
+        var c = document.createElement('canvas'); c.width = w; c.height = h; var g = c.getContext('2d'); g.drawImage(img, 0, 0, w, h);
+        var d = g.getImageData(0, 0, w, h), p = d.data, x0 = w, y0 = h, x1 = -1, y1 = -1;
+        for (var i = 0; i < p.length; i += 4){
+          var red = p[i] - Math.max(p[i + 1], p[i + 2]), a = Math.max(0, Math.min(255, (red - 35) * 5));
+          p[i + 3] = a;
+          if (a > 128){ var px = (i / 4) % w, py = Math.floor(i / 4 / w); if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py; }
+        }
+        if (x1 < 0 || x1 - x0 < 20 || y1 - y0 < 20){ rej(new Error('빨간 도장을 찾지 못했어요. 흰 종이에 찍은 도장을 가까이서 찍어 주세요')); return; }
+        g.putImageData(d, 0, 0);
+        var m = Math.round(Math.max(x1 - x0, y1 - y0) * 0.04); x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(w - 1, x1 + m); y1 = Math.min(h - 1, y1 + m);
+        var cw = x1 - x0 + 1, ch = y1 - y0 + 1, k2 = Math.min(1, 360 / Math.max(cw, ch));
+        var o = document.createElement('canvas'); o.width = Math.round(cw * k2); o.height = Math.round(ch * k2);
+        o.getContext('2d').drawImage(c, x0, y0, cw, ch, 0, 0, o.width, o.height);
+        res(o.toDataURL('image/png'));
+      };
+      img.src = u;
+    });
+  }
   async function corpInfoSave(){
     var tot = num(corpVal('ci-total')), par = num(corpVal('ci-par'));
     var company = { name: corpVal('ci-name'), reg_no: corpVal('ci-reg'), biz_no: corpVal('ci-biz'), address: corpVal('ci-addr'), ceo: corpVal('ci-ceo'), phone: corpVal('ci-phone') };
@@ -6594,7 +6644,7 @@
         '<div class="muted">주민등록번호는 저장하지 않아요. 제출처가 꼭 요구하면 PDF에 직접 적어 주세요.</div>' +
         '<div class="inline"><button class="btn primary" data-act="corp-holder-save">저장</button><button class="btn" data-act="corp-holder-cancel">닫기</button>' + (he.id ? '<button class="btn danger sm" data-act="corp-holder-del" data-id="' + esc(he.id) + '">주주 삭제</button>' : '') + '</div></div>';
     } else html += '<button class="btn block" data-act="corp-holder-new" style="margin-top:8px">+ 주주 추가</button>';
-    html += '<div class="group-title">PDF 만들기</div><div class="form"><div class="grid2"><div><label>용도</label><input class="in" id="chp-purpose" placeholder="예: 은행 제출용"></div><div><label>제출처 (선택)</label><input class="in" id="chp-recipient" placeholder="예: ○○은행"></div></div>' +
+    html += '<div class="group-title">PDF 만들기</div><div class="form"><div class="grid2"><div><label>용도</label><input class="in" id="chp-purpose" placeholder="예: 은행 제출용"></div><div><label>제출처 (선택)</label><input class="in" id="chp-recipient" placeholder="예: ○○은행"></div></div>' + sealCheck('chp-seal', false) +
       '<button class="btn primary block" data-act="corp-holders-pdf"' + (sum ? '' : ' disabled') + '>📄 ' + esc(asOf) + ' 기준 주주명부 PDF 만들기</button><div class="muted">발급번호와 진위 확인 QR이 같이 찍히고, 발급 대장에 남아요.</div></div>';
     var ev = d.events || [];
     if (ev.length){
@@ -6621,12 +6671,13 @@
   async function corpHoldersPdf(){
     var d = corpSt.data, asOf = corpSt.asOf || todayStr();
     var purpose = corpVal('chp-purpose'), recipient = corpVal('chp-recipient');
+    var sc = document.getElementById('chp-seal'), seal = sc && sc.checked ? await corpSeal() : null;
     var rows = (d.holdings || []).filter(function(h){ return Number(h.shares) > 0; });
     if (!rows.length){ toast('주식을 가진 주주가 없어요'); return; }
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    var iss = await corpCall('corp_issue', { p_doc: { doc_type: '주주명부', subject_name: '기준일 ' + asOf, purpose: purpose, recipient: recipient, data: { asOf: asOf, rows: rows, total_shares: d.settings.total_shares, par_value: d.settings.par_value } } });
+    var iss = await corpCall('corp_issue', { p_doc: { doc_type: '주주명부', subject_name: '기준일 ' + asOf, purpose: purpose, recipient: recipient, data: { asOf: asOf, rows: rows, total_shares: d.settings.total_shares, par_value: d.settings.par_value, sealed: !!seal } } });
     var vurl = corpVerifyUrl(iss.issue_no, iss.verify_key);
-    var blob = await pdfFromHtml(BNC().render('주주명부', { company: iss.company || d.settings.company, issueNo: iss.issue_no, verifyKey: iss.verify_key, verifyUrl: vurl, qr: qrDataUrl(vurl), issuedOn: todayStr(), asOf: asOf, rows: rows, totalShares: d.settings.total_shares, parValue: d.settings.par_value, purpose: purpose, recipient: recipient, seal: null }));
+    var blob = await pdfFromHtml(BNC().render('주주명부', { company: iss.company || d.settings.company, issueNo: iss.issue_no, verifyKey: iss.verify_key, verifyUrl: vurl, qr: qrDataUrl(vurl), issuedOn: todayStr(), asOf: asOf, rows: rows, totalShares: d.settings.total_shares, parValue: d.settings.par_value, purpose: purpose, recipient: recipient, seal: seal }));
     var sha = await sha256(blob); if (sha) await corpCall('corp_issue_set_sha', { p_issue_no: iss.issue_no, p_sha: sha });
     corpSt.issued = { type: '주주명부', blob: blob, fileName: 'bonnoel_shareholders_' + asOf + '_' + iss.issue_no + '.pdf', issueNo: iss.issue_no, asOf: asOf };
     render();
@@ -6676,6 +6727,7 @@
     f.branch = corpVal('cf-branch'); f.position = corpVal('cf-pos'); f.duty = corpVal('cf-duty'); f.hireOn = corpVal('cf-hire'); f.leaveOn = corpVal('cf-leave');
     f.purpose = corpVal('cf-purpose'); f.purposeEtc = corpVal('cf-purpose-etc'); f.recipient = corpVal('cf-recipient'); f.email = corpVal('cf-email').toLowerCase();
     var sm = document.getElementById('cf-send'); f.sendMail = !!(sm && sm.checked);
+    var sl = document.getElementById('cf-seal'); f.seal = !!(sl && sl.checked);
     return f;
   }
   function certCtx(f, extra){
@@ -6715,7 +6767,7 @@
       inp('cf-email', '받을 이메일', f.email, '직원 이메일', 'email') +
       '<label class="inline" style="gap:6px"><input type="checkbox" id="cf-send"' + (f.sendMail ? ' checked' : '') + '> 발급하면 이 메일로 PDF 보내기 (사장님 메일 참조)</label>' +
       '<div class="inline"><button class="btn" data-act="corp-cert-preview">미리보기</button><button class="btn primary" data-act="corp-cert-issue" style="flex:1">발급하기</button></div>' +
-      '<div class="muted">직인(사용인감)은 나중에 넣기로 해서 도장 자리는 비어 있어요.</div></div>';
+      sealCheck('cf-seal', f.seal) + '</div>';
     html += '<div id="cf-preview"></div>';
     app.innerHTML = html;
     certBind();
@@ -6726,10 +6778,11 @@
     var k = document.getElementById('cf-kind');
     if (k) k.addEventListener('change', function(){ certRead(); render(); });
   }
-  function certPreview(){
+  async function certPreview(){
     var f = certRead(); var type = CERT_KIND[f.kind];
     var box = document.getElementById('cf-preview'); if (!box) return;
-    box.innerHTML = '<div class="group-title">미리보기 (발급번호·QR은 발급할 때 붙어요)</div><div style="overflow:auto;background:#fff;border-radius:8px;padding:6px"><div style="width:190mm;transform:scale(.5);transform-origin:0 0;height:150mm">' + BNC().render(type, certCtx(f, { issueNo: '(발급 시 부여)' })) + '</div></div>';
+    var pseal = f.seal ? await corpSeal() : null;
+    box.innerHTML = '<div class="group-title">미리보기 (발급번호·QR은 발급할 때 붙어요)</div><div style="overflow:auto;background:#fff;border-radius:8px;padding:6px"><div style="width:190mm;transform:scale(.5);transform-origin:0 0;height:150mm">' + BNC().render(type, certCtx(f, { issueNo: '(발급 시 부여)', seal: pseal })) + '</div></div>';
     box.scrollIntoView({ behavior: 'smooth' });
   }
   async function certIssue(){
@@ -6740,10 +6793,10 @@
     if (f.purpose === '기타' && !f.purposeEtc){ toast('기타 용도를 적어 주세요'); return; }
     if (f.sendMail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email || '')){ toast('이메일 주소를 확인해 주세요 (안 보내려면 체크 해제)'); return; }
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    var ctx0 = certCtx(f);
-    var iss = await corpCall('corp_issue', { p_doc: { doc_type: type, subject_name: f.name, staff_id: f.staffId, purpose: ctx0.purpose, recipient: f.recipient, data: { person: ctx0.person, job: ctx0.job, email: f.email || null, request_id: f.reqId } } });
+    var ctx0 = certCtx(f), seal = f.seal ? await corpSeal() : null;
+    var iss = await corpCall('corp_issue', { p_doc: { doc_type: type, subject_name: f.name, staff_id: f.staffId, purpose: ctx0.purpose, recipient: f.recipient, data: { person: ctx0.person, job: ctx0.job, email: f.email || null, request_id: f.reqId, sealed: !!seal } } });
     var vurl = corpVerifyUrl(iss.issue_no, iss.verify_key);
-    var blob = await pdfFromHtml(BNC().render(type, certCtx(f, { company: iss.company || ctx0.company, issueNo: iss.issue_no, verifyKey: iss.verify_key, verifyUrl: vurl, qr: qrDataUrl(vurl) })));
+    var blob = await pdfFromHtml(BNC().render(type, certCtx(f, { company: iss.company || ctx0.company, issueNo: iss.issue_no, verifyKey: iss.verify_key, verifyUrl: vurl, qr: qrDataUrl(vurl), seal: seal })));
     var sha = await sha256(blob); if (sha) await corpCall('corp_issue_set_sha', { p_issue_no: iss.issue_no, p_sha: sha });
     // 직원이 "증명서 신청" 화면에서 다시 받을 수 있게 입사 서류와 같은 저장소에도 둠
     var sid = f.staffId || session.staffId; // 직접 입력한 사람은 명부에 없으니 발급한 사장님 이름으로 보관
@@ -6934,6 +6987,7 @@
         case 'corp-login': await corpLogin(); break;
         case 'corp-lock': corpSt = { code: null, data: null, asOf: null, issued: null, certForm: null, holderEdit: null, eventFor: null, fileForm: false, linkFor: null, lastLink: null, shared: null }; toast('잠갔어요'); nav('#/home'); break;
         case 'corp-info-save': await corpInfoSave(); break;
+        case 'corp-seal-remove': if (confirm('등록한 직인을 지울까요?')){ await corpCall('corp_seal_set', { p_seal: null }); corpSt.seal = null; toast('직인을 지웠어요'); render(); } break;
         case 'corp-holder-new': corpSt.holderEdit = {}; corpSt.eventFor = null; render(); break;
         case 'corp-holder-edit': corpSt.holderEdit = (corpSt.data.holdings || []).filter(function(h){ return h.id === id; })[0] || null; corpSt.eventFor = null; render(); break;
         case 'corp-holder-cancel': corpSt.holderEdit = null; render(); break;
@@ -7016,9 +7070,11 @@
       var dt = a.p_date || todayStr();
       var hs = C.holders.map(function(h){ var ev = C.events.filter(function(e){ return e.shareholder_id === h.id && e.event_date <= dt; }); var pos = ev.filter(function(e){ return e.delta > 0; }).map(function(e){ return e.event_date; }).sort();
         return Object.assign({}, h, { shares: ev.reduce(function(s, e){ return s + e.delta; }, 0), first_date: pos[0] || null }); }).sort(function(x, y){ return x.sort_order - y.sort_order; });
-      return { ok: true, settings: C.settings, holdings: hs, events: C.events.slice().sort(function(x, y){ return x.event_date < y.event_date ? 1 : -1; }),
+      return { ok: true, settings: Object.assign({}, C.settings, { has_seal: !!C.seal }), holdings: hs, events: C.events.slice().sort(function(x, y){ return x.event_date < y.event_date ? 1 : -1; }),
         files: C.files.map(function(f){ var o = Object.assign({}, f); delete o.b64; return o; }).reverse(), links: C.links.slice().reverse(), issues: C.issues.slice().reverse() };
     }
+    if (fn === 'corp_seal_get') return { ok: true, seal: C.seal || null };
+    if (fn === 'corp_seal_set'){ C.seal = a.p_seal || null; return { ok: true }; }
     if (fn === 'corp_save_settings'){ C.settings = { company: a.p_company, total_shares: a.p_total_shares, par_value: a.p_par_value }; return { ok: true }; }
     if (fn === 'corp_save_holder'){ var h = a.p_holder; if (!h.name) return err('이름을 넣어 주세요'); if (h.id){ Object.assign(C.holders.filter(function(x){ return x.id === h.id; })[0] || {}, h); return { ok: true, id: h.id }; } var nh = Object.assign({ id: uid(), sort_order: C.holders.length + 1 }, h); C.holders.push(nh); return { ok: true, id: nh.id }; }
     if (fn === 'corp_delete_holder'){ C.holders = C.holders.filter(function(x){ return x.id !== a.p_id; }); C.events = C.events.filter(function(x){ return x.shareholder_id !== a.p_id; }); return { ok: true }; }

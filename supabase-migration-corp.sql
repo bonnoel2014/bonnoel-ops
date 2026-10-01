@@ -24,6 +24,7 @@ insert into corp_settings (id, company) values (1, jsonb_build_object(
   'name', '주식회사 본노엘', 'reg_no', '110111-7698488',
   'address', '서울시 동대문구 전농로75-18, 1층(답십리동)', 'ceo', '손성필'))
 on conflict (id) do nothing;
+alter table corp_settings add column if not exists seal text;   -- 직인 그림 (꺼내고 바꾸는 함수는 supabase-migration-corp-seal.sql)
 
 -- 2. 주주 (사람) + 주식 변동 기록 (지우지 않고 쌓음 → 어느 날짜 기준으로든 주주명부를 다시 만들 수 있음)
 create table if not exists corp_shareholders (
@@ -163,7 +164,7 @@ declare d date := coalesce(p_date, (now() at time zone 'Asia/Seoul')::date);
 begin
   if not corp__ok(p_code) then return corp__err(); end if;
   return jsonb_build_object('ok', true,
-    'settings', (select to_jsonb(s) - 'id' from corp_settings s where id = 1),
+    'settings', (select to_jsonb(s) - 'id' - 'seal' || jsonb_build_object('has_seal', s.seal is not null) from corp_settings s where id = 1),
     'holdings', corp__holdings(d),
     'events', coalesce((select jsonb_agg(to_jsonb(e) order by e.event_date desc, e.created_at desc) from corp_share_events e), '[]'::jsonb),
     'files', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'kind', f.kind, 'title', f.title, 'file_name', f.file_name, 'mime', f.mime, 'size', f.size, 'issued_on', f.issued_on, 'memo', f.memo, 'uploaded_at', f.uploaded_at) order by f.uploaded_at desc) from corp_files f), '[]'::jsonb),

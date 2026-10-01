@@ -1,6 +1,6 @@
 // 법인 서류 양식: 재직증명서 · 경력증명서 · 주주명부. 문구를 고치면 VERSION을 올려 주세요.
 // 사용: window.BN_CORP.render(type, ctx) → PDF로 만들 HTML (type: '재직증명서' | '경력증명서' | '주주명부')
-// 직인(사용인감) 자리는 비워 둠 — ctx.seal 에 이미지 주소가 들어오면 그 자리에 찍힘
+// 직인(사용인감): ctx.seal 에 이미지(data URL)가 들어오면 "(인)" 위에 찍히고, 없으면 빈 점선 칸
 (function(){
   var VERSION = 'corp-2026-09';
 
@@ -34,7 +34,8 @@
     '.bnc .issuer table{width:auto;border:none;margin:0} .bnc .issuer td{border:none;padding:3px 8px;font-size:12pt}' +
     '.bnc .issuer td.k{color:#333;white-space:nowrap}' +
     '.bnc .sealbox{display:inline-flex;align-items:center;justify-content:center;width:22mm;height:22mm;border:1px dashed #bbb;border-radius:4px;color:#999;font-size:10pt;vertical-align:middle;margin-left:8px;position:relative}' +
-    '.bnc .sealbox img{max-width:22mm;max-height:22mm;position:absolute}' +
+    '.bnc .sealbox.on{border-color:transparent;color:#333}' +
+    '.bnc .sealbox img{max-width:22mm;max-height:22mm;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}' +
     '.bnc .foot{margin-top:auto;padding-top:8mm;display:flex;align-items:flex-end;gap:10px;border-top:1px solid #ddd;font-size:8.5pt;color:#444;line-height:1.5}' +
     '.bnc .foot img{width:24mm;height:24mm;flex:none}' +
     '.bnc .muted{color:#555}' +
@@ -42,13 +43,13 @@
 
   function issuerBlock(ctx){
     var c = ctx.company || {};
-    var seal = ctx.seal ? '<img src="' + ctx.seal + '" alt="직인">' : '(인)';
+    var seal = ctx.seal ? '(인)<img src="' + ctx.seal + '" alt="직인">' : '(인)';
     return '<div class="issuer"><table>' +
       '<tr><td class="k">회 사 명</td><td>' + esc(c.name) + '</td></tr>' +
       '<tr><td class="k">주 소</td><td>' + esc(c.address) + '</td></tr>' +
       (c.reg_no ? '<tr><td class="k">법인등록번호</td><td>' + esc(c.reg_no) + '</td></tr>' : '') +
       (c.biz_no ? '<tr><td class="k">사업자등록번호</td><td>' + esc(c.biz_no) + '</td></tr>' : '') +
-      '<tr><td class="k">대 표 이 사</td><td>' + esc(c.ceo) + ' <span class="sealbox">' + seal + '</span></td></tr>' +
+      '<tr><td class="k">대 표 이 사</td><td>' + esc(c.ceo) + ' <span class="sealbox' + (ctx.seal ? ' on' : '') + '">' + seal + '</span></td></tr>' +
       '</table></div>';
   }
   function foot(ctx){
