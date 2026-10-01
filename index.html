@@ -673,6 +673,8 @@
       people.forEach(function(s){ html += '<button class="btn" data-act="pick-staff" data-id="' + esc(s.id) + '">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : s.role === 'kiosk' ? ' 📱' : '') + hcNameMark(hcMarks, s.id) + '</button>'; });
       html += '</div>';
       if (!people.length) html += '<div class="empty">이 매장에 등록된 직원이 없어요. 매니저에게 등록을 요청하세요.</div>';
+      // 매장폰이 로그아웃돼 있어도 출퇴근은 바로 할 수 있게 (출퇴근 화면은 원래 로그인 없이 이름+비밀번호로 됨)
+      html += '<div style="margin-top:16px;text-align:center"><a class="btn" href="#/clock">⏱ 로그인 없이 출퇴근만 하기</a></div>';
     } else {
       var s = base.staff.concat(base.kiosks).filter(function(x){ return x.id === st.staffId; })[0];
       var first = !base.hasPin[s.id];
