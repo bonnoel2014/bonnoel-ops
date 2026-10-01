@@ -50,8 +50,10 @@ end $$;
 -- 2. 직원 명단 지키기: 사장·매니저·매장폰 줄과 역할은 사장님(또는 매니저)만 손댈 수 있음
 --    (근무자 줄 추가·매장 옮기기는 매뉴얼북 관리 화면에서도 하니까 그대로 둠 → 3단계에서 잠금)
 create or replace function staff__guard_staff_row() returns trigger
-language plpgsql security definer set search_path = public as $$
+language plpgsql set search_path = public as $$
 begin
+  -- 앱(공개 키·로그인 계정)에서 온 요청만 검사. SQL Editor·서버 함수(서버 전용 키)는 통과
+  if current_user not in ('anon', 'authenticated') then return coalesce(new, old); end if;
   if tg_op = 'INSERT' then
     if coalesce(new.role, 'staff') <> 'staff' and not staff__is_owner() then
       raise exception '사장님만 매니저·사장·매장폰 계정을 만들 수 있어요';
