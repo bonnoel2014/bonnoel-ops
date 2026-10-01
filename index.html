@@ -1128,7 +1128,7 @@
                 '<span class="badge danger">' + fmtQ(s.shortage) + ' ' + esc(s.item.unit) + ' 부족</span>' + (isManager() ?
                 '<div class="inline" style="gap:4px;flex-wrap:wrap">' +
                   '<button class="btn sm primary" data-act="order-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">발주</button>' +
-                  '<button class="btn sm" data-act="order-online" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '" data-qty="' + s.shortage + '">온라인 구매</button>' +
+                  '<button class="btn sm" data-act="order-online" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '" data-qty="' + s.shortage + '">구매처</button>' +
                   '<button class="btn sm" data-act="tf-open" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">매장 이동</button>' +
                 '</div>' : '') + '</div>' +
                 '<div class="expand hidden" id="ex-' + esc(b) + '-' + esc(s.item.id) + '"><div class="inline"><label>수량</label><input class="qty" type="number" step="0.5" min="0" value="' + s.shortage + '" id="oq-' + esc(b) + '-' + esc(s.item.id) + '"><label>며칠 걸려요?</label><input class="qty" type="number" step="1" min="0" value="' + (s.item.vendor === '제작봉투' ? 7 : 2) + '" id="od-' + esc(b) + '-' + esc(s.item.id) + '"><label>거래처</label><select class="in order-vendor-select" data-days="od-' + esc(b) + '-' + esc(s.item.id) + '" id="ov-' + esc(b) + '-' + esc(s.item.id) + '" style="width:auto">' + vendorOptionsHtml(s.item.vendor) + '</select><button class="btn sm primary" data-act="order-save" data-branch="' + esc(b) + '" data-item="' + esc(s.item.id) + '">확인</button></div></div>' +
@@ -1443,7 +1443,7 @@
     toast('일시 품절로 표시했어요'); render();
   }
   var UNIT_CHOICES = ['묶음', '개', '박스', '봉지', '포대', '줄', '병'];
-  var VENDOR_CHOICES = ['새로 피앤엘', '11번가', '쿠팡', '네이버', '제작봉투', '기타'];
+  var VENDOR_CHOICES = ['새로 피앤엘', '11번가', '쿠팡', '네이버', '재료상', '제작봉투', '기타'];
   function unitOptionsHtml(current){
     var list = UNIT_CHOICES.slice();
     if (current && list.indexOf(current) < 0) list.unshift(current);
@@ -6011,7 +6011,7 @@
         }
         case 'order-open': { var ex = document.getElementById('ex-' + el.getAttribute('data-branch') + '-' + el.getAttribute('data-item')); ex.classList.toggle('hidden'); break; }
         case 'order-save': { var b1 = el.getAttribute('data-branch'), i1 = el.getAttribute('data-item'); var ov1 = document.getElementById('ov-' + b1 + '-' + i1); await orderSave(b1, i1, num(document.getElementById('oq-' + b1 + '-' + i1).value), num(document.getElementById('od-' + b1 + '-' + i1).value) || 0, (ov1 && ov1.value) || null); break; }
-        case 'order-online': { var i2 = el.getAttribute('data-item'); var it2 = itemById(i2) || {}; await orderSave(el.getAttribute('data-branch'), i2, num(el.getAttribute('data-qty')), it2.vendor === '제작봉투' ? 7 : 2, it2.vendor || '온라인 구매'); break; }
+        case 'order-online': { var i2 = el.getAttribute('data-item'); var it2 = itemById(i2) || {}; await orderSave(el.getAttribute('data-branch'), i2, num(el.getAttribute('data-qty')), it2.vendor === '제작봉투' ? 7 : 2, it2.vendor || '구매처 미지정'); break; }
         case 'tf-open': { var tx = document.getElementById('tx-' + el.getAttribute('data-branch') + '-' + el.getAttribute('data-item')); tx.classList.toggle('hidden'); break; }
         case 'tf-quick-save': { var to1 = el.getAttribute('data-to'), ti1 = el.getAttribute('data-item'); await transferQuickSave(to1, ti1, document.getElementById('tb-' + to1 + '-' + ti1).value, num(document.getElementById('tq-' + to1 + '-' + ti1).value)); break; }
         case 'item-hide-branch': await itemHideBranch(el.getAttribute('data-branch'), el.getAttribute('data-item')); break;
