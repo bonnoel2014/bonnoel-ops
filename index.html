@@ -280,6 +280,15 @@
   function md(s){ if(!s) return ''; var d = new Date(s); if (isNaN(d)) return ''; return (d.getMonth()+1) + '/' + d.getDate(); }
   function isToday(s){ if (!s) return false; var d = new Date(s); if (isNaN(d)) return false; var t = new Date(); return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate(); }
   function localDateKey(s){ var d = new Date(s); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  var NOTE_TEMP_DAYS = 7;   // "일시 품절" 원클릭 메모는 이 기간 지나면 자동으로 사라짐 (직접 쓴 메모는 계속 남음)
+  function effectiveNote(ib){
+    if (!ib || !ib.note) return null;
+    if (ib.note_temp && ib.note_at){
+      var days = (Date.now() - new Date(ib.note_at).getTime()) / 86400000;
+      if (days > NOTE_TEMP_DAYS) return null;
+    }
+    return ib.note;
+  }
   function num(v){ var n = parseFloat(v); return isNaN(n) ? null : n; }
   // "10+10+10" 처럼 여러 자리에 나눠 있는 걸 더해서 넣을 수 있게. 그냥 숫자만 있으면 그 숫자 그대로.
   function sumExpr(v){
@@ -546,7 +555,7 @@
     var map = {};
     base.itemBranch.forEach(function(ib){ if (ib.branch_id === branchId) map[ib.item_id] = ib; });
     return base.items.filter(function(it){ return it.active !== false && map[it.id] && map[it.id].active !== false; })
-      .map(function(it){ return { item: it, target: num(map[it.id].target_qty) || 0, note: map[it.id].note || null }; });
+      .map(function(it){ return { item: it, target: num(map[it.id].target_qty) || 0, note: effectiveNote(map[it.id]) }; });
   }
   function groupByCategory(list){ // list: [{item,...}]
     var groups = [];
@@ -1351,11 +1360,11 @@
     groups.forEach(function(g){
       html += '<div class="card section" id="cat-' + esc(g.cat.id || 'none') + '" style="scroll-margin-top:64px"><div class="sec-h">' + esc(g.cat.name) + '<span class="sp"></span>' + (isOwner() ? '<button class="btn sm" data-act="cat-rename" data-id="' + esc(g.cat.id || '') + '">이름</button>' : '') + '</div>';
       g.rows.forEach(function(x){
-        var ib = map[x.item.id]; var on = ib ? ib.active !== false : false; var t = ib ? num(ib.target_qty) : 0;
+        var ib = map[x.item.id]; var on = ib ? ib.active !== false : false; var t = ib ? num(ib.target_qty) : 0; var ibNote = effectiveNote(ib);
         html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><input type="checkbox" class="ib-on" data-item="' + esc(x.item.id) + '"' + (on ? ' checked' : '') + '><div class="iname"><div class="t" data-act="item-edit-name" data-id="' + esc(x.item.id) + '" style="cursor:pointer">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + ' · <u>고치기</u></div>' +
                 '<div class="s" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><select class="in unit-select" data-item="' + esc(x.item.id) + '" style="width:auto;padding:3px 6px;font-size:12px">' + unitOptionsHtml(x.item.unit) + '</select><select class="in vendor-select" data-item="' + esc(x.item.id) + '" style="width:auto;padding:3px 6px;font-size:12px">' + vendorOptionsHtml(x.item.vendor) + '</select></div>' +
                 '<div class="s">' + (x.item.count_unit ? esc(x.item.count_per_unit + x.item.count_unit + ' = ' + x.item.unit + ' 1') + ' · ' : '') + '<span data-act="item-count-unit" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.count_unit ? '세는 단위 고치기' : '+ 세는 단위 환산') + '</u></span></div>' +
-                (ib && ib.note ? '<div class="s"><span class="badge danger">⚠️ ' + esc(ib.note) + '</span> · <span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>고치기</u></span></div>' : '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>+ 메모(이 매장만)</u></span></div>') +
+                (ibNote ? '<div class="s"><span class="badge danger">⚠️ ' + esc(ibNote) + '</span> · <span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>고치기</u></span></div>' : '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>+ 메모(이 매장만)</u></span></div>') +
                 '<div class="s"><span data-act="item-move" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>분류 옮기기</u></span> · <span data-act="item-toggle-unlimited" data-id="' + esc(x.item.id) + '" style="cursor:pointer"><u>' + (x.item.unlimited ? 'α 해제' : 'α 무제한으로') + '</u></span> · <span data-act="item-delete" data-id="' + esc(x.item.id) + '" style="cursor:pointer;color:var(--danger)"><u>삭제</u></span></div></div><label class="muted">적정</label><input class="qty ib-target" type="number" step="0.5" min="0" data-item="' + esc(x.item.id) + '" value="' + (t || '') + '" placeholder="0"></div>';
       });
       html += '</div>';
@@ -1431,20 +1440,20 @@
   }
   function itemBranchNote(itemId, branchId){
     var ib = base.itemBranch.filter(function(x){ return x.item_id === itemId && x.branch_id === branchId; })[0];
-    return ib ? ib.note : null;
+    return effectiveNote(ib);
   }
   async function itemNoteEdit(id, branchId){
     var it = itemById(id); if (!it) return;
     var current = itemBranchNote(id, branchId);
     var note = window.prompt('메모 (이 매장에서만 보여요 · 대체 품목, 거래처 품절 안내 등 · 없으면 비워 두기)', current || '');
     if (note === null) return;
-    await db.upsert('ops_item_branch', [{ item_id: id, branch_id: branchId, note: note.trim() || null }], 'item_id,branch_id');
+    await db.upsert('ops_item_branch', [{ item_id: id, branch_id: branchId, note: note.trim() || null, note_temp: false, note_at: note.trim() ? new Date().toISOString() : null }], 'item_id,branch_id');
     toast('메모를 저장했어요'); render();
   }
   async function itemNoteQuick(id, branchId){
     var it = itemById(id); if (!it) return;
-    await db.upsert('ops_item_branch', [{ item_id: id, branch_id: branchId, note: '일시 품절' }], 'item_id,branch_id');
-    toast('일시 품절로 표시했어요'); render();
+    await db.upsert('ops_item_branch', [{ item_id: id, branch_id: branchId, note: '일시 품절', note_temp: true, note_at: new Date().toISOString() }], 'item_id,branch_id');
+    toast('일시 품절로 표시했어요 (' + NOTE_TEMP_DAYS + '일 뒤 자동으로 사라져요)'); render();
   }
   var UNIT_CHOICES = ['묶음', '개', '박스', '봉지', '포대', '줄', '병'];
   var VENDOR_CHOICES = ['새로 피앤엘', '11번가', '쿠팡', '네이버', '재료상', '제작봉투', '기타'];
