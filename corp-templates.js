@@ -2,7 +2,7 @@
 // 사용: window.BN_CORP.render(type, ctx) → PDF로 만들 HTML (type: '재직증명서' | '경력증명서' | '주주명부')
 // 직인(사용인감): ctx.seal 에 이미지(data URL)가 들어오면 "(인)" 위에 찍히고, 없으면 빈 점선 칸
 (function(){
-  var VERSION = 'corp-2026-09';
+  var VERSION = 'corp-2026-10';
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function kd(s){ if (!s) return ''; var p = String(s).slice(0, 10).split('-'); return p[0] + '년 ' + (+p[1]) + '월 ' + (+p[2]) + '일'; }
@@ -19,32 +19,32 @@
 
   var CSS = '<style>' +
     '.bnc{font-family:"Noto Sans KR","Malgun Gothic",sans-serif;color:#111;background:#fff;font-size:11pt;line-height:1.6}' +
-    '.bnc .page{width:190mm;min-height:268mm;padding:6mm 6mm 4mm;box-sizing:border-box;position:relative;display:flex;flex-direction:column}' +
+    '.bnc .page{width:190mm;min-height:262mm;padding:2mm 6mm 2mm;box-sizing:border-box;position:relative;display:flex;flex-direction:column}' +
     '.bnc .no{font-size:9pt;color:#444}' +
-    '.bnc h1{font-size:24pt;text-align:center;margin:14mm 0 12mm;letter-spacing:14px;font-weight:700}' +
-    '.bnc h2{font-size:11pt;margin:14px 0 4px;font-weight:700}' +
+    '.bnc h1{font-size:24pt;text-align:center;margin:8mm 0 8mm;letter-spacing:14px;font-weight:700}' +
+    '.bnc h2{font-size:11pt;margin:10px 0 4px;font-weight:700}' +
     '.bnc table{width:100%;border-collapse:collapse;margin:4px 0 8px;font-size:10.5pt;page-break-inside:avoid}' +
-    '.bnc th,.bnc td{border:1px solid #333;padding:7px 8px;vertical-align:middle}' +
+    '.bnc th,.bnc td{border:1px solid #333;padding:6px 8px;vertical-align:middle}' +
     '.bnc th{background:#f3efe8;font-weight:600;text-align:center;white-space:nowrap;width:22%}' +
     '.bnc td.c{text-align:center} .bnc td.r{text-align:right;white-space:nowrap}' +
     '.bnc table.list th{width:auto;padding:6px 4px;font-size:9pt} .bnc table.list td{padding:6px 4px;font-size:9pt} .bnc td.nw{white-space:nowrap}' +
-    '.bnc .stmt{text-align:center;font-size:13pt;margin:16mm 0 10mm;word-break:keep-all}' +
-    '.bnc .date{text-align:center;font-size:12pt;margin:0 0 12mm}' +
+    '.bnc .stmt{text-align:center;font-size:13pt;margin:10mm 0 8mm;word-break:keep-all}' +
+    '.bnc .date{text-align:center;font-size:12pt;margin:0 0 8mm}' +
     '.bnc .issuer{display:flex;justify-content:center}' +
-    '.bnc .issuer table{width:auto;border:none;margin:0} .bnc .issuer td{border:none;padding:3px 8px;font-size:12pt}' +
+    '.bnc .issuer table{width:auto;border:none;margin:0} .bnc .issuer td{border:none;padding:2px 8px;font-size:12pt}' +
     '.bnc .issuer td.k{color:#333;white-space:nowrap}' +
-    '.bnc .sealbox{display:inline-flex;align-items:center;justify-content:center;width:22mm;height:22mm;border:1px dashed #bbb;border-radius:4px;color:#999;font-size:10pt;vertical-align:middle;margin-left:8px;position:relative}' +
+    '.bnc .sealbox{display:inline-block;width:20mm;height:20mm;line-height:20mm;text-align:center;border:1px dashed #bbb;border-radius:4px;color:#999;font-size:10pt;vertical-align:middle;margin-left:8px;position:relative}' +
     '.bnc .sealbox.on{border-color:transparent;color:#333}' +
-    '.bnc .sealbox img{max-width:22mm;max-height:22mm;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}' +
-    '.bnc .foot{margin-top:auto;padding-top:8mm;display:flex;align-items:flex-end;gap:10px;border-top:1px solid #ddd;font-size:8.5pt;color:#444;line-height:1.5}' +
-    '.bnc .foot img{width:24mm;height:24mm;flex:none}' +
+    '.bnc .sealbox img{max-width:20mm;max-height:20mm;position:absolute;left:0;right:0;top:0;bottom:0;margin:auto}' +
+    '.bnc .foot{margin-top:auto;padding-top:4mm;display:flex;align-items:flex-end;gap:10px;border-top:1px solid #ddd;font-size:8.5pt;color:#444;line-height:1.5}' +
+    '.bnc .foot img{width:20mm;height:20mm;flex:none}' +
     '.bnc .muted{color:#555}' +
     '</style>';
 
   function issuerBlock(ctx){
     var c = ctx.company || {};
     var seal = ctx.seal ? '(인)<img src="' + ctx.seal + '" alt="직인">' : '(인)';
-    return '<div class="issuer"><table>' +
+    return '<div class="issuer kp"><table>' +
       '<tr><td class="k">회 사 명</td><td>' + esc(c.name) + '</td></tr>' +
       '<tr><td class="k">주 소</td><td>' + esc(c.address) + '</td></tr>' +
       (c.reg_no ? '<tr><td class="k">법인등록번호</td><td>' + esc(c.reg_no) + '</td></tr>' : '') +
@@ -53,7 +53,7 @@
       '</table></div>';
   }
   function foot(ctx){
-    return '<div class="foot">' + (ctx.qr ? '<img src="' + ctx.qr + '" alt="QR">' : '') +
+    return '<div class="foot kp">' + (ctx.qr ? '<img src="' + ctx.qr + '" alt="QR">' : '') +
       '<div>발급번호 <b>' + esc(ctx.issueNo || '') + '</b> · 확인 글자 <b>' + esc(ctx.verifyKey || '') + '</b><br>' +
       '이 서류가 진짜인지는 왼쪽 QR을 휴대폰 카메라로 비추거나 아래 주소에서 확인할 수 있습니다.<br>' +
       '<span style="word-break:break-all">' + esc(ctx.verifyUrl || '') + '</span></div></div>';
