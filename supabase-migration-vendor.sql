@@ -142,7 +142,7 @@ begin
 end $$;
 
 -- 명세서 머리글(공급자)·입금 계좌 — 앱의 [거래처 설정]에서 고칠 수 있어요
-insert into ops_settings (key, value) values ('vendor_stmt', '{"supplier":"본노엘","ceo":"","phone":"","biz_no":"","bank":"","footer":"위 금액으로 입금해 주세요. 감사합니다."}'::jsonb)
+insert into ops_settings (key, value) values ('vendor_stmt', '{"supplier":"BONNOËL","ceo":"","phone":"","biz_no":"","bank":"","footer":"위 금액으로 입금해 주세요. 감사합니다."}'::jsonb)
 on conflict (key) do nothing;
 
 -- =========================================================
