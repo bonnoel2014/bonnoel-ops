@@ -6,3 +6,4 @@
 
 각 버전: `.html`(원본, 글꼴은 인터넷에서 불러옴) · `-A4.png`(300dpi) · `-A4.pdf`(인쇄용, 인쇄소엔 이걸).
 QR = https://ops.bonnoel.com/prepay.html (스캔 확인함). 소금이: `sogeumi-cut.png`(assets/characters 원본에서 배경만 뺀 것).
+- `prepay-pop2-only10-A4.*` — 2차 새 구도, **10만원 이상 10%만** 표시(7% 등 다른 구간 언급 없음). 앱 설정(선결제 관리 → 설정)에서 기준 100000원·적립 10%로 바꾸면 **지금 앱으로 바로 가능**.
