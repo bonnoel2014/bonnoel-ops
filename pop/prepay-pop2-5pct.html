@@ -43,6 +43,10 @@
   .bar .r{ font-size:30px; font-weight:800; line-height:1; letter-spacing:-.02em; }
   .bar .r small{ font-size:15px; margin-left:1px; font-weight:800; }
   .bar .t{ font-size:12.5px; font-weight:700; margin-top:4px; }
+  .bar.big .r{ font-size:52px; }
+  .bar.big .r small{ font-size:24px; }
+  .bar.big .t{ font-size:14px; }
+  .tag{ align-self:center; background:#fff; color:var(--accent); font-size:12.5px; font-weight:800; padding:3px 11px; border-radius:999px; margin-bottom:7px; }
   .b0{ background:#f6efef; color:var(--muted); }
   .b1{ background:var(--accent-soft); color:#432326; } .b1 .r{ color:var(--accent); }
   .b2{ background:var(--accent); color:var(--accent-ink); }
@@ -92,8 +96,8 @@
   <section class="benefit">
     <p class="eyebrow">Benefit</p>
     <h2>충전 혜택</h2>
-    <div class="bars" style="grid-template-columns:repeat(2,1fr)"><div class="bar b0" style="height:60px"><div class="r">0<small>%</small></div><div class="t">적립 없음</div></div><div class="bar b2" style="height:112px"><div class="r">5<small>%</small></div><div class="t">추가 적립</div></div></div>
-    <div class="labs" style="grid-template-columns:repeat(2,1fr)"><div class="lab">10만원 미만</div><div class="lab">10만원 이상</div></div>
+    <div class="bars" style="grid-template-columns:1fr"><div class="bar b2 big" style="height:112px"><div class="tag">10만원 이상 충전하면</div><div class="r">5<small>%</small></div><div class="t">추가 적립</div></div></div>
+    <div class="labs" style="grid-template-columns:1fr"></div>
     <div class="ex"><b>10만원</b> 충전하면 <b>105,000원</b> 사용</div>
   </section>
 
@@ -115,7 +119,7 @@
     </div>
   </section>
 
-  <p class="fine">남은 금액 환불은 매장에 문의해 주세요 (추가 적립분은 제외돼요).</p>
+  <p class="fine">10만원 미만 충전은 적립이 없어요. 남은 금액 환불은 매장에 문의해 주세요 (추가 적립분은 제외돼요).</p>
 
   <footer>
     <div class="b">본노엘 <span>Bon Noël</span></div>
