@@ -898,6 +898,7 @@
     html += tge();
     html += grp('선결제');
     html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
+    html += row('#/prepay-poster', 'tile-orange', '🖼️', '선결제 포스터', '손님께 보여 주는 안내 포스터 (혜택 · QR · 이용 방법)');
     if (isManager()) html += row('#/prepay-admin', 'tile-gray', '📊', '선결제 관리', '매장별 충전·사용 합계 · 손님 잔액 · 옮기기 · 코드');
     html += tge();
     html += grp('근로계약서·유니폼·보건증');
@@ -5275,6 +5276,16 @@
     app.innerHTML = html;
     if (prepaySt.act === 'charge') ppChargePreview();
     var ai = document.getElementById(prepaySt.act === 'charge' ? 'pp-paid' : 'pp-amount'); if (ai) ai.focus();
+  };
+
+  // 선결제 포스터 — 직원 누구나 열람(손님께 혜택·QR 설명할 때). 원본은 pop/ 폴더
+  routes['prepay-poster'] = async function(){
+    await loadBase();
+    var html = topbar('선결제 포스터', true, whoChip());
+    html += '<a href="pop/prepay-pop-v1-10pct-A4.png" target="_blank" rel="noopener" style="display:block"><img src="pop/prepay-pop-v1-10pct-web.jpg" alt="본노엘 선결제 포스터" style="width:100%;display:block;border-radius:var(--radius-l);border:1px solid var(--line);box-shadow:var(--shadow);background:var(--surface)"></a>';
+    html += '<div class="muted" style="margin:8px 4px">사진을 누르면 크게 열려요. 손님께 혜택이나 잔액 확인 QR을 설명할 때 보여 주세요.</div>';
+    html += '<div class="inline" style="margin-top:6px"><a class="btn" href="pop/prepay-pop-v1-10pct-A4.pdf" target="_blank" rel="noopener">📄 인쇄용 PDF</a><a class="btn" href="pop/prepay-pop-v1-10pct-A4.png" target="_blank" rel="noopener">🔍 큰 그림</a></div>';
+    app.innerHTML = html;
   };
 
   routes['prepay-admin'] = async function(params){
