@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>본노엘 선결제 POP (A4)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">
+<style>
+  @page{ size:A4; margin:0; }
+  :root{
+    --bg:#fffdfd; --blush:#fff1f2; --accent:#af4c60; --accent-soft:#ffe1e3; --accent-ink:#fffdfd;
+    --ink:#231717; --muted:#6e5f5e; --faint:#9b8b8a; --line:#eee1e0; --line-strong:#e1c6c7;
+    --serif:"Gowun Batang","Cormorant Garamond",serif; --latin:"Cormorant Garamond","Gowun Batang",serif;
+    --sans:"Noto Sans KR",sans-serif;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:794px; height:1123px; background:var(--bg); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:var(--sans); color:var(--ink); word-break:keep-all; overflow:hidden; position:relative; }
+  .poster{ position:relative; width:794px; height:1123px; padding:30px 46px 0; background:var(--bg); display:flex; flex-direction:column; }
+  .eyebrow{ font-family:var(--latin); letter-spacing:.24em; text-transform:uppercase; color:var(--accent); font-size:14px; font-weight:600; }
+
+  .top{ display:flex; justify-content:space-between; align-items:baseline; padding:2px 2px 14px; border-bottom:1px solid var(--line); }
+  .brand{ font-family:var(--serif); font-weight:700; font-size:25px; }
+  .brand span{ font-family:var(--latin); font-weight:500; font-size:20px; color:var(--muted); }
+  .since{ font-family:var(--latin); font-weight:600; font-size:14px; letter-spacing:.26em; text-transform:uppercase; color:var(--accent); }
+
+  .panel{ position:relative; margin-top:22px; background:var(--blush); border:1px solid var(--line); border-radius:34px; padding:22px 30px 18px; min-height:214px; }
+  .panel .txt{ max-width:470px; }
+  .panel h1{ font-size:50px; line-height:1.15; font-weight:800; letter-spacing:-.02em; margin-top:6px; }
+  .panel h1 em{ font-style:normal; color:var(--accent); }
+  .lead{ margin-top:11px; font-size:15.5px; color:var(--muted); font-weight:500; }
+  .chips{ display:flex; gap:7px; margin-top:14px; }
+  .chip{ background:#fff; border:1px solid var(--line-strong); color:#432326; font-weight:700; font-size:14px; padding:5px 14px; border-radius:999px; }
+  .panel .mascot{ position:absolute; right:22px; bottom:-30px; width:226px; }
+  .bubble{ position:absolute; right:34px; top:22px; background:#fff; border:1px solid var(--line-strong); color:#432326; font-weight:700; font-size:13.5px; padding:6px 13px; border-radius:14px; }
+  .bubble:after{ content:""; position:absolute; left:26px; bottom:-8px; width:12px; height:12px; background:#fff; border-right:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); transform:rotate(45deg); }
+
+  .benefit{ margin-top:40px; }
+  .benefit h2{ font-size:24px; font-weight:800; letter-spacing:-.02em; margin-top:2px; }
+  .bars{ display:grid; gap:10px; align-items:end; margin-top:14px; }
+  .bar{ border-radius:20px 20px 6px 6px; padding:12px 12px 10px; text-align:center; display:flex; flex-direction:column; justify-content:flex-end; }
+  .bar .r{ font-size:30px; font-weight:800; line-height:1; letter-spacing:-.02em; }
+  .bar .r small{ font-size:15px; margin-left:1px; font-weight:800; }
+  .bar .t{ font-size:12.5px; font-weight:700; margin-top:4px; }
+  .b0{ background:#f6efef; color:var(--muted); }
+  .b1{ background:var(--accent-soft); color:#432326; } .b1 .r{ color:var(--accent); }
+  .b2{ background:var(--accent); color:var(--accent-ink); }
+  .labs{ display:grid; gap:10px; margin-top:7px; }
+  .lab{ text-align:center; font-size:14.5px; font-weight:800; line-height:1.35; }
+  .lab span{ display:block; font-weight:500; font-size:12.5px; color:var(--muted); }
+  .ex{ margin-top:12px; background:#fff; border:1px dashed var(--line-strong); border-radius:14px; padding:9px 16px; font-size:14.5px; text-align:center; color:var(--muted); }
+  .ex b{ color:var(--ink); font-weight:700; }
+
+  .lower{ display:grid; grid-template-columns:1fr 296px; gap:28px; margin-top:20px; align-items:start; }
+  .how h3{ font-size:24px; font-weight:800; letter-spacing:-.02em; margin:2px 0 14px; }
+  .vstep{ display:flex; gap:14px; position:relative; padding-bottom:16px; }
+  .vstep:not(:last-child):before{ content:""; position:absolute; left:15px; top:34px; bottom:2px; width:2px; background:var(--line-strong); }
+  .num{ flex:none; width:32px; height:32px; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-family:var(--serif); font-weight:700; font-size:17px; display:flex; align-items:center; justify-content:center; }
+  .vstep b{ display:block; font-size:18px; font-weight:800; line-height:1.3; }
+  .vstep span{ display:block; font-size:13.5px; color:var(--muted); margin-top:2px; }
+  .qrcard{ background:#fff; border:1px solid var(--line); border-radius:28px; padding:13px 16px 12px; text-align:center; box-shadow:0 10px 30px -18px rgba(35,23,23,.28); }
+  .qrcard h4{ font-family:var(--serif); font-size:21px; font-weight:700; margin-top:1px; }
+  .qrframe{ display:inline-block; background:#fff; border:1px solid var(--line-strong); border-radius:16px; padding:11px; margin-top:10px; }
+  .qrframe svg{ display:block; width:136px; height:136px; }
+  .qrcard p{ font-size:13px; color:var(--muted); margin-top:9px; line-height:1.5; }
+  .qrcard p b{ color:var(--ink); font-weight:700; }
+  .qrcard .url{ font-family:var(--latin); font-size:14px; color:var(--faint); letter-spacing:.04em; margin-top:3px; }
+
+  .fine{ text-align:center; font-size:12.5px; color:var(--faint); margin-top:6px; line-height:1.5; }
+  footer{ margin:auto -46px 0; background:var(--blush); border-top:1px solid var(--line); padding:12px 46px; display:flex; justify-content:space-between; align-items:baseline; }
+  footer .b{ font-family:var(--serif); font-weight:700; font-size:18px; }
+  footer .b span{ font-family:var(--latin); font-weight:500; color:var(--muted); font-size:15px; }
+  footer .r{ font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="poster">
+  <header class="top"><div class="brand">본노엘 <span>· Bon Noël</span></div><div class="since">Since 2014</div></header>
+
+  <section class="panel">
+    <div class="txt">
+      <p class="eyebrow">Prepay · 선결제</p>
+      <h1>미리 채워 두고,<br><em>네 곳</em> 어디서나.</h1>
+      <p class="lead">충전은 매장에서, 사용은 번호로, 잔액은 QR로.</p>
+      <div class="chips"><span class="chip">성수점</span><span class="chip">왕십리점</span><span class="chip">중계점</span><span class="chip">답십리점</span></div>
+    </div>
+    <div class="bubble">4개 매장 어디서나!</div>
+    <img class="mascot" src="sogeumi-cut.png" alt="소금이">
+  </section>
+
+  <section class="benefit">
+    <p class="eyebrow">Benefit</p>
+    <h2>충전 혜택</h2>
+    <div class="bars" style="grid-template-columns:repeat(2,1fr)"><div class="bar b0" style="height:60px"><div class="r">0<small>%</small></div><div class="t">적립 없음</div></div><div class="bar b2" style="height:112px"><div class="r">5<small>%</small></div><div class="t">추가 적립</div></div></div>
+    <div class="labs" style="grid-template-columns:repeat(2,1fr)"><div class="lab">10만원 미만</div><div class="lab">10만원 이상</div></div>
+    <div class="ex"><b>10만원</b> 충전하면 <b>105,000원</b> 사용</div>
+  </section>
+
+  <section class="lower">
+    <div class="how">
+      <p class="eyebrow">How to</p>
+      <h3>이렇게 써요</h3>
+      <div class="vstep"><div class="num">1</div><div><b>매장에서 충전</b><span>카드·현금 모두 가능해요</span></div></div>
+      <div class="vstep"><div class="num">2</div><div><b>번호 뒷자리 4개만</b><span>계산대에서 바로 차감돼요</span></div></div>
+      <div class="vstep"><div class="num">3</div><div><b>QR로 잔액 확인</b><span>앱 설치 없이 내 폰으로</span></div></div>
+    </div>
+    <div class="qrcard">
+      <p class="eyebrow">Balance</p>
+      <h4>내 잔액 확인하기</h4>
+      <div class="qrframe"><svg role="img" aria-label="선결제 잔액 조회 QR" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h29v29H0z"/><path stroke="#231717" d="M0 0.5h7m1 0h1m1 0h1m4 0h6m1 0h7M0 1.5h1m5 0h1m1 0h1m2 0h1m2 0h2m1 0h2m3 0h1m5 0h1M0 2.5h1m1 0h3m1 0h1m3 0h2m1 0h3m2 0h1m1 0h1m1 0h1m1 0h3m1 0h1M0 3.5h1m1 0h3m1 0h1m1 0h1m1 0h1m6 0h3m2 0h1m1 0h3m1 0h1M0 4.5h1m1 0h3m1 0h1m2 0h1m1 0h1m1 0h1m5 0h1m2 0h1m1 0h3m1 0h1M0 5.5h1m5 0h1m4 0h2m1 0h1m1 0h5m1 0h1m5 0h1M0 6.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M8 7.5h1m2 0h1m1 0h2m1 0h5M0 8.5h1m1 0h2m1 0h3m1 0h2m1 0h8m2 0h1m2 0h1m1 0h2M3 9.5h1m1 0h1m3 0h3m4 0h1m2 0h6m3 0h1M1 10.5h1m2 0h1m1 0h3m2 0h2m1 0h1m1 0h2m2 0h1m2 0h2m1 0h2M3 11.5h3m2 0h1m2 0h4m5 0h1m2 0h2m3 0h1M0 12.5h2m1 0h1m1 0h3m2 0h2m5 0h1m1 0h1m5 0h2M1 13.5h2m2 0h1m1 0h3m2 0h2m1 0h6m1 0h2m2 0h3M0 14.5h1m1 0h2m1 0h3m1 0h1m2 0h1m1 0h1m1 0h2m1 0h1m1 0h1m1 0h2m1 0h3M3 15.5h3m7 0h1m1 0h2m1 0h1m1 0h1m1 0h1m1 0h1m2 0h1M0 16.5h1m2 0h2m1 0h1m1 0h2m6 0h1m1 0h4m2 0h2m1 0h1M1 17.5h1m9 0h1m1 0h1m1 0h1m4 0h1m2 0h1m1 0h3M0 18.5h1m3 0h3m2 0h4m2 0h1m4 0h1m1 0h1m1 0h1m1 0h1M3 19.5h1m4 0h2m1 0h2m4 0h2m3 0h2m2 0h1M1 20.5h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h12M8 21.5h1m2 0h1m1 0h2m1 0h1m3 0h1m3 0h5M0 22.5h7m1 0h3m2 0h1m3 0h1m1 0h2m1 0h1m1 0h2m1 0h1M0 23.5h1m5 0h1m1 0h2m5 0h1m4 0h1m3 0h2m1 0h1M0 24.5h1m1 0h3m1 0h1m3 0h1m3 0h1m2 0h1m2 0h5m1 0h2M0 25.5h1m1 0h3m1 0h1m1 0h1m1 0h3m1 0h2m1 0h1m1 0h1m1 0h1m2 0h2m2 0h1M0 26.5h1m1 0h3m1 0h1m1 0h1m2 0h2m1 0h1m5 0h1m2 0h1m2 0h1m1 0h1M0 27.5h1m5 0h1m6 0h1m1 0h1m4 0h1m1 0h2m1 0h1m1 0h1M0 28.5h7m1 0h1m2 0h1m1 0h1m1 0h2m1 0h3m1 0h1m1 0h1m2 0h1"/></svg>
+</div>
+      <p><b>휴대폰 번호 + 조회 비밀번호 4자리</b><br>비밀번호는 충전할 때 정해 드려요.</p>
+      <p class="url">ops.bonnoel.com/prepay.html</p>
+    </div>
+  </section>
+
+  <p class="fine">남은 금액 환불은 매장에 문의해 주세요 (추가 적립분은 제외돼요).</p>
+
+  <footer>
+    <div class="b">본노엘 <span>Bon Noël</span></div>
+    <div class="r">성수 · 답십리 · 중계 · 왕십리 직영</div>
+  </footer>
+</div>
+</body>
+</html>
