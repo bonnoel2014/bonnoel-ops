@@ -13,11 +13,13 @@ create table if not exists prepay_settings (
   id int primary key default 1 check (id = 1),
   bonus_min int not null default 100000,        -- 이 금액 이상 한 번에 충전하면
   bonus_rate numeric not null default 5,        -- 이 % 만큼 추가 적립
+  base_rate numeric not null default 0,         -- 기준 금액 미만으로 충전할 때의 추가 적립 % (0이면 적립 없음)
   owner_code_hash text,                         -- 사장님 코드 (처음엔 비어 있음 → 앱에서 사장님이 정함)
   fail_count int not null default 0,            -- 코드 틀린 횟수 (20번이면 5분 잠금)
   locked_until timestamptz,
   updated_at timestamptz not null default now()
 );
+alter table prepay_settings add column if not exists base_rate numeric not null default 0;
 insert into prepay_settings (id) values (1) on conflict (id) do nothing;
 
 -- 매장별 코드
@@ -120,6 +122,7 @@ language sql security definer set search_path = public as $$
     'ready', (select owner_code_hash is not null from prepay_settings where id = 1),
     'bonus_min', (select bonus_min from prepay_settings where id = 1),
     'bonus_rate', (select bonus_rate from prepay_settings where id = 1),
+    'base_rate', (select base_rate from prepay_settings where id = 1),
     'branches', coalesce((select jsonb_agg(branch_id) from prepay_branch_codes), '[]'::jsonb))
 $$;
 
@@ -190,7 +193,7 @@ begin
   if p_paid is null or p_paid < 1000 or p_paid > 10000000 then return jsonb_build_object('ok', false, 'error', '충전 금액은 1,000원 ~ 1,000만원'); end if;
   if p_pin is not null and p_pin <> '' and p_pin !~ '^[0-9]{4}$' then return jsonb_build_object('ok', false, 'error', '손님 비밀번호는 숫자 4자리'); end if;
   select * into s from prepay_settings where id = 1;
-  if p_paid >= s.bonus_min then bon := floor(p_paid * s.bonus_rate / 100)::int; end if;
+  if p_paid >= s.bonus_min then bon := floor(p_paid * s.bonus_rate / 100)::int; else bon := floor(p_paid * s.base_rate / 100)::int; end if;
   select id into cid from prepay_customers where phone = ph for update;
   if cid is null then
     insert into prepay_customers (phone, name, pin_hash, created_branch)
@@ -361,14 +364,15 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
--- 적립 규칙 바꾸기
-create or replace function prepay_set_bonus(p_code text, p_min int, p_rate numeric) returns jsonb
+-- 적립 규칙 바꾸기: p_min 이상이면 p_rate %, 미만이면 p_base % (0이면 적립 없음)
+drop function if exists prepay_set_bonus(text, int, numeric);
+create or replace function prepay_set_bonus(p_code text, p_min int, p_rate numeric, p_base numeric default 0) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare r text := prepay__auth(null, p_code);
 begin
   if r is distinct from 'owner' then return case when r = 'locked' then prepay__err(r) else jsonb_build_object('ok', false, 'error', '사장님 코드가 필요해요') end; end if;
-  if p_min is null or p_min < 0 or p_rate is null or p_rate < 0 or p_rate > 50 then return jsonb_build_object('ok', false, 'error', '기준 금액·비율을 확인해 주세요'); end if;
-  update prepay_settings set bonus_min = p_min, bonus_rate = p_rate, updated_at = now() where id = 1;
+  if p_min is null or p_min < 0 or p_rate is null or p_rate < 0 or p_rate > 50 or p_base is null or p_base < 0 or p_base > 50 then return jsonb_build_object('ok', false, 'error', '기준 금액·비율을 확인해 주세요'); end if;
+  update prepay_settings set bonus_min = p_min, bonus_rate = p_rate, base_rate = p_base, updated_at = now() where id = 1;
   return jsonb_build_object('ok', true);
 end $$;
 

@@ -131,14 +131,14 @@
     <p class="eyebrow">Prepay</p>
     <h1>미리 채워 두고,<br><em>네 곳</em> 어디서나 편하게.</h1>
     <p class="lead">본노엘 선결제는 매장에서 미리 충전해 두고 계산할 때 휴대폰 번호로 쓰는 방식이에요. 앱 설치는 필요 없어요.</p>
-    <div class="bonus-card" id="bonus"><div class="big">10만원 이상 충전하면 5% 더</div><div class="ex">예: 100,000원 충전 → 105,000원 사용</div></div>
+    <div class="bonus-card" id="bonus"><div class="big">10만원 이상 충전하면 10% 더</div><div class="ex">예: 100,000원 충전 → 110,000원 사용 · 10만원 미만은 5% 더</div></div>
   </section>
 
   <section class="section">
     <div class="section-head"><p class="eyebrow">How to</p><h2>이용 방법</h2></div>
     <ol class="steps">
       <li><span class="num">1</span><div><h3>매장에서 충전해요</h3><p>계산대에서 "선결제 충전할게요"라고 말씀하시고 휴대폰 번호와 금액을 알려 주세요.</p></div></li>
-      <li><span class="num">2</span><div><h3>카드나 현금으로 결제해요</h3><p>결제가 끝나면 바로 충전되고, <span id="bonus-step">10만원 이상이면 5%를 더 넣어 드려요</span>.</p></div></li>
+      <li><span class="num">2</span><div><h3>카드나 현금으로 결제해요</h3><p>결제가 끝나면 바로 충전되고, <span id="bonus-step">10만원 이상이면 10%, 10만원 미만이어도 5%를 더 넣어 드려요</span>.</p></div></li>
       <li><span class="num">3</span><div><h3>번호로 편하게 써요</h3><p>다음부터는 "선결제로 할게요"라고 말씀하시고 번호 뒷자리를 알려 주세요. 쓴 만큼 빠져요.</p></div></li>
       <li><span class="num">4</span><div><h3>남은 돈은 폰으로 확인해요</h3><p>충전할 때 조회 비밀번호 4자리를 정하면 아래에서 언제든 잔액과 내역을 볼 수 있어요.</p></div></li>
     </ol>
@@ -220,7 +220,7 @@
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   async function rpc(fn, args){
     if (DEMO){
-      if (fn === 'prepay_status') return { ready: true, bonus_min: 100000, bonus_rate: 5 };
+      if (fn === 'prepay_status') return { ready: true, bonus_min: 100000, bonus_rate: 10, base_rate: 5 };
       if (args.p_pin !== '1234') return { ok: false, error: '비밀번호가 틀려요 (시연: 1234)' };
       return { ok: true, name: '김단골', balance: 93000, ledger: [
         { kind: 'use', amount: -12000, bonus: 0, branch: '왕십리점', created_at: new Date(Date.now() - 864e5).toISOString() },
@@ -233,11 +233,16 @@
   // 적립 규칙은 사장님이 바꿀 수 있어서 서버에서 받아 옴
   rpc('prepay_status', {}).then(function(s){
     if (!s || s.bonus_min == null) return;
-    var min = s.bonus_min > 0 && s.bonus_min % 10000 === 0 ? won(s.bonus_min / 10000) + '만' : won(s.bonus_min), rate = +s.bonus_rate;
-    if (!rate){ $('bonus').hidden = true; $('bonus-step').textContent = '충전한 금액 그대로 쓸 수 있어요'; return; }
+    var min = s.bonus_min > 0 && s.bonus_min % 10000 === 0 ? won(s.bonus_min / 10000) + '만' : won(s.bonus_min), rate = +s.bonus_rate, base = +(s.base_rate || 0);
+    if (!rate && !base){ $('bonus').hidden = true; $('bonus-step').textContent = '충전한 금액 그대로 쓸 수 있어요'; return; }
     var ex = s.bonus_min > 0 ? s.bonus_min : 100000;
-    $('bonus').innerHTML = '<div class="big">' + min + '원 이상 충전하면 ' + rate + '% 더</div><div class="ex">예: ' + won(ex) + '원 충전 → ' + won(ex + Math.floor(ex * rate / 100)) + '원 사용</div>';
-    $('bonus-step').textContent = min + '원 이상이면 ' + rate + '%를 더 넣어 드려요';
+    if (rate){
+      $('bonus').innerHTML = '<div class="big">' + min + '원 이상 충전하면 ' + rate + '% 더</div><div class="ex">예: ' + won(ex) + '원 충전 → ' + won(ex + Math.floor(ex * rate / 100)) + '원 사용' + (base ? ' · ' + min + '원 미만은 ' + base + '% 더' : '') + '</div>';
+      $('bonus-step').textContent = base ? min + '원 이상이면 ' + rate + '%, ' + min + '원 미만이어도 ' + base + '%를 더 넣어 드려요' : min + '원 이상이면 ' + rate + '%를 더 넣어 드려요';
+    } else {
+      $('bonus').innerHTML = '<div class="big">' + min + '원 미만 충전도 ' + base + '% 더</div><div class="ex">충전한 금액의 ' + base + '%를 더 넣어 드려요</div>';
+      $('bonus-step').textContent = '충전한 금액의 ' + base + '%를 더 넣어 드려요';
+    }
   }).catch(function(){});
 
   function when(s){ var d = new Date(s); return (d.getMonth() + 1) + '월 ' + d.getDate() + '일'; }

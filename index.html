@@ -5126,8 +5126,8 @@
   function ppDigits(s){ return String(s || '').replace(/[^0-9]/g, ''); }
   function ppPhone(p){ p = String(p || ''); if (p.length === 11) return p.slice(0, 3) + '-' + p.slice(3, 7) + '-' + p.slice(7); if (p.length === 10) return p.slice(0, 3) + '-' + p.slice(3, 6) + '-' + p.slice(6); return p; }
   function ppMasked(p){ p = String(p || ''); return p.length >= 10 ? p.slice(0, 3) + '-****-' + p.slice(-4) : p; }
-  function ppBonus(paid){ var s = prepaySt.status || {}; var min = s.bonus_min != null ? s.bonus_min : 100000, rate = s.bonus_rate != null ? +s.bonus_rate : 5; return paid >= min ? Math.floor(paid * rate / 100) : 0; }
-  function ppRuleText(){ var s = prepaySt.status || {}; return won(s.bonus_min != null ? s.bonus_min : 100000) + '원 이상 충전하면 ' + (s.bonus_rate != null ? +s.bonus_rate : 5) + '% 추가 적립'; }
+  function ppBonus(paid){ var s = prepaySt.status || {}; var min = s.bonus_min != null ? s.bonus_min : 100000, rate = s.bonus_rate != null ? +s.bonus_rate : 5, base = s.base_rate != null ? +s.base_rate : 0; return Math.floor(paid * (paid >= min ? rate : base) / 100); }
+  function ppRuleText(){ var s = prepaySt.status || {}, min = won(s.bonus_min != null ? s.bonus_min : 100000), base = s.base_rate != null ? +s.base_rate : 0; return min + '원 이상 충전하면 ' + (s.bonus_rate != null ? +s.bonus_rate : 5) + '% 추가 적립' + (base ? ' · 미만은 ' + base + '%' : ''); }
   function ppWhen(s){ var d = new Date(s); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
   function ppSigned(n){ return (n > 0 ? '+' : n < 0 ? '−' : '') + won(Math.abs(n)); }
   function ppPublicUrl(){ return location.origin + location.pathname.replace(/[^/]*$/, '') + 'prepay.html'; }
@@ -5282,9 +5282,9 @@
   routes['prepay-poster'] = async function(){
     await loadBase();
     var html = topbar('선결제 포스터', true, whoChip());
-    html += '<a href="pop/prepay-pop-A4.png" target="_blank" rel="noopener" style="display:block"><img src="pop/prepay-pop-web.jpg" alt="본노엘 선결제 포스터" style="width:100%;display:block;border-radius:var(--radius-l);border:1px solid var(--line);box-shadow:var(--shadow);background:var(--surface)"></a>';
+    html += '<a href="pop/prepay-pop-tier10-5-A4.png" target="_blank" rel="noopener" style="display:block"><img src="pop/prepay-pop-web.jpg" alt="본노엘 선결제 포스터" style="width:100%;display:block;border-radius:var(--radius-l);border:1px solid var(--line);box-shadow:var(--shadow);background:var(--surface)"></a>';
     html += '<div class="muted" style="margin:8px 4px">사진을 누르면 크게 열려요. 손님께 혜택이나 잔액 확인 QR을 설명할 때 보여 주세요.</div>';
-    html += '<div class="inline" style="margin-top:6px"><a class="btn" href="pop/prepay-pop-A4.pdf" target="_blank" rel="noopener">📄 인쇄용 PDF</a><a class="btn" href="pop/prepay-pop-A4.png" target="_blank" rel="noopener">🔍 큰 그림</a></div>';
+    html += '<div class="inline" style="margin-top:6px"><a class="btn" href="pop/prepay-pop-tier10-5-A4.pdf" target="_blank" rel="noopener">📄 인쇄용 PDF</a><a class="btn" href="pop/prepay-pop-tier10-5-A4.png" target="_blank" rel="noopener">🔍 큰 그림</a></div>';
     app.innerHTML = html;
   };
 
@@ -5341,7 +5341,7 @@
       }
     } else if (tabName === 'set'){
       var bset = prepaySt.status.branches || [];
-      html += '<div class="form"><div><b>추가 적립 규칙</b></div><div class="grid2"><div><label>기준 금액(원 이상)</label><input class="in" id="pp-bmin" type="number" inputmode="numeric" value="' + esc(prepaySt.status.bonus_min) + '"></div><div><label>추가 적립(%)</label><input class="in" id="pp-brate" type="number" inputmode="decimal" value="' + esc(prepaySt.status.bonus_rate) + '"></div></div><button class="btn primary" data-act="pp-set-bonus">규칙 저장</button><div class="muted">바꾸면 다음 충전부터 적용돼요. 이미 충전된 건 그대로예요.</div></div>';
+      html += '<div class="form"><div><b>추가 적립 규칙</b></div><div class="grid2"><div><label>기준 금액(원 이상)</label><input class="in" id="pp-bmin" type="number" inputmode="numeric" value="' + esc(prepaySt.status.bonus_min) + '"></div><div><label>이상일 때 추가 적립(%)</label><input class="in" id="pp-brate" type="number" inputmode="decimal" value="' + esc(prepaySt.status.bonus_rate) + '"></div></div><div><label>기준 금액 미만일 때 추가 적립(%) · 0이면 적립 없음</label><input class="in" id="pp-bbase" type="number" inputmode="decimal" value="' + esc(prepaySt.status.base_rate != null ? prepaySt.status.base_rate : 0) + '"></div><button class="btn primary" data-act="pp-set-bonus">규칙 저장</button><div class="muted">바꾸면 다음 충전부터 적용돼요. 이미 충전된 건 그대로예요.</div></div>';
       html += '<div class="group-title">매장 코드 (6자리 · 그 매장 직원만 알게)</div><div class="card">' + base.branches.map(function(b){ return '<div class="item"><div class="iname"><div class="t">' + esc(b.name) + ' ' + (bset.indexOf(b.id) >= 0 ? '<span class="badge ok">정해짐</span>' : '<span class="badge danger">없음</span>') + '</div></div><input class="in" id="pp-bc-' + esc(b.id) + '" type="password" inputmode="numeric" maxlength="6" placeholder="새 코드" style="width:110px" autocomplete="off"><button class="btn sm primary" data-act="pp-set-code" data-id="' + esc(b.id) + '">정하기</button></div>'; }).join('') + '</div>';
       html += '<div class="muted" style="margin:6px 4px">직원이 그만두면 그 매장 코드를 바꿔 주세요. 코드는 암호화돼 있어 여기서도 다시 볼 수 없어요.</div>';
       html += '<div class="group-title">사장님 코드 바꾸기</div><div class="form"><input class="in" id="pp-bc-owner" type="password" inputmode="numeric" maxlength="6" placeholder="새 사장님 코드 6자리" autocomplete="off"><button class="btn" data-act="pp-set-code" data-id="">바꾸기</button></div>';
@@ -5474,16 +5474,17 @@
     toast('정했어요'); render();
   }
   async function ppSetBonus(){
-    var min = num(ppVal('pp-bmin')), rate = num(ppVal('pp-brate'));
+    var min = num(ppVal('pp-bmin')), rate = num(ppVal('pp-brate')), base = num(ppVal('pp-bbase'));
+    if (base == null) base = 0;
     if (min == null || rate == null){ toast('기준 금액과 %를 넣어 주세요'); return; }
-    await ppCall('prepay_set_bonus', { p_code: prepaySt.code, p_min: Math.round(min), p_rate: rate });
+    await ppCall('prepay_set_bonus', { p_code: prepaySt.code, p_min: Math.round(min), p_rate: rate, p_base: base });
     toast('규칙을 저장했어요'); render();
   }
 
   // 시연 모드(?demo=1)용: DB 함수와 같은 규칙을 메모리에서 흉내 (코드: 사장님 000000, 성수 111111, 왕십리 222222, 중계 333333, 답십리 444444)
   function ppMemRpc(T, fn, a){
     if (!T.__pp){
-      T.__pp = { owner: '000000', codes: { b1: '111111', b2: '222222', b3: '333333', b4: '444444' }, bonus_min: 100000, bonus_rate: 5 };
+      T.__pp = { owner: '000000', codes: { b1: '111111', b2: '222222', b3: '333333', b4: '444444' }, bonus_min: 100000, bonus_rate: 10, base_rate: 5 };
       T.prepay_customers = [ { id: 'pc1', phone: '01012345678', name: '김단골', pin: '1234' }, { id: 'pc2', phone: '01098765432', name: '성수 디자인랩', pin: null } ];
       T.prepay_ledger = [
         { id: 'pl1', customer_id: 'pc1', kind: 'charge', amount: 105000, paid: 100000, bonus: 5000, branch_id: 'b1', staff_name: '알바 A', created_at: daysAgo(3) },
@@ -5499,7 +5500,7 @@
     var byId = function(id){ return L.filter(function(l){ return l.id === id; })[0]; };
     var dec = function(l){ return Object.assign({}, l, { canceled: L.some(function(z){ return z.cancel_of === l.id; }), orig_kind: l.cancel_of ? (byId(l.cancel_of) || {}).kind : null }); };
     var add = function(row){ L.push(Object.assign({ id: uid(), paid: 0, bonus: 0, branch_id: a.p_branch, staff_name: staffName(a.p_staff), by_owner: role === 'owner', created_at: new Date().toISOString() }, row)); };
-    if (fn === 'prepay_status') return { ready: !!S.owner, bonus_min: S.bonus_min, bonus_rate: S.bonus_rate, branches: Object.keys(S.codes) };
+    if (fn === 'prepay_status') return { ready: !!S.owner, bonus_min: S.bonus_min, bonus_rate: S.bonus_rate, base_rate: S.base_rate || 0, branches: Object.keys(S.codes) };
     if (fn === 'prepay_owner_init'){ if (S.owner) return err('사장님 코드가 이미 정해져 있어요'); S.owner = a.p_code; return { ok: true }; }
     var code = a.p_code || a.p_owner_code;
     var role = code && code === S.owner ? 'owner' : (code && S.codes[a.p_branch] === code ? 'branch' : null);
@@ -5518,7 +5519,7 @@
         return { ok: true, role: role, customer: { id: c.id, phone: c.phone, name: c.name, has_pin: !!c.pin }, balance: b, bonus_left: bon(c.id), refundable: Math.max(0, b - bon(c.id)),
           ledger: L.filter(function(l){ return l.customer_id === c.id; }).map(dec).sort(function(x, y){ return x.created_at < y.created_at ? 1 : -1; }) };
       case 'prepay_charge': {
-        var ph = ppDigits(a.p_phone), extra = a.p_paid >= S.bonus_min ? Math.floor(a.p_paid * S.bonus_rate / 100) : 0;
+        var ph = ppDigits(a.p_phone), extra = Math.floor(a.p_paid * (a.p_paid >= S.bonus_min ? S.bonus_rate : (S.base_rate || 0)) / 100);
         c = C.filter(function(x){ return x.phone === ph; })[0];
         if (!c){ c = { id: uid(), phone: ph, name: a.p_name || null, pin: a.p_pin || null }; C.push(c); }
         else { if (a.p_name) c.name = a.p_name; if (a.p_pin) c.pin = a.p_pin; }
@@ -5556,7 +5557,7 @@
         return { ok: true, added: added, skipped: skipped, bad: 0 };
       }
       case 'prepay_set_code': if (a.p_branch) S.codes[a.p_branch] = a.p_new_code; else S.owner = a.p_new_code; return { ok: true };
-      case 'prepay_set_bonus': S.bonus_min = a.p_min; S.bonus_rate = a.p_rate; return { ok: true };
+      case 'prepay_set_bonus': S.bonus_min = a.p_min; S.bonus_rate = a.p_rate; S.base_rate = a.p_base || 0; return { ok: true };
     }
     return err('모르는 기능: ' + fn);
   }
