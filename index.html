@@ -329,27 +329,27 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^staff_/.test(fn) ? '보안 준비(SQL)가 아직 안 됐어요 — supabase/보안-1-출입증-준비.sql 실행 필요' : /^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
       removeFile: async function(bucket, path){ var r = await sb.storage.from(bucket).remove([path]); if (r.error) throw r.error; },
       ocr: async function(b64, mime, kind){
-        var res = await fetch(SUPABASE_URL + '/functions/v1/read-receipt', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }), body: JSON.stringify({ image_base64: b64, media_type: mime, kind: kind || 'expense' }) });
+        var res = await fetch(SUPABASE_URL + '/functions/v1/read-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify({ image_base64: b64, media_type: mime, kind: kind || 'expense' }) });
         var j = null; try { j = await res.json(); } catch(e){}
         if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '자동 읽기 함수(read-receipt)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
         return j;
       },
       // 입사 서류 PDF 메일 발송 함수
       sendDocs: async function(batchId){
-        var res = await fetch(SUPABASE_URL + '/functions/v1/send-document', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }), body: JSON.stringify({ batch_id: batchId, ua: navigator.userAgent.slice(0, 300) }) });
+        var res = await fetch(SUPABASE_URL + '/functions/v1/send-document', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify({ batch_id: batchId, ua: navigator.userAgent.slice(0, 300) }) });
         var j = null; try { j = await res.json(); } catch(e){}
         if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '메일 발송 함수(send-document)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
         return j;
       },
       // 급여명세서 메일 발송 함수
       sendPayslip: async function(runId, to, subject, html){
-        var res = await fetch(SUPABASE_URL + '/functions/v1/send-payslip', { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }), body: JSON.stringify({ run_id: runId, to: to, subject: subject, html: html }) });
+        var res = await fetch(SUPABASE_URL + '/functions/v1/send-payslip', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify({ run_id: runId, to: to, subject: subject, html: html }) });
         var j = null; try { j = await res.json(); } catch(e){}
         if (!res.ok) throw new Error((j && j.error) || (res.status === 404 ? '메일 발송 함수(send-payslip)가 아직 배포되지 않았어요' : '서버 응답 ' + res.status));
         return j;
@@ -379,7 +379,7 @@
       update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
       upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
       remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); },
-      rpc: async function(fn, args){ return clone(/^staff_/.test(fn) ? staffMemRpc(tables, fn, args || {}) : /^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
+      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
@@ -526,21 +526,6 @@
   var session = null;
   try { session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch(e){ session = null; }
   function saveSession(s){ session = s; try { if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s)); else localStorage.removeItem(SESSION_KEY); } catch(e){} }
-  // 보안(10/1): 비밀번호는 서버가 확인하고 "출입증(token)"을 줌. 모든 요청에 x-staff-token 으로 붙여서 보내면 서버가 누구인지 알아서 잠긴 표를 열어 줌.
-  // tempToken = 로그인 없이 매장폰 출퇴근·서명 화면에서 이름+비밀번호로 받은 그 사람 출입증 (12시간, 저장 안 함)
-  var tempToken = null;
-  function authToken(){ return (session && session.token) || tempToken || null; }
-  function authFetch(url, opts){
-    var t = authToken(); if (!t) return fetch(url, opts);
-    opts = Object.assign({}, opts || {}); var h = new Headers(opts.headers || {}); h.set('x-staff-token', t); opts.headers = h;
-    return fetch(url, opts);
-  }
-  function authHeaders(h){ var t = authToken(); if (t) h['x-staff-token'] = t; return h; }
-  function serverLogout(t){ if (t && !DEMO) fetch(SUPABASE_URL + '/rest/v1/rpc/staff_logout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'x-staff-token': t }, body: '{}' }).catch(function(){}); }
-  function dropTempToken(){ var t = tempToken; tempToken = null; serverLogout(t); }
-  function logout(){ serverLogout(session && session.token); saveSession(null); }
-  // 로그인·출퇴근·서명에서 받은 결과를 화면용 문구로
-  function pinResultError(r){ return (r && r.error) || '로그인하지 못했어요'; }
   function isOwner(){ return session && session.role === 'owner'; }
   // 매장폰(kiosk) = 카운터에 두는 공용 폰 계정. 사장님 결정(9/27): 매니저와 같은 권한. 사람이 아니라서 직원 명단(base.staff)에는 안 섞고 base.kiosks에 따로 둠.
   function isKiosk(){ return session && session.role === 'kiosk'; }
@@ -554,10 +539,8 @@
       db.select('manual_staff', { order: { col: 'name' } }),
       db.select('ops_categories', { order: { col: 'sort_order' } }),
       db.select('ops_items', { order: { col: 'sort_order' } }),
-      db.select('ops_item_branch'),
-      db.rpc('staff_pin_list')   // 비밀번호를 정했는지만 (숫자는 서버 밖으로 안 나옴)
+      db.select('ops_item_branch')
     ]);
-    base.hasPin = {}; (r[5] || []).forEach(function(x){ if (x.has_pin) base.hasPin[x.staff_id] = true; });
     base.branches = r[0]; base.staff = r[1].filter(function(s){ return s.role !== 'kiosk'; }); base.kiosks = r[1].filter(function(s){ return s.role === 'kiosk'; }); base.categories = r[2]; base.items = r[3]; base.itemBranch = r[4];
     // 명단에 없는 사람(퇴사·시연 모드 기억 등)으로 들어와 있으면 다시 로그인
     if (session && !base.staff.concat(base.kiosks).some(function(s){ return s.id === session.staffId && s.active !== false; })){ saveSession(null); nav('#/login'); throw new Error('다시 로그인해 주세요'); }
@@ -675,7 +658,7 @@
       if (!people.length) html += '<div class="empty">이 매장에 등록된 직원이 없어요. 매니저에게 등록을 요청하세요.</div>';
     } else {
       var s = base.staff.concat(base.kiosks).filter(function(x){ return x.id === st.staffId; })[0];
-      var first = !base.hasPin[s.id];
+      var first = !s.pin;
       html += '<div class="pin-wrap"><div style="font-size:18px;font-weight:600;margin-bottom:6px">' + esc(s.name) + '</div>';
       html += '<div class="muted" style="margin-bottom:14px">' + (first ? '처음이시네요. 앞으로 쓸 비밀번호 4자리를 정해 주세요.' : '비밀번호 4자리') + '</div>';
       html += '<input class="pin" id="pin1" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
@@ -693,15 +676,14 @@
     if (!s || s.active === false){ toast('퇴사 처리된 이름이라 들어갈 수 없어요'); loginState.staffId = null; render(); return; }
     var p1 = (document.getElementById('pin1') || {}).value || '';
     if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
-    var first = !base.hasPin[s.id];
-    if (first){ var p2 = (document.getElementById('pin2') || {}).value || ''; if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; } }
-    var r = await db.rpc(first ? 'staff_first_pin' : 'staff_login', { p_staff: s.id, p_pin: p1, p_branch: loginState.branchId, p_app: 'ops' });
-    if (!r || !r.ok){
-      if (r && r.need_new){ base.hasPin[s.id] = false; toast('비밀번호를 새로 정해 주세요'); render(); return; }
-      toast(pinResultError(r)); var pe = document.getElementById('pin1'); if (pe){ pe.value = ''; pe.focus(); } return;
-    }
-    base.hasPin[s.id] = true;
-    saveSession({ staffId: s.id, name: s.name, role: r.role || 'staff', branchId: r.branch_id, branchName: branchName(r.branch_id), token: r.token });
+    if (!s.pin){
+      var p2 = (document.getElementById('pin2') || {}).value || '';
+      if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; }
+      await db.update('manual_staff', { id: s.id }, { pin: p1 });
+      s.pin = p1;
+    } else if (s.pin !== p1){ toast('비밀번호가 틀려요'); return; }
+    var bid = s.role === 'owner' ? loginState.branchId : (s.branch_id || loginState.branchId);
+    saveSession({ staffId: s.id, name: s.name, role: s.role || 'staff', branchId: bid, branchName: branchName(bid) });
     loginState = { branchId: null, staffId: null };
     nav(loginReturnTo || '#/home'); loginReturnTo = null;
   }
@@ -711,10 +693,9 @@
     if (!owner) { toast('사장님 정보가 없어요'); return; }
     var pwd = window.prompt('사장님 비밀번호:');
     if (!pwd) return;
-    var r = await db.rpc('staff_login', { p_staff: owner.id, p_pin: pwd, p_branch: session.branchId, p_app: 'ops' });
-    if (!r || !r.ok) { toast(pinResultError(r)); return; }
-    serverLogout(session.token);
-    saveSession({ staffId: owner.id, name: owner.name, role: 'owner', branchId: r.branch_id, branchName: branchName(r.branch_id), token: r.token });
+    if (pwd !== owner.pin) { toast('비밀번호가 틀려요'); return; }
+    session.role = 'owner';
+    saveSession(session);
     toast('사장님으로 접근했어요!');
     render();
   }
@@ -1531,11 +1512,11 @@
   function staffRow(s){
     var canRole = isOwner() && s.id !== session.staffId;
     var showDetail = isOwner();   // 사장님만 개인정보 표시 (매니저·매장폰은 제한)
-    var detailStr = showDetail ? ((s.branch_id ? esc(branchName(s.branch_id)) : '전체') + ' · ' + (base.hasPin[s.id] ? '비밀번호 있음' : '비밀번호 아직')) : '(정보 제한됨)';
+    var detailStr = showDetail ? ((s.branch_id ? esc(branchName(s.branch_id)) : '전체') + ' · ' + (s.pin ? '비번 ' + esc(s.pin) : '비밀번호 아직')) : '(정보 제한됨)';
     return '<div class="item' + (s.active === false ? ' disabled' : '') + '"><div class="iname"><div class="t">' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : s.role === 'kiosk' ? ' 📱' : '') + (s.active === false ? ' <span class="badge muted">퇴사</span>' : '') + '</div><div class="s">' + detailStr + '</div></div>' +
       (canRole ? '<select class="in" style="width:auto;padding:6px" data-act="role" data-id="' + esc(s.id) + '"><option value="staff"' + (s.role === 'staff' || !s.role ? ' selected' : '') + '>근무자</option><option value="manager"' + (s.role === 'manager' ? ' selected' : '') + '>매니저</option><option value="owner"' + (s.role === 'owner' ? ' selected' : '') + '>사장</option></select>' : '') +
       (isOwner() ? '<button class="btn sm" data-act="kiosk-pin" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '">비밀번호 바꾸기</button>' : '') +   // 사장님만
-      (base.hasPin[s.id] && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">1225로 초기화</button>' : '') +
+      (s.pin && (isOwner() || s.role !== 'owner') ? '<button class="btn sm" data-act="pin-reset" data-id="' + esc(s.id) + '">1225로 초기화</button>' : '') +
       (s.id !== session.staffId && (isOwner() || isKiosk() || s.role === 'staff') ? '<button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="' + (s.active === false ? '1' : '0') + '">' + (s.active === false ? '복귀' : '퇴사') + '</button>' : '') + '</div>';
   }
   routes.staff = async function(params){
@@ -1547,7 +1528,7 @@
     // 매장폰 계정: 카운터 공용 폰. 매니저와 같은 권한이라 사장님만 만들고 비밀번호를 바꿀 수 있어요.
     var kiosks = base.kiosks.filter(function(s){ return s.branch_id === b && s.active !== false; });
     html += '<div class="card section"><div class="sec-h">📱 매장폰 <span class="muted" style="font-weight:400">· 카운터 공용 폰 (매니저와 같은 권한)</span></div>';
-    kiosks.forEach(function(s){ html += '<div class="item"><div class="iname"><div class="t">' + esc(s.name) + '</div><div class="s">' + (base.hasPin[s.id] ? '비밀번호 있음' : '비밀번호 아직') + '</div></div>' + (isOwner() ? '<button class="btn sm" data-act="kiosk-pin" data-id="' + esc(s.id) + '">비밀번호 바꾸기</button><button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="0">없애기</button>' : '') + '</div>'; });
+    kiosks.forEach(function(s){ html += '<div class="item"><div class="iname"><div class="t">' + esc(s.name) + '</div><div class="s">' + (isOwner() ? (s.pin ? '비번 ' + esc(s.pin) : '비밀번호 아직') : (s.pin ? '비밀번호 있음' : '비밀번호 아직')) + '</div></div>' + (isOwner() ? '<button class="btn sm" data-act="kiosk-pin" data-id="' + esc(s.id) + '">비밀번호 바꾸기</button><button class="btn sm" data-act="staff-toggle" data-id="' + esc(s.id) + '" data-on="0">없애기</button>' : '') + '</div>'; });
     if (!kiosks.length) html += '<div class="empty">' + (isOwner() ? '아직 없어요. 아래 버튼으로 만들면 로그인 화면 맨 앞에 📱로 떠요.' : '이 매장엔 아직 매장폰 계정이 없어요 (사장님이 만들 수 있어요)') + '</div>';
     if (isOwner()) html += '<div style="padding:8px 14px"><button class="btn sm" data-act="kiosk-add" data-branch="' + esc(b) + '">' + esc(branchName(b)) + ' 매장폰 만들기</button></div>';
     html += '</div>';
@@ -2574,7 +2555,7 @@
     } else {
       var s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
       if (!st.ok){
-        var first = !base.hasPin[s.id];
+        var first = !s.pin;
         html += '<div class="pin-wrap"><div style="font-size:20px;font-weight:600;margin-bottom:6px">' + esc(s.name) + '</div><div class="muted" style="margin-bottom:14px">' + (first ? '처음이시네요. 앞으로 쓸 비밀번호 4자리를 정해 주세요.' : '비밀번호 4자리') + '</div>';
         html += '<input class="pin" id="pin1" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
         if (first) html += '<div class="muted" style="margin:12px 0 6px">한 번 더</div><input class="pin" id="pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
@@ -2609,34 +2590,23 @@
     app.innerHTML = html;
     var p1 = document.getElementById('pin1'); if (p1) p1.focus();
   };
-  // 매장폰 출퇴근·서명: 그 사람 비밀번호를 서버에서 확인하고 12시간짜리 출입증(tempToken)을 받음. 로그인 상태(session)는 안 바꿈
-  async function pinCheckTemp(s, p1, p2Id, app){
-    var first = !base.hasPin[s.id];
-    if (first){ var p2 = (document.getElementById(p2Id) || {}).value || ''; if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return null; } }
-    var r = await db.rpc(first ? 'staff_first_pin' : 'staff_login', { p_staff: s.id, p_pin: p1, p_branch: null, p_app: app });
-    if (!r || !r.ok){
-      if (r && r.need_new){ base.hasPin[s.id] = false; toast('비밀번호를 새로 정해 주세요'); render(); return null; }
-      toast(pinResultError(r)); return null;
-    }
-    base.hasPin[s.id] = true; dropTempToken(); tempToken = r.token;
-    return r;
-  }
   async function clockPin(){
     var s = base.staff.filter(function(x){ return x.id === clockState.staffId; })[0];
     var p1 = (document.getElementById('pin1') || {}).value || '';
     if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
-    var r = await pinCheckTemp(s, p1, 'pin2', 'clock'); if (!r) return;
+    if (!s.pin){ var p2 = (document.getElementById('pin2') || {}).value || ''; if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; } await db.update('manual_staff', { id: s.id }, { pin: p1 }); s.pin = p1; }
+    else if (s.pin !== p1){ toast('비밀번호가 틀려요'); return; }
     clockState.ok = true; render();
   }
   async function pinChange(staffId){
     var s = base.staff.filter(function(x){ return x.id === staffId; })[0]; if (!s) return;
     var cur = window.prompt('지금 비밀번호 4자리', ''); if (cur === null) return;
+    if (cur !== (s.pin || '')){ toast('지금 비밀번호가 달라요'); return; }
     var p1 = window.prompt('새로 쓸 비밀번호 4자리 (다른 사람은 모르게)', ''); if (p1 === null) return;
     if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
     var p2 = window.prompt('한 번 더', ''); if (p2 === null) return;
     if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; }
-    var r = await db.rpc('staff_change_pin', { p_staff: staffId, p_old: cur, p_new: p1 });
-    if (!r || !r.ok){ toast(pinResultError(r)); return; }
+    await db.update('manual_staff', { id: staffId }, { pin: p1 }); s.pin = p1;
     toast('비밀번호를 바꿨어요. 잊지 마세요!');
   }
   async function clockIn(){
@@ -2658,7 +2628,7 @@
     await db.update('ops_attendance', { id: id }, { clock_out: nowIso(), out_by: clockState.staffId });
     toast(staffName(clockState.staffId) + ' 퇴근 처리했어요. 수고했어요!'); clockDone();
   }
-  function clockDone(){ dropTempToken(); clockState.staffId = null; clockState.ok = false; clockState.extra = false; setTimeout(render, 1200); }
+  function clockDone(){ clockState.staffId = null; clockState.ok = false; clockState.extra = false; setTimeout(render, 1200); }
 
   // ===== 근무 조회 (사장님·매니저) =====
   function monthOf(s){ return s.slice(0, 7); }
@@ -3966,7 +3936,7 @@
 
   // --- 서류 서명 (매장폰 키오스크, 로그인 없이) ---
   var signState = { branchId: null, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [], residentNumber: '' };
-  function signReset(){ dropTempToken(); signState = { branchId: signState.branchId, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [], residentNumber: '' }; }
+  function signReset(){ signState = { branchId: signState.branchId, staffId: null, ok: false, step: 'pick', batchId: null, docs: [], info: {}, guardian: {}, checks: {}, sig: null, gsig: null, idx: 0, busy: false, result: null, progress: '', files: {}, skip: {}, healthExp: '', subs: [], residentNumber: '' }; }
   // 주민등록번호: 앱 기록(ops_documents.data)에는 절대 안 남기고, 근로계약서 PDF를 그릴 때만 잠깐 끼워 넣는다.
   function fmtResidentTyping(el){ var d = el.value.replace(/\D/g, '').slice(0, 13); var out = d.slice(0, 6); if (d.length > 6) out += '-' + d.slice(6, 13); if (el.value !== out) el.value = out; }
   function validResident(v){ return /^\d{6}-\d{7}$/.test(v || ''); }
@@ -4070,7 +4040,7 @@
     }
     var s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
     if (!st.ok){
-      var first = !base.hasPin[s.id];
+      var first = !s.pin;
       html += '<div class="pin-wrap"><div style="font-size:20px;font-weight:600;margin-bottom:6px">' + esc(s.name) + '</div><div class="muted" style="margin-bottom:14px">' + (first ? '처음이시네요. 앞으로 쓸 비밀번호 4자리를 정해 주세요.' : '비밀번호 4자리') + '</div>';
       html += '<input class="pin" id="spin1" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
       if (first) html += '<div class="muted" style="margin:12px 0 6px">한 번 더</div><input class="pin" id="spin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
@@ -4137,7 +4107,8 @@
     var st = signState, s = base.staff.filter(function(x){ return x.id === st.staffId; })[0];
     var p1 = (document.getElementById('spin1') || {}).value || '';
     if (!/^\d{4}$/.test(p1)){ toast('숫자 4자리로 넣어 주세요'); return; }
-    var r = await pinCheckTemp(s, p1, 'spin2', 'sign'); if (!r) return;
+    if (!s.pin){ var p2 = (document.getElementById('spin2') || {}).value || ''; if (p1 !== p2){ toast('두 번 넣은 비밀번호가 달라요'); return; } await db.update('manual_staff', { id: s.id }, { pin: p1 }); s.pin = p1; }
+    else if (s.pin !== p1){ toast('비밀번호가 틀려요'); return; }
     var rows = await db.select('ops_documents', { eq: { staff_id: s.id, status: 'prepared' } });
     if (!rows.length){ toast('서명할 서류가 없어요'); signReset(); render(); return; }
     var batches = docsByBatch(rows); var bt = batches[0];
@@ -5499,22 +5470,6 @@
   }
 
   // 시연 모드(?demo=1)용: DB 함수와 같은 규칙을 메모리에서 흉내 (코드: 사장님 000000, 성수 111111, 왕십리 222222, 중계 333333, 답십리 444444)
-  // 시연 모드(?demo=1)용 가짜 로그인 함수 — 진짜는 서버(보안-1-출입증-준비.sql)가 함
-  function staffMemRpc(T, fn, a){
-    var S = T.manual_staff || [], me = S.filter(function(x){ return x.id === a.p_staff; })[0];
-    function issue(){ var bid = (me.role === 'owner' || !me.branch_id) ? a.p_branch : me.branch_id; return { ok: true, token: 'demo-' + me.id, staff_id: me.id, name: me.name, role: me.role || 'staff', branch_id: bid }; }
-    switch (fn){
-      case 'staff_pin_list': return S.map(function(x){ return { staff_id: x.id, has_pin: !!x.pin }; });
-      case 'staff_whoami': return { ok: true };
-      case 'staff_logout': return { ok: true };
-      case 'staff_login': if (!me || me.active === false) return { ok: false, error: '퇴사 처리된 이름이라 들어갈 수 없어요' }; if (!me.pin) return { ok: false, need_new: true }; if (me.pin !== a.p_pin) return { ok: false, error: '비밀번호가 틀려요' }; return issue();
-      case 'staff_first_pin': if (!me) return { ok: false, error: '직원을 찾을 수 없어요' }; if (me.pin) return { ok: false, error: '이미 비밀번호가 있어요' }; me.pin = a.p_pin; return issue();
-      case 'staff_change_pin': if (!me || me.pin !== a.p_old) return { ok: false, error: '지금 비밀번호가 달라요' }; me.pin = a.p_new; return { ok: true };
-      case 'staff_reset_pin': if (me) me.pin = '1225'; return { ok: true };
-      case 'staff_set_pin': if (!isOwner()) return { ok: false, error: '사장님만 바꿀 수 있어요' }; if (me) me.pin = a.p_pin; return { ok: true };
-    }
-    return { ok: false, error: '없는 함수: ' + fn };
-  }
   function ppMemRpc(T, fn, a){
     if (!T.__pp){
       T.__pp = { owner: '000000', codes: { b1: '111111', b2: '222222', b3: '333333', b4: '444444' }, bonus_min: 100000, bonus_rate: 5 };
@@ -6013,7 +5968,7 @@
     try {
       switch (act){
         case 'back': history.length > 1 ? history.back() : nav('#/home'); break;
-        case 'logout': if (window.confirm('다른 이름으로 들어갈까요?')){ logout(); nav('#/login'); } break;
+        case 'logout': if (window.confirm('다른 이름으로 들어갈까요?')){ saveSession(null); nav('#/login'); } break;
         case 'owner-quick': await ownerQuick(); break;
         case 'pp-init': el.disabled = true; try { await ppInit(); } finally { el.disabled = false; } break;
         case 'pp-login': el.disabled = true; try { await ppLogin(); } finally { el.disabled = false; } break;
@@ -6104,9 +6059,9 @@
         case 'cat-jump': { var ce = document.getElementById('cat-' + id); if (ce) ce.scrollIntoView({ behavior: 'smooth' }); break; }
         case 'cat-add': await catAdd(); break;
         case 'cat-rename': await catRename(id); break;
-        case 'kiosk-add': { var kb = el.getAttribute('data-branch'), kn = branchName(kb).replace(/점$/, '') + ' 매장폰'; if (base.kiosks.some(function(k){ return k.branch_id === kb && k.active !== false; })){ toast('이 매장엔 이미 매장폰 계정이 있어요'); break; } var kIns = await db.insert('manual_staff', { name: kn, branch_id: kb, role: 'kiosk', active: true }); var kSet = await db.rpc('staff_set_pin', { p_staff: kIns[0].id, p_pin: '1225' }); if (!kSet || !kSet.ok){ toast(pinResultError(kSet)); render(); break; } toast(kn + ' 만들었어요 (비밀번호 1225)'); render(); break; }
-        case 'kiosk-pin': { if (!isOwner()){ toast('사장님만 바꿀 수 있어요'); break; } var kp = window.prompt((el.getAttribute('data-name') || '매장폰') + ' 새 비밀번호 (숫자 4자리)'); if (kp == null) break; kp = kp.trim(); if (!/^\d{4}$/.test(kp)){ toast('숫자 4자리로 넣어 주세요'); break; } var kr = await db.rpc('staff_set_pin', { p_staff: id, p_pin: kp }); if (!kr || !kr.ok){ toast(pinResultError(kr)); break; } toast('바꿨어요'); render(); break; }
-        case 'pin-reset': if (window.confirm('비밀번호를 1225로 되돌릴까요?')){ var rr = await db.rpc('staff_reset_pin', { p_staff: id }); if (!rr || !rr.ok){ toast(pinResultError(rr)); break; } toast('1225로 초기화했어요'); render(); } break;
+        case 'kiosk-add': { var kb = el.getAttribute('data-branch'), kn = branchName(kb).replace(/점$/, '') + ' 매장폰'; if (base.kiosks.some(function(k){ return k.branch_id === kb && k.active !== false; })){ toast('이 매장엔 이미 매장폰 계정이 있어요'); break; } await db.insert('manual_staff', { name: kn, branch_id: kb, role: 'kiosk', pin: '1225', active: true }); toast(kn + ' 만들었어요 (비밀번호 1225)'); render(); break; }
+        case 'kiosk-pin': { if (!isOwner()){ toast('사장님만 바꿀 수 있어요'); break; } var kp = window.prompt((el.getAttribute('data-name') || '매장폰') + ' 새 비밀번호 (숫자 4자리)'); if (kp == null) break; kp = kp.trim(); if (!/^\d{4}$/.test(kp)){ toast('숫자 4자리로 넣어 주세요'); break; } await db.update('manual_staff', { id: id }, { pin: kp }); toast('바꿨어요'); render(); break; }
+        case 'pin-reset': if (window.confirm('비밀번호를 1225로 되돌릴까요?')){ await db.update('manual_staff', { id: id }, { pin: '1225' }); toast('1225로 초기화했어요'); render(); } break;
         case 'staff-toggle': { var on = el.getAttribute('data-on') === '1'; await db.update('manual_staff', { id: id }, { active: on }); render(); break; }
         case 'staff-add': { var nm = document.getElementById('ns-name').value.trim(); if (!nm){ toast('이름을 넣어 주세요'); break; } await db.insert('manual_staff', { name: nm, branch_id: el.getAttribute('data-branch'), role: 'staff', active: true }); toast('추가했어요'); render(); break; }
         case 'staff-inactive-toggle': { var sb = el.getAttribute('data-branch'); staffUI.showInactive[sb] = !staffUI.showInactive[sb]; render(); break; }
@@ -6198,8 +6153,8 @@
         // 출퇴근
         case 'clock-branch': clockState.branchId = id; try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} render(); break;
         case 'clock-branch-reset': clockState.branchId = null; try { localStorage.removeItem(KIOSK_KEY); } catch(err){} if (session && !isOwner()){ toast('내 매장으로만 찍을 수 있어요'); break; } render(); break;
-        case 'clock-pick': dropTempToken(); clockState.staffId = id; clockState.ok = false; render(); break;
-        case 'clock-back': dropTempToken(); clockState.staffId = null; clockState.ok = false; clockState.extra = false; render(); break;
+        case 'clock-pick': clockState.staffId = id; clockState.ok = false; render(); break;
+        case 'clock-back': clockState.staffId = null; clockState.ok = false; clockState.extra = false; render(); break;
         case 'extra-open': clockState.extra = true; render(); break;
         case 'extra-open-early': clockState.extra = 'early'; render(); break;
         case 'extra-submit': el.disabled = true; try { if (await extraSubmit(el.getAttribute('data-staff'), el.getAttribute('data-branch'))){ if (current.route === 'clock') clockDone(); else render(); } } finally { el.disabled = false; } break;
@@ -8689,19 +8644,11 @@
 
   // ===== 시작 =====
   if (DEMO) db = makeMemoryDb(Object.assign(demoSeed(), vdDemoSeed(), pnlDemoSeed()));
-  else if (window.supabase && typeof window.supabase.createClient === 'function') db = makeSupabaseDb(window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: authFetch } }));
+  else if (window.supabase && typeof window.supabase.createClient === 'function') db = makeSupabaseDb(window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
   if (!db){ app.innerHTML = '<div class="note danger">데이터 창고 연결 스크립트를 못 불러왔어요. 인터넷을 확인하고 새로고침해 주세요.</div>'; return; }
   if (DEMO && session && session.staffId && session.staffId.length > 4) saveSession(null);
-  // 보안 업데이트(10/1) 전에 로그인한 폰은 출입증이 없어서 한 번 다시 로그인
-  if (!DEMO && session && !session.token) saveSession(null);
   window.addEventListener('hashchange', render);
   render();
-  // 출입증이 아직 유효한지 서버에 확인 (퇴사·역할 변경·비밀번호 초기화면 끊김). 확인하면서 기한도 연장됨
-  if (!DEMO && session) db.rpc('staff_whoami').then(function(r){
-    if (!session) return;
-    if (!r || !r.ok){ saveSession(null); toast('다시 로그인해 주세요'); nav('#/login'); render(); return; }
-    if (r.role !== session.role || r.branch_id !== session.branchId){ session.role = r.role; if (r.branch_id){ session.branchId = r.branch_id; if (base.branches.length) session.branchName = branchName(r.branch_id); } saveSession(session); render(); }
-  }).catch(function(e){ console.warn('출입증 확인 못 함', e); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function(){});
 })();
 </script>

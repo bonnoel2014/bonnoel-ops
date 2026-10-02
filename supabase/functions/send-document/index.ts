@@ -6,14 +6,13 @@
 //   OWNER_EMAIL (사장님 사본 주소. 앱의 ops_settings docs.owner_email 이 있으면 그걸 먼저 씀)
 //   APP_KEY (선택: 앱의 publishable 키를 넣으면 그 키를 가진 앱만 호출 가능)
 //   MAIL_PROVIDER=resend + RESEND_API_KEY + MAIL_FROM (선택: 지메일 SMTP가 막힐 때 대안. 도메인 인증 필요)
-// SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY 는 Supabase가 자동으로 넣어 줌
-// 보안(10/1): 서류 사진함이 잠겨 있어서, 부른 사람을 출입증으로 확인(사장님·매니저·매장폰 또는 서류 주인 본인)한 뒤 서버 전용 키로 읽음
+// SUPABASE_URL / SUPABASE_ANON_KEY 는 Supabase가 자동으로 넣어 줌 (버킷·표는 anon 정책으로 접근 가능)
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-staff-token",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 function json(body: unknown, status = 200) {
@@ -51,16 +50,6 @@ function encodeSubject(s: string): string {
   if (cur) words.push(cur);
   return " " + words.map((w) => `=?UTF-8?B?${btoa(String.fromCharCode(...enc.encode(w)))}?=`).join(" ");
 }
-// 보안(2026-10-01): 앱이 보낸 출입증(x-staff-token)으로 "누가 불렀는지"를 서버에서 확인 (운영 앱에 로그인한 사람만 쓸 수 있게)
-async function whoami(req: Request): Promise<{ staff_id: string; role: string } | null> {
-  const tok = req.headers.get("x-staff-token") || "";
-  if (!tok) return null;
-  const url = Deno.env.get("SUPABASE_URL")!, key = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const res = await fetch(url + "/rest/v1/rpc/staff_whoami", { method: "POST", headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", "x-staff-token": tok }, body: "{}" }).catch(() => null);
-  if (!res || !res.ok) return null;
-  const j = await res.json().catch(() => null);
-  return j && j.ok ? j : null;
-}
 // 첨부파일 이름은 영문만 (라이브러리가 파일명을 따옴표 없이 써서 한글·공백이 깨짐)
 const FILE_NAMES: Record<string, string> = { contract: "1_contract", privacy: "2_privacy_consent", pledge: "3_pledge", cctv: "4_cctv_consent", uniform: "5_uniform", guardian: "6_guardian_consent", cert_employment: "employment_certificate", cert_career: "career_certificate" };
 function kst(d = new Date()): string {
@@ -80,21 +69,17 @@ Deno.serve(async (req) => {
     if (got !== appKey) return json({ error: "허용되지 않은 호출이에요" }, 401);
   }
 
-  const me = await whoami(req);
-  if (!me) return json({ error: "운영 앱에 다시 로그인해 주세요 (출입증 없음)" }, 401);
-
   let body: { batch_id?: string; ua?: string };
   try { body = await req.json(); } catch { return json({ error: "요청 내용을 읽을 수 없어요" }, 400); }
   const batchId = String(body.batch_id || "");
   if (!/^[0-9a-f-]{36}$/i.test(batchId)) return json({ error: "batch_id가 없어요" }, 400);
 
-  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!);
   const { data: rows, error: e1 } = await sb.from("ops_documents").select("*").eq("batch_id", batchId).order("created_at");
   if (e1) return json({ error: "서류를 읽지 못했어요: " + e1.message }, 500);
   const docs = (rows || []) as Row[];
   const sendable = docs.filter((r) => r.pdf_path && ["signed", "failed", "sent"].includes(r.status));
   if (!sendable.length) return json({ error: "보낼 서류가 없어요 (아직 서명 전이거나 PDF가 없어요)" }, 404);
-  if (!["owner", "manager", "kiosk"].includes(me.role) && me.staff_id !== sendable[0].staff_id) return json({ error: "본인 서류만 보낼 수 있어요" }, 403);
 
   const to = (sendable.find((r) => r.email_to)?.email_to || "").trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return json({ error: "직원 이메일 주소가 올바르지 않아요: " + to }, 400);

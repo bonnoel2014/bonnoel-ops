@@ -5,13 +5,12 @@
 //       (이미 배포돼 있으면 함수 열기 -> Code -> 내용 바꿔 넣고 Deploy 한 번 더)
 // 비밀값(Secrets): ANTHROPIC_API_KEY (필수), APP_KEY (선택: 앱의 publishable 키를 넣으면 그 키를 가진 앱만 호출 가능)
 // 설정: 함수 상세 -> "Verify JWT" 끄기 (앱이 publishable 키를 쓰기 때문)
-// 보안(10/1): 운영 앱에 로그인한 직원(출입증)만 부를 수 있음 → 밖에서 Claude 사용료를 쓰게 못 함
 import Anthropic from "npm:@anthropic-ai/sdk";
 
 const MODEL = Deno.env.get("CLAUDE_MODEL") || "claude-haiku-4-5";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-staff-token",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const PROMPT_EXPENSE = [
@@ -43,16 +42,6 @@ const PROMPT_STAFF = [
   "}",
 ].join("\n");
 
-// 보안(2026-10-01): 앱이 보낸 출입증(x-staff-token)으로 "누가 불렀는지"를 서버에서 확인 (운영 앱에 로그인한 사람만 쓸 수 있게)
-async function whoami(req: Request): Promise<{ staff_id: string; role: string } | null> {
-  const tok = req.headers.get("x-staff-token") || "";
-  if (!tok) return null;
-  const url = Deno.env.get("SUPABASE_URL")!, key = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const res = await fetch(url + "/rest/v1/rpc/staff_whoami", { method: "POST", headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", "x-staff-token": tok }, body: "{}" }).catch(() => null);
-  if (!res || !res.ok) return null;
-  const j = await res.json().catch(() => null);
-  return j && j.ok ? j : null;
-}
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
@@ -65,7 +54,6 @@ function toInt(v: unknown): number | null {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST로 보내 주세요" }, 405);
-  if (!(await whoami(req))) return json({ error: "운영 앱에 다시 로그인해 주세요 (출입증 없음)" }, 401);
 
   const appKey = Deno.env.get("APP_KEY");
   if (appKey) {

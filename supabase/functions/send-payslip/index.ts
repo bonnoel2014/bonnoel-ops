@@ -4,28 +4,17 @@
 // 비밀값(Secrets)은 send-document와 동일한 것을 그대로 씀 (새로 설정할 것 없음):
 //   GMAIL_USER, GMAIL_APP_PASSWORD ← 기본 발송 방식
 //   APP_KEY (선택), MAIL_PROVIDER=resend + RESEND_API_KEY + MAIL_FROM (선택, 대안)
-// SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY 는 Supabase가 자동으로 넣어 줌
-// 보안(10/1): 사장님 출입증으로만 보낼 수 있음. 급여 표는 잠겨 있어서 확인 뒤 서버 전용 키로 읽음
+// SUPABASE_URL / SUPABASE_ANON_KEY 는 Supabase가 자동으로 넣어 줌
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-staff-token",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-}
-// 보안(2026-10-01): 앱이 보낸 출입증(x-staff-token)으로 "누가 불렀는지"를 서버에서 확인 (운영 앱에 로그인한 사람만 쓸 수 있게)
-async function whoami(req: Request): Promise<{ staff_id: string; role: string } | null> {
-  const tok = req.headers.get("x-staff-token") || "";
-  if (!tok) return null;
-  const url = Deno.env.get("SUPABASE_URL")!, key = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const res = await fetch(url + "/rest/v1/rpc/staff_whoami", { method: "POST", headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", "x-staff-token": tok }, body: "{}" }).catch(() => null);
-  if (!res || !res.ok) return null;
-  const j = await res.json().catch(() => null);
-  return j && j.ok ? j : null;
 }
 // 메일 제목의 한글을 RFC 2047 base64 조각으로 인코딩한다 (send-document와 같은 이유: denomailer가 긴 한글 제목을 깨뜨림).
 function encodeSubject(s: string): string {
@@ -50,9 +39,6 @@ Deno.serve(async (req) => {
     if (got !== appKey) return json({ error: "허용되지 않은 호출이에요" }, 401);
   }
 
-  const me = await whoami(req);
-  if (!me || me.role !== "owner") return json({ error: "사장님만 보낼 수 있어요 (운영 앱에 다시 로그인해 주세요)" }, 401);
-
   let body: { run_id?: string; to?: string; subject?: string; html?: string };
   try { body = await req.json(); } catch { return json({ error: "요청 내용을 읽을 수 없어요" }, 400); }
   const runId = String(body.run_id || "");
@@ -65,7 +51,7 @@ Deno.serve(async (req) => {
   if (!subject || !html) return json({ error: "제목·내용이 비어있어요" }, 400);
   if (html.length > 200000) return json({ error: "명세서 내용이 너무 커요" }, 400);
 
-  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!);
   const { data: run, error: e1 } = await sb.from("ops_pay_runs").select("id").eq("id", runId).maybeSingle();
   if (e1) return json({ error: "급여 기록을 읽지 못했어요: " + e1.message }, 500);
   if (!run) return json({ error: "급여 기록을 찾을 수 없어요" }, 404);
