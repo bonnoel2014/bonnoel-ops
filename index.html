@@ -5282,9 +5282,9 @@
   routes['prepay-poster'] = async function(){
     await loadBase();
     var html = topbar('선결제 포스터', true, whoChip());
-    html += '<a href="pop/prepay-pop-v1-10pct-A4.png" target="_blank" rel="noopener" style="display:block"><img src="pop/prepay-pop-v1-10pct-web.jpg" alt="본노엘 선결제 포스터" style="width:100%;display:block;border-radius:var(--radius-l);border:1px solid var(--line);box-shadow:var(--shadow);background:var(--surface)"></a>';
+    html += '<a href="pop/prepay-pop-A4.png" target="_blank" rel="noopener" style="display:block"><img src="pop/prepay-pop-web.jpg" alt="본노엘 선결제 포스터" style="width:100%;display:block;border-radius:var(--radius-l);border:1px solid var(--line);box-shadow:var(--shadow);background:var(--surface)"></a>';
     html += '<div class="muted" style="margin:8px 4px">사진을 누르면 크게 열려요. 손님께 혜택이나 잔액 확인 QR을 설명할 때 보여 주세요.</div>';
-    html += '<div class="inline" style="margin-top:6px"><a class="btn" href="pop/prepay-pop-v1-10pct-A4.pdf" target="_blank" rel="noopener">📄 인쇄용 PDF</a><a class="btn" href="pop/prepay-pop-v1-10pct-A4.png" target="_blank" rel="noopener">🔍 큰 그림</a></div>';
+    html += '<div class="inline" style="margin-top:6px"><a class="btn" href="pop/prepay-pop-A4.pdf" target="_blank" rel="noopener">📄 인쇄용 PDF</a><a class="btn" href="pop/prepay-pop-A4.png" target="_blank" rel="noopener">🔍 큰 그림</a></div>';
     app.innerHTML = html;
   };
 
