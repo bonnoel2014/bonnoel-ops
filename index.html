@@ -136,6 +136,23 @@
   .pin:focus{ outline:2px solid var(--accent); }
   .name-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   .name-grid .btn{ padding:14px 8px; font-size:16px; }
+  /* 리뷰 뽑기판 */
+  .dboard-head{ text-align:center; padding:12px 8px 8px; font-size:15px; }
+  .dboard-title{ font:700 22px var(--font-serif); color:var(--accent); margin-bottom:4px; }
+  .dboard{ display:grid; grid-template-columns:repeat(13, 1fr); gap:3px; padding:8px; margin:0 8px 90px; background:#1d3f8f; border-radius:14px; box-shadow:var(--shadow); }
+  .dcell{ aspect-ratio:1; min-width:0; border:0; border-radius:4px; background:#fbd34a; color:#b45309; font-size:12px; line-height:1; padding:0; cursor:pointer; box-shadow:inset 0 -2px 0 rgba(0,0,0,.12); }
+  .dcell::before{ content:'★'; }
+  .dcell:active{ transform:scale(.9); }
+  .dcell.gone{ background:transparent; border:1px dashed rgba(255,255,255,.3); box-shadow:none; }
+  .dcell.gone::before{ content:''; }
+  .dcell.flip{ animation:dflip .65s ease-in-out; background:var(--accent-soft); color:var(--accent); }
+  .dcell.flip::before{ content:'?'; font-weight:700; }
+  @keyframes dflip{ 0%{ transform:rotateY(0) scale(1);} 50%{ transform:rotateY(180deg) scale(1.6);} 100%{ transform:rotateY(360deg) scale(1.3);} }
+  .dresult{ text-align:center; padding:26px 16px 18px; animation:dpop .5s ease-out; }
+  .dresult-emoji{ font-size:56px; line-height:1; }
+  .dresult-rank{ font:700 44px var(--font-serif); color:var(--accent); margin-top:6px; }
+  .dresult-prize{ font-size:22px; font-weight:700; margin:8px 0 6px; }
+  @keyframes dpop{ 0%{ transform:scale(.6); opacity:0;} 70%{ transform:scale(1.08);} 100%{ transform:scale(1); opacity:1;} }
   .expand{ padding:10px 14px 14px 72px; background:var(--surface-sunken); border-bottom:1px solid var(--line); }
 
   .toast{ position:fixed; left:50%; bottom:90px; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--paper); padding:10px 16px; border-radius:999px; font-size:14px; opacity:0; transition:.2s; pointer-events:none; z-index:20; max-width:90vw; text-align:center; }
@@ -329,7 +346,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -379,7 +396,7 @@
       update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
       upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
       remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); },
-      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : /^bread_/.test(fn) ? breadMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
+      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : /^bread_/.test(fn) ? breadMemRpc(tables, fn, args || {}) : /^draw_/.test(fn) ? drawMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
@@ -899,6 +916,10 @@
     if (isOwner()) html += row('#/expense-cards', 'tile-gray', '💳', '카드 설정', '법인카드 끝 4자리·지점 (사장님만)');
     html += row('#/buy', 'tile-yellow', '🥐', '직원 구매', '직원 할인으로 산 빵 영수증 올리기 (현금 30% · 카드 20%)');
     if (isManager()) html += row('#/buy-list', 'tile-orange', '🧮', '직원 구매 내역', '날짜별 할인·낸 금액 합계 (마감용) · 사람별');
+    html += tge();
+    html += grp('리뷰 이벤트');   // 매장폰·매니저·사장님 — 손님이 리뷰 보여 주면 화면 뽑기판에서 뽑기. 집계는 사장님 앱에서만
+    if (isManager()) html += row('#/draw', 'tile-red', '🎰', '리뷰 뽑기판', '손님이 리뷰 보여 주면 매장폰 뽑기판에서 칸 뒤집기 → 등수·상품 지급 기록');
+    if (isManager()) html += row('#/draw-prizes', 'tile-gray', '🎁', '뽑기 상품표', '우리 매장 1~5등 상품 문구 (매니저·사장님 비밀번호)');
     html += tge();
     html += grp('선결제');
     html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
@@ -8889,6 +8910,195 @@
       });
     }
     return { ops_daily_sales: S };
+  }
+
+  // ===== 리뷰 뽑기판 (디지털 뽑기) — supabase-migration-draw.sql, 기획/리뷰뽑기/v1/PRD.md =====
+  // 종이 뽑기판(520알: 1등 1 · 2등 3 · 3등 16 · 4등 100 · 5등 400)을 매장폰 화면으로.
+  // 등수는 서버 함수(draw_pick)가 남은 알 비율로 정하고, 매장폰은 결과만 받는다. 남은 알·집계 숫자는 사장님 앱에서만.
+  var DRAW_TOTAL = 520, DRAW_PENDING_KEY = 'bonnoel_ops_draw_pending';
+  var DRAW_RANK_EMOJI = { 1: '🏆', 2: '🥈', 3: '🥉', 4: '🎁', 5: '🍪' };
+  var DRAW_CONDS = [ ['star', '별점 5개'], ['photo', '사진 1장 이상'], ['saved', '저장(등록) 눌렀는지'] ];
+  var drawSt = { b: null, stage: 'start', cond: {}, taken: [], busy: false, result: null, labels: {} };
+  async function drawCall(fn, args){ var r = await db.rpc(fn, args); if (r && r.ok === false) throw new Error(r.error || '실패했어요'); return r; }
+  function drawPendingLoad(){ try { return JSON.parse(localStorage.getItem(DRAW_PENDING_KEY) || 'null'); } catch(e){ return null; } }
+  function drawPendingSave(x){ try { if (x) localStorage.setItem(DRAW_PENDING_KEY, JSON.stringify(x)); else localStorage.removeItem(DRAW_PENDING_KEY); } catch(e){} }
+  function drawLabelsOk(L){ return [1,2,3,4,5].every(function(k){ return String(L[k] || '').trim(); }); }
+  function drawPrizeList(L){
+    return [1,2,3,4,5].map(function(k){ return '<div class="hist"><b style="width:34px">' + k + '등</b><span class="sp">' + (String(L[k] || '').trim() ? esc(L[k]) : '<span class="muted">(비어 있음)</span>') + '</span></div>'; }).join('');
+  }
+  function drawReset(b){ drawSt = { b: b, stage: 'start', cond: {}, taken: [], busy: false, result: null, labels: {} }; }
+  function drawFinish(msg){ drawPendingSave(null); drawSt.result = null; drawSt.stage = 'start'; drawSt.cond = {}; toast(msg); render(); }
+
+  function drawBoardHtml(bname){
+    var taken = {}; drawSt.taken.forEach(function(c){ taken[c] = true; });
+    var cells = '';
+    for (var i = 0; i < DRAW_TOTAL; i++) cells += '<button class="dcell' + (taken[i] ? ' gone' : '') + '" data-act="draw-cell" data-id="' + i + '"' + (taken[i] ? ' disabled' : '') + ' aria-label="' + (i + 1) + '번 칸"></button>';
+    return '<div class="dboard-head"><div class="dboard-title">🎉 추억의 뽑기판</div><div>마음에 드는 칸을 <b>하나만</b> 눌러 주세요</div><div class="muted" style="font-size:12px">' + esc(bname) + ' · 빈 칸은 이미 뽑힌 자리예요</div></div>'
+      + '<div class="dboard" id="dboard">' + cells + '</div>'
+      + '<div class="stickybar"><button class="btn block" data-act="draw-abort">‹ 돌아가기 (아직 안 뽑았어요)</button></div>';
+  }
+  function drawResultHtml(bname){
+    var r = drawSt.result, label = r.prize || drawSt.labels[r.rank] || '';
+    return '<div class="dresult"><div class="dresult-emoji">' + DRAW_RANK_EMOJI[r.rank] + '</div><div class="dresult-rank">' + r.rank + '등!</div><div class="dresult-prize">' + esc(label) + '</div><div class="muted">' + esc(bname) + ' · 축하드려요 🎊</div></div>'
+      + '<div class="card" style="padding:14px"><div class="muted" style="font-size:13px;margin-bottom:8px">직원이 눌러 주세요 — 상품을 건네고 나서</div>'
+      + '<button class="btn primary block" style="padding:16px;font-size:17px" data-act="draw-given">✅ 지급 완료</button>'
+      + '<button class="btn block" style="margin-top:8px" data-act="draw-sub">🔁 다른 걸로 드림 (품절·마감 등)</button>'
+      + '<button class="btn block" style="margin-top:8px;color:var(--danger)" data-act="draw-cancel">✖ 잘못 뽑힘 → 취소 (매장 코드)</button></div>';
+  }
+
+  routes.draw = async function(params){
+    await loadBase();
+    var html = topbar('리뷰 뽑기판', true, whoChip());
+    if (!isManager()){ app.innerHTML = html + '<div class="note">뽑기판은 매장폰(또는 매니저·사장님 계정)에서만 쓸 수 있어요. 매장폰으로 들어가 주세요.</div>'; return; }
+    var b = pickBranch(params, false);
+    if (!b){ app.innerHTML = html + '<div class="note">매장을 골라서 들어와야 해요. 오른쪽 위 이름을 눌러 다시 들어와 주세요.</div>'; return; }
+    if (drawSt.b !== b) drawReset(b);
+    var pend = drawPendingLoad();   // 결과 화면에서 지급 버튼을 못 누르고 닫혔으면 이어서 보여 줌
+    if (pend && pend.branch === b && !drawSt.result){ drawSt.result = pend; drawSt.stage = 'result'; }
+    html += branchTabs(b, false);
+    var bname = branchName(b);
+    try { var pr = await drawCall('draw_prizes_get', { p_branch: b }); drawSt.labels = pr.labels || {}; }
+    catch(e){ app.innerHTML = html + '<div class="note danger">' + esc(e.message || e) + '</div>'; return; }
+    var labelsOk = drawLabelsOk(drawSt.labels);
+
+    if (drawSt.stage === 'board'){
+      try { var cells = await drawCall('draw_board_cells', { p_branch: b }); drawSt.taken = cells.taken || []; }
+      catch(e){ toast(e.message || e); drawSt.stage = 'start'; }
+    }
+    if (drawSt.stage === 'board'){ app.innerHTML = html + drawBoardHtml(bname); return; }
+    if (drawSt.stage === 'result'){ app.innerHTML = html + drawResultHtml(bname); return; }
+
+    var allChecked = DRAW_CONDS.every(function(c){ return drawSt.cond[c[0]]; });
+    html += '<div class="card" style="padding:14px;margin-top:10px"><div class="rtitle" style="margin-bottom:4px">' + esc(bname) + ' · 손님 리뷰 확인</div>'
+      + '<div class="muted" style="font-size:13px">네이버 영수증 리뷰 · 카카오맵 · 구글 리뷰. 손님 폰 화면을 보고 세 가지를 눌러 주세요.</div>'
+      + '<div class="name-grid" style="margin-top:10px">' + DRAW_CONDS.map(function(c){ return '<button class="btn' + (drawSt.cond[c[0]] ? ' primary' : '') + '" data-act="draw-cond" data-id="' + c[0] + '">' + (drawSt.cond[c[0]] ? '✓ ' : '') + esc(c[1]) + '</button>'; }).join('') + '</div>'
+      + '<button class="btn primary block" style="margin-top:12px;padding:16px;font-size:18px" data-act="draw-begin"' + (allChecked && labelsOk ? '' : ' disabled') + '>🎰 손님께 건네기 → 뽑기</button>'
+      + (labelsOk ? '' : '<div class="note danger" style="margin-top:10px">상품표가 비어 있어요. 아래 "상품표 바꾸기"에서 1~5등을 먼저 채워 주세요.</div>')
+      + '</div>';
+    html += '<div class="card" style="padding:14px"><div class="rtitle" style="margin-bottom:4px">우리 매장 상품</div>' + drawPrizeList(drawSt.labels)
+      + '<a class="btn block sm" href="#/draw-prizes' + (isOwner() ? '/' + esc(b) : '') + '" style="margin-top:8px">상품표 바꾸기 (매니저·사장님 비밀번호)</a></div>';
+    html += '<div class="note">손님 한 분당 하루 한 번이에요. 참여 뒤 리뷰를 지우면 다음부터 참여가 안 된다고 안내해 주세요. 확률은 종이 뽑기판과 같아요.</div>';
+    app.innerHTML = html;
+  };
+
+  routes['draw-prizes'] = async function(params){
+    await loadBase();
+    var html = topbar('뽑기 상품표', true, whoChip());
+    if (!isManager()){ app.innerHTML = html + '<div class="note">매장폰·매니저·사장님만 볼 수 있어요.</div>'; return; }
+    var b = pickBranch(params, false);
+    if (!b){ app.innerHTML = html + '<div class="note">매장을 골라서 들어와야 해요.</div>'; return; }
+    html += branchTabs(b, false);
+    var L = {};
+    try { var pr = await drawCall('draw_prizes_get', { p_branch: b }); L = pr.labels || {}; }
+    catch(e){ app.innerHTML = html + '<div class="note danger">' + esc(e.message || e) + '</div>'; return; }
+    var people = base.staff.filter(function(s){ return s.active !== false && (s.role === 'manager' || s.role === 'owner') && (s.role === 'owner' || !s.branch_id || s.branch_id === b); });
+    html += '<div class="card" style="padding:14px;margin-top:10px"><div class="rtitle">' + esc(branchName(b)) + ' 1~5등 상품</div><div class="form">'
+      + [1,2,3,4,5].map(function(k){ return '<label>' + k + '등</label><input class="in" id="dp-' + k + '" value="' + esc(L[k] || '') + '" placeholder="예: 마들렌 1개">'; }).join('')
+      + '<label>바꾸는 사람 (매니저·사장님)</label><select class="in" id="dp-who">' + people.map(function(s){ return '<option value="' + esc(s.id) + '">' + esc(s.name) + '</option>'; }).join('') + '</select>'
+      + '<label>그 사람 비밀번호 4자리</label><input class="in" id="dp-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off">'
+      + '<button class="btn primary block" style="margin-top:12px" data-act="draw-prizes-save">저장</button></div></div>';
+    html += '<div class="note">확률은 종이 뽑기판과 똑같아요 (520알: 1등 1 · 2등 3 · 3등 16 · 4등 100 · 5등 400). 여기서는 상품 문구만 바뀌고 확률은 안 바뀌어요. 1등이 선결제 충전금이면 지급은 선결제 메뉴에서 직접 충전해 주세요.</div>';
+    app.innerHTML = html;
+  };
+
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act]'); if (!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    if (!/^draw-/.test(act)) return;
+    try {
+      switch (act){
+        case 'draw-cond': if (drawSt.cond[id]) delete drawSt.cond[id]; else drawSt.cond[id] = true; render(); break;
+        case 'draw-begin': drawSt.stage = 'board'; render(); break;
+        case 'draw-abort': drawSt.stage = 'start'; render(); break;
+        case 'draw-cell': {
+          if (drawSt.busy || drawSt.stage !== 'board') break;
+          drawSt.busy = true;
+          app.querySelectorAll('.dcell').forEach(function(x){ x.disabled = true; });   // 두 번째 터치 막기
+          el.classList.add('flip');
+          try {
+            var r = await drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: +id });
+            drawSt.result = { branch: drawSt.b, log_id: r.log_id, rank: r.rank, prize: r.prize, cell: r.cell, at: Date.now() };
+            drawPendingSave(drawSt.result);   // 저장된 뒤에만 결과를 보여 줌
+            drawSt.stage = 'result'; drawSt.cond = {};
+            await new Promise(function(res){ setTimeout(res, 650); });
+            render();
+          } catch(err){ toast(err.message || err); drawSt.stage = 'board'; render(); }
+          finally { drawSt.busy = false; }
+          break;
+        }
+        case 'draw-given': el.disabled = true; try { await drawCall('draw_done', { p_log: drawSt.result.log_id, p_status: 'given', p_substitute: null }); drawFinish('지급 완료로 기록했어요'); } finally { el.disabled = false; } break;
+        case 'draw-sub': {
+          var what = prompt('대신 뭘 드렸나요? (예: 마들렌 2개)'); if (what == null) break;
+          if (!what.trim()){ toast('뭘 드렸는지 적어 주세요'); break; }
+          await drawCall('draw_done', { p_log: drawSt.result.log_id, p_status: 'substituted', p_substitute: what.trim() });
+          drawFinish('"' + what.trim() + '"로 대체 지급 기록했어요'); break;
+        }
+        case 'draw-cancel': {
+          var code = prompt('취소하려면 선결제 매장 코드 6자리를 넣어 주세요'); if (code == null) break;
+          code = String(code).replace(/\D/g, '');
+          if (!/^\d{6}$/.test(code)){ toast('숫자 6자리로 넣어 주세요'); break; }
+          var cr = await drawCall('draw_cancel', { p_log: drawSt.result.log_id, p_branch: drawSt.b, p_code: code });
+          drawFinish('취소했어요' + (cr.returned ? ' · 그 알은 판으로 돌아갔어요' : '')); break;
+        }
+        case 'draw-prizes-save': {
+          var labels = {}; [1,2,3,4,5].forEach(function(k){ labels[k] = (document.getElementById('dp-' + k).value || '').trim(); });
+          var who = document.getElementById('dp-who').value, pin = document.getElementById('dp-pin').value;
+          if (!drawLabelsOk(labels)){ toast('1~5등을 다 채워 주세요'); break; }
+          if (!/^\d{4}$/.test(pin)){ toast('비밀번호 4자리를 넣어 주세요'); break; }
+          el.disabled = true;
+          try { await drawCall('draw_prizes_set', { p_branch: drawSt.b || pickBranch(current.params, false), p_staff: who, p_pin: pin, p_labels: labels }); toast('상품표를 저장했어요'); drawSt.labels = labels; nav('#/draw' + (isOwner() ? '/' + (drawSt.b || pickBranch(current.params, false)) : '')); }
+          finally { el.disabled = false; }
+          break;
+        }
+      }
+    } catch(err){ console.error(err); toast('실패: ' + (err.message || err)); }
+  });
+
+  // 시연 모드(?demo=1)용 가짜 서버
+  function drawMemRpc(T, fn, a){
+    if (!T.__draw){
+      T.__draw = { boards: {}, logs: [], prizes: {
+        b2: { 1: '식빵(대) + 파운드 + 마들렌', 2: '식빵(대)', 3: '파운드', 4: '휘낭시에', 5: '마들렌' },
+        b1: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '휘낭시에 1개', 4: '파운드 1개', 5: '마들렌 1개' },
+        b3: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '파운드 1개', 4: '휘낭시에 1개', 5: '마들렌 1개' },
+        b4: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '휘낭시에 1개 + 마들렌 1개', 4: '파운드 1개', 5: '마들렌 1개' } } };
+    }
+    var D = T.__draw;
+    function board(b){ var x = D.boards[b]; if (!x || x.closed){ x = D.boards[b] = { id: uid(), seq: x ? x.seq + 1 : 1, remaining: [1, 3, 16, 100, 400], taken: [], closed: false }; } return x; }
+    function findLog(id){ return D.logs.filter(function(x){ return x.id === id; })[0]; }
+    var bd, lg;
+    switch (fn){
+      case 'draw_prizes_get': return { ok: true, labels: D.prizes[a.p_branch] || {} };
+      case 'draw_prizes_set': {
+        var s = (T.manual_staff || []).filter(function(x){ return x.id === a.p_staff; })[0];
+        if (!s || ['manager', 'owner'].indexOf(s.role) < 0) return { ok: false, error: '매니저나 사장님만 바꿀 수 있어요' };
+        if (s.pin !== a.p_pin) return { ok: false, error: '비밀번호가 틀려요' };
+        D.prizes[a.p_branch] = a.p_labels; return { ok: true };
+      }
+      case 'draw_board_cells': bd = board(a.p_branch); return { ok: true, board_id: bd.id, taken: bd.taken.slice(), total: 520 };
+      case 'draw_pick': {
+        if (!drawLabelsOk(D.prizes[a.p_branch] || {})) return { ok: false, error: '상품표를 먼저 채워 주세요 (뽑기 상품표 메뉴)' };
+        bd = board(a.p_branch);
+        if (bd.taken.indexOf(a.p_cell) >= 0) return { ok: false, error: '이미 뽑힌 칸이에요. 다른 칸을 눌러 주세요' };
+        var total = bd.remaining.reduce(function(x, y){ return x + y; }, 0), pick = Math.floor(Math.random() * total) + 1, acc = 0, r = 5;
+        for (var i = 0; i < 5; i++){ acc += bd.remaining[i]; if (pick <= acc){ r = i + 1; break; } }
+        bd.remaining[r - 1]--; bd.taken.push(a.p_cell);
+        lg = { id: uid(), board_id: bd.id, branch_id: a.p_branch, cell: a.p_cell, rank: r, prize_label: D.prizes[a.p_branch][r], status: 'pending', drawn_at: new Date().toISOString() };
+        D.logs.push(lg); if (total - 1 <= 0) bd.closed = true;
+        return { ok: true, log_id: lg.id, rank: r, prize: lg.prize_label, cell: a.p_cell };
+      }
+      case 'draw_done': lg = findLog(a.p_log); if (!lg) return { ok: false, error: '뽑기 기록을 못 찾았어요' }; lg.status = a.p_status; lg.substitute = a.p_substitute || null; return { ok: true };
+      case 'draw_cancel': {
+        var codes = (T.__pp && T.__pp.codes) || { b1: '111111', b2: '222222', b3: '333333', b4: '444444' };
+        if (a.p_code !== '000000' && a.p_code !== codes[a.p_branch]) return { ok: false, error: '선결제 코드가 틀려요 (시연: 매장 코드 또는 000000)' };
+        lg = findLog(a.p_log); if (!lg) return { ok: false, error: '뽑기 기록을 못 찾았어요' };
+        if (lg.status === 'cancelled') return { ok: false, error: '이미 취소된 뽑기예요' };
+        bd = D.boards[a.p_branch]; var back = false;
+        if (bd && bd.id === lg.board_id && !bd.closed){ bd.remaining[lg.rank - 1]++; bd.taken = bd.taken.filter(function(c){ return c !== lg.cell; }); back = true; }
+        lg.status = 'cancelled'; return { ok: true, returned: back };
+      }
+    }
+    return { ok: false, error: '시연 모드에 없는 기능: ' + fn };
   }
 
   // ===== 사장님 앱으로 옮긴 화면 (2026-09-30) =====
