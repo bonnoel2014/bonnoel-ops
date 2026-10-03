@@ -805,7 +805,7 @@
       } catch(e){ console.warn('입사 서류 테이블 없음', e); }
       html += '<div style="margin-top:12px;padding-left:12px;border-left:4px solid #2196F3"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:8px">📋 근무·서류</div><div class="summary" style="margin-top:0"><a href="#/leave-admin"><div class="n' + (pend ? ' danger' : '') + '">' + pend + '</div><div class="l">휴무 신청 대기</div></a>' +
               '<a href="#/leave-admin"><div class="n">' + cov + '</div><div class="l">대타 구하는 중</div></a>' +
-              '<a href="#/docs-admin"><div class="n' + (pendDocs ? ' danger' : '') + '">' + pendDocs + '</div><div class="l">서류 서명 대기</div></a></div></div>';
+              '<a href="' + (isOwner() ? '#/docs-admin' : '#/sign') + '"><div class="n' + (pendDocs ? ' danger' : '') + '">' + pendDocs + '</div><div class="l">서류 서명 대기</div></a></div></div>';
       try { // 보건증 테이블(supabase-migration-health.sql)이 아직 없어도 홈은 열리게
         var hmap = healthMap(await loadHealth()), hRed = 0, hYel = 0, hPend = 0;
         base.staff.forEach(function(s){ if (s.active === false || !(ids.indexOf(s.branch_id) >= 0 || !s.branch_id)) return; var hs = healthStatus(hmap[s.id]); if (hs.level === 'danger') hRed++; else if (hs.level === 'warn') hYel++; if (hmap[s.id] && hmap[s.id].pending) hPend++; });
@@ -903,7 +903,7 @@
     html += tge();
     html += grp('근로계약서·유니폼·보건증');
     if (isOwner()) html += row('#/docs-admin', 'tile-purple', '📝', '근로계약서 & 입사서류', '근로계약서 준비 → 매장폰 서명 → 자동 메일 교부 (사장님만)');
-    if (isManager()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
+    if (isOwner() || isKiosk()) html += row('#/sign', 'tile-green', '✍️', '서류 서명 (매장폰)', '신입이 이름·비밀번호로 들어와 읽고 서명');
     if (isManager()) html += row('#/uniform-swap', 'tile-orange', '🔄', '유니폼 교체 (반팔 → 긴팔)', '계절 교체 · 반팔 반납 + 긴팔 수령 · 날짜 · 서명 PDF');
     if (isManager()) html += row('#/uniform-return', 'tile-purple', '👕', '유니폼 반납', '퇴사자 반납 확인 · 서명 · 반납확인서 PDF');
     if (isOwner()) html += row('#/my-docs', 'tile-gray', '📄', '내 서류', '내가 서명한 근로계약서 등 다시 보기');
@@ -4018,6 +4018,7 @@
   }
   function isMinor(){ var st = signState; var a = st.info.birth ? BND().age(st.info.birth, todayStr()) : null; return (a != null && a < 18) || st.docs.some(function(r){ return r.data && r.data.minor; }); }
   routes.sign = async function(){
+    if (session && !isOwner() && !isKiosk()){ toast('서류 서명은 사장님과 매장폰에서만 할 수 있어요'); nav('#/home'); return; }
     await loadBase();
     var st = signState;
     var b = st.branchId || (session ? (isOwner() ? null : session.branchId) : null);
