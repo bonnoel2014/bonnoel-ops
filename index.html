@@ -1724,6 +1724,10 @@
       return { list: sorted, lanes: Math.max(1, laneEnd.length) };
     }
     var byDayLanes = byDay.map(assignLanes);
+    var imgColors = {};
+    byDayLanes.forEach(function(dl){ dl.list.forEach(function(r){ var w = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId; if (w) imgColors[w] = col(w); }); });
+    app._schedImg = { branch: branchName(b), days: days, lanes: byDayLanes, colors: imgColors };
+    if (isManager() && byDayLanes.some(function(dl){ return dl.list.length; })) html += '<div style="margin:0 0 8px"><button class="btn sm" data-act="sched-img">📷 이 주 근무표 사진으로 만들기 (카톡 공유)</button></div>';
 
     if (viewMode === 'grid'){
       var mn = 24 * 60, mx = 0, bounds = {};
@@ -2234,6 +2238,83 @@
       render();
     }
     else if (made) render();
+  }
+
+  // ===== 주간 근무표 사진 (카톡 공유용) =====
+  function schedImageCanvas(o){
+    var S = 2, PAD = 16, TW = 50, LW = 66, TOP = 58, HH = 40, ROW = 26, PPM = ROW / 30, FOOT = 34;
+    var mn = 1440, mx = 0;
+    o.lanes.forEach(function(dl){ dl.list.forEach(function(r){ mn = Math.min(mn, toMin(r.start)); mx = Math.max(mx, toMin(r.end)); }); });
+    mn = Math.floor(mn / 30) * 30; mx = Math.ceil(mx / 30) * 30;
+    var totalLanes = o.lanes.reduce(function(a, dl){ return a + dl.lanes; }, 0);
+    var W = PAD * 2 + TW + totalLanes * LW, gridTop = TOP + HH, H = gridTop + (mx - mn) * PPM + FOOT;
+    var cv = document.createElement('canvas'); cv.width = W * S; cv.height = H * S;
+    var g = cv.getContext('2d'); g.scale(S, S);
+    var FF = getComputedStyle(document.body).fontFamily || 'sans-serif';
+    function font(px, bold){ g.font = (bold ? '700 ' : '400 ') + px + 'px ' + FF; }
+    function rr(x, y, w, h, rad){ rad = Math.min(rad, h / 2, w / 2); g.beginPath(); g.moveTo(x + rad, y); g.arcTo(x + w, y, x + w, y + h, rad); g.arcTo(x + w, y + h, x, y + h, rad); g.arcTo(x, y + h, x, y, rad); g.arcTo(x, y, x + w, y, rad); g.closePath(); }
+    function yOf(m){ return gridTop + (m - mn) * PPM; }
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    font(20, true); g.fillStyle = '#af4c60'; g.textBaseline = 'middle'; g.textAlign = 'left';
+    g.fillText('본노엘 ' + o.branch + ' 근무표', PAD, 26);
+    font(13); g.fillStyle = '#555'; g.fillText(fmtDateK(o.days[0]) + ' ~ ' + fmtDateK(o.days[6]), PAD, 46);
+    for (var t = mn; t <= mx; t += 30){
+      g.strokeStyle = t % 60 === 0 ? '#d9d2d4' : '#eeeaeb'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(PAD + TW, yOf(t) + 0.5); g.lineTo(W - PAD, yOf(t) + 0.5); g.stroke();
+      if (t < mx){ font(11, t % 60 === 0); g.fillStyle = '#777'; g.textAlign = 'right'; g.fillText(fromMin(t), PAD + TW - 6, yOf(t) + ROW / 2); }
+    }
+    var x = PAD + TW;
+    o.days.forEach(function(d, di){
+      var dl = o.lanes[di], dw = dl.lanes * LW, wd = wdOf(d), wkend = wd === 0 || wd === 6;
+      g.fillStyle = wkend ? '#fde8ec' : '#f7f1f2'; g.fillRect(x, TOP, dw, HH);
+      font(14, true); g.fillStyle = wd === 0 ? '#c62828' : '#333'; g.textAlign = 'center';
+      g.fillText(WD[wd] + ' ' + (dateObj(d).getMonth() + 1) + '/' + dateObj(d).getDate(), x + dw / 2, TOP + HH / 2);
+      dl.list.forEach(function(r){
+        var who = r.kind === 'sub' ? r.req.sub_staff_id : r.staffId, nm = (r.kind === 'sub' ? r.subName : r.name).replace(/\s/g, '').slice(0, 4);
+        var bx = x + r.lane * LW + 3, bw = LW - 6, y1 = yOf(toMin(r.start)) + 1.5, y2 = yOf(toMin(r.end)) - 1.5;
+        g.fillStyle = r.kind === 'covering' ? '#fde68a' : r.kind === 'work' ? '#bbf7d0' : (o.colors[who] || '#e5e7eb');
+        rr(bx, y1, bw, y2 - y1, 6); g.fill();
+        if (r.kind === 'sub'){ g.strokeStyle = '#333'; g.lineWidth = 2; g.stroke(); }
+        if (r.brk){
+          var bp = r.brk.split('~'), b1 = yOf(toMin(bp[0])), b2 = yOf(toMin(bp[1]));
+          g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillRect(bx + 1, b1, bw - 2, b2 - b1);
+          g.setLineDash([3, 3]); g.strokeStyle = '#c62828'; g.lineWidth = 1; g.strokeRect(bx + 1.5, b1 + 0.5, bw - 3, b2 - b1 - 1); g.setLineDash([]);
+          font(10, true); g.fillStyle = '#c62828'; g.fillText('휴게', bx + bw / 2, (b1 + b2) / 2);
+        }
+        var h = y2 - y1, ty = y1 + 13;
+        font(13, true); g.fillStyle = '#222'; g.fillText(nm, bx + bw / 2, ty);
+        if (h >= 44){ font(10); g.fillStyle = '#444'; g.fillText(hm5(r.start), bx + bw / 2, ty + 15); g.fillText('~' + hm5(r.end), bx + bw / 2, ty + 28); }
+        else if (h >= 30){ font(10); g.fillStyle = '#444'; g.fillText(hm5(r.start) + '~', bx + bw / 2, ty + 14); }
+      });
+      x += dw;
+      g.strokeStyle = '#bfb5b8'; g.lineWidth = 1; g.beginPath(); g.moveTo(x + 0.5, TOP); g.lineTo(x + 0.5, yOf(mx)); g.stroke();
+    });
+    g.strokeStyle = '#bfb5b8'; g.beginPath(); g.moveTo(PAD + TW + 0.5, TOP); g.lineTo(PAD + TW + 0.5, yOf(mx)); g.stroke();
+    font(11); g.fillStyle = '#888'; g.textAlign = 'left';
+    g.fillText('테두리 진한 칸 = 대타 · 노랑 = 대타 구하는 중 · 점선 = 휴게', PAD, H - FOOT / 2);
+    g.textAlign = 'right'; g.fillText(md(nowIso()) + ' ' + hm(nowIso()) + ' 기준', W - PAD, H - FOOT / 2);
+    return cv;
+  }
+  var schedImgFile = null;
+  function showSchedImage(){
+    var o = app._schedImg; if (!o) return;
+    var url = schedImageCanvas(o).toDataURL('image/png');
+    var bin = atob(url.split(',')[1]), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    var name = '근무표_' + o.branch + '_' + o.days[0].slice(5).replace('-', '') + '-' + o.days[6].slice(5).replace('-', '') + '.png';
+    schedImgFile = null; try { schedImgFile = new File([arr], name, { type: 'image/png' }); } catch(e){}
+    var canShare = !!(schedImgFile && navigator.canShare && navigator.canShare({ files: [schedImgFile] }));
+    var ov = document.createElement('div'); ov.id = 'sched-img-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;overflow:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:10px';
+    ov.innerHTML = '<div class="inline" style="gap:8px;flex-wrap:wrap;justify-content:center">' + (canShare ? '<button class="btn primary" data-act="sched-img-share">카톡 등으로 공유</button>' : '') +
+      '<a class="btn' + (canShare ? '' : ' primary') + '" href="' + url + '" download="' + esc(name) + '">사진 저장</a><button class="btn" data-act="sched-img-close">닫기</button></div>' +
+      '<div style="color:#fff;font-size:13px;text-align:center">휴대폰은 사진을 길게 눌러도 저장돼요</div>' +
+      '<img src="' + url + '" alt="근무표 사진" style="max-width:100%;background:#fff;border-radius:8px">';
+    app.appendChild(ov);
+  }
+  async function shareSchedImage(){
+    if (!schedImgFile) return;
+    try { await navigator.share({ files: [schedImgFile], title: schedImgFile.name }); }
+    catch(e){ if (e && e.name !== 'AbortError') toast('공유가 안 돼요. "사진 저장"을 눌러 주세요'); }
   }
 
   // ===== 출퇴근 기록 (매장폰) =====
@@ -6179,6 +6260,9 @@
         case 'fill-self': el.disabled = true; if (await fillShift(el.getAttribute('data-key'), clockState.branchId, clockState.staffId, 'requested', true)) clockDone(); else el.disabled = false; break;
         case 'close-self': el.disabled = true; if (await closeSelf(el.getAttribute('data-id'))) render(); else el.disabled = false; break;
         case 'extra-open-new': clockState.extra = 'new'; render(); break;
+        case 'sched-img': showSchedImage(); break;
+        case 'sched-img-share': shareSchedImage(); break;
+        case 'sched-img-close': var sov = document.getElementById('sched-img-ov'); if (sov) sov.remove(); break;
         case 'fill-mgr': el.disabled = true; if (await fillShift(el.getAttribute('data-key'), isOwner() ? (current.params.arg || session.branchId) : session.branchId, session.staffId, 'approved')) render(); else el.disabled = false; break;
         case 'fill-ok': await fillDecide(id, 'approved'); break;
         case 'fill-no': if (window.confirm('거절할까요? 거절하면 이 근무는 인정되지 않아요.')) await fillDecide(id, 'rejected'); break;
