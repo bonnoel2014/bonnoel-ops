@@ -329,7 +329,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -379,7 +379,7 @@
       update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
       upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
       remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); },
-      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
+      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : /^bread_/.test(fn) ? breadMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
@@ -408,6 +408,7 @@
     items.forEach(function(it){ ['b1','b2','b3','b4'].forEach(function(b){ ib.push({ item_id: it.id, branch_id: b, target_qty: targets[it.id], active: true }); }); });
     var wk = daysAgo(2);
     return {
+      bread_info: breadDemoRows(),
       manual_branches: [ {id:'b1',name:'성수점',sort_order:1}, {id:'b4',name:'답십리점',sort_order:2}, {id:'b3',name:'중계점',sort_order:3}, {id:'b2',name:'왕십리점',sort_order:4} ],
       manual_staff: [
         {id:'o1',name:'사장님',branch_id:null,role:'owner',pin:'0000',active:true},
@@ -869,6 +870,9 @@
     html += row('#/alog', 'tile-yellow', '✍️', '근무자 일지 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
     if (isManager()) html += row('#/alog-admin', 'tile-orange', '📒', '로그북 확인', '근무자·매니저 일지 · 확인 체크 · 처리 안 된 것 · 종류별 모아보기');
     if (isManager() && !noMlogBranch()) html += row(LINKS.logbook, 'tile-blue', '👔', '매니저 일지 쓰기', '매니저 로그북 · 업무일지·공지사항·행사·업무요청 (새 창, 알바는 안 보임)');
+    html += tge();
+    html += grp('빵 정보');   // 누구나 — 베이커가 빵마다 들어간 성분을 확인(서명)하면 손님 QR 페이지(www.bonnoel.com/b/)에 바로 반영
+    html += row('#/allergy', 'tile-yellow', '🥜', '알레르기 체크 (베이커)', '빵마다 들어간 성분 확인 · 비밀번호로 서명 · 손님 QR 페이지에 바로 반영');
     html += tge();
     html += grp('근무표·휴무·대타');
     html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
@@ -7955,6 +7959,156 @@
   app.addEventListener('input', function(e){
     if (e.target.id === 'cl-memo'){ clSt.memo = e.target.value; clScheduleSave(); }
   });
+
+  // ===== 알레르기 체크 (베이커) =====
+  // 표: bread_info (사장님 앱 저장소 bonnoel-owner/supabase/owner-bread.sql + owner-bread-allergy.sql). 손님은 www.bonnoel.com/b/ 에서 검색·필터로 봐요.
+  // 베이커가 빵마다 들어간 성분을 누르고 본인 비밀번호 4자리로 서명 → DB 함수 bread_allergy_check 가 비밀번호를 확인하고 저장 + 기록을 남겨요.
+  // 성분 이름은 사장님 앱·손님 페이지와 똑같이 써야 해요 (원본: bonnoel-owner/tools/bread-tags-2026-10.mjs).
+  var ALG_GROUPS = [
+    ['손님이 제일 많이 묻는 것', ['밀가루(글루텐)', '달걀 흰자', '달걀 노른자', '우유(버터·생크림·치즈)', '대두(콩)']],
+    ['견과류 (따로따로)', ['호두', '아몬드', '땅콩', '피스타치오', '잣']],
+    ['고기·해산물', ['돼지고기(햄·베이컨·소시지)', '쇠고기', '닭고기', '생선(명란 등)', '새우·게·조개류', '오징어(먹물)']],
+    ['그 밖의 표시 대상', ['토마토', '복숭아', '메밀', '아황산류(와인·건과일)']],
+    ['알레르기는 아니지만 자주 묻는 것', ['설탕', '꿀']]
+  ];
+  var ALG_KINDS = ['식빵', '소금빵·앙버터', '바게트', '치아바타', '깜빠뉴', '베이글', '조리빵', '단과자빵', '구움과자', '쿠키', '러스크', '슈·타르트', '케이크', '샌드위치', '기타'];
+  var ALG_SHORT = { '밀가루(글루텐)': '밀가루', '우유(버터·생크림·치즈)': '우유', '대두(콩)': '대두', '돼지고기(햄·베이컨·소시지)': '돼지고기', '생선(명란 등)': '생선', '오징어(먹물)': '오징어', '아황산류(와인·건과일)': '아황산류' };
+  var algSt = { rows: null, q: '', tab: 'all', id: null, sel: null, note: '' };
+  function algShort(a){ return ALG_SHORT[a] || a; }
+  function algChecked(b){ return b.allergy_status === 'checked'; }
+  function algDate(iso){ if (!iso) return ''; var d = new Date(iso); return (d.getMonth() + 1) + '/' + d.getDate(); }
+  function algBadge(b){ return algChecked(b) ? '<span class="badge ok">✓ ' + esc(b.allergy_checked_by || '확인') + ' ' + esc(algDate(b.allergy_checked_at)) + '</span>' : '<span class="badge danger">확인 전</span>'; }
+  async function algLoad(force){
+    if (algSt.rows && !force) return algSt.rows;
+    var rows;
+    try { rows = await db.select('bread_info', { eq: { active: true }, order: { col: 'sort_order' } }); }
+    catch(e){ if (/bread_info/.test(e.message || '') && /find|exist|schema/i.test(e.message || '')) throw new Error('빵 정보 표가 아직 없어요 — 사장님 앱 저장소의 supabase/owner-bread.sql · owner-bread-allergy.sql 실행 필요'); throw e; }
+    rows.forEach(function(b){ b.allergens = b.allergens || []; b.allergy_status = b.allergy_status || 'unchecked'; });
+    algSt.rows = rows; return rows;
+  }
+  function algPeople(){   // 서명할 수 있는 사람: 이 매장 직원 + 사장님 + 매장 없는 직원 (매장폰 계정은 사람이 아니라 제외)
+    var bid = session && session.branchId;
+    return base.staff.filter(function(s){ return s.active !== false && (!bid || s.branch_id === bid || s.role === 'owner' || !s.branch_id); });
+  }
+  routes.allergy = async function(params){
+    await loadBase();
+    if (params && params.arg) return algDetail(params.arg);
+    var html = topbar('알레르기 체크', true, whoChip());
+    var rows = await algLoad();
+    var un = rows.filter(function(b){ return !algChecked(b); }).length;
+    html += '<div class="card" style="margin-top:12px;padding:14px"><div class="muted" style="font-size:12px">빵마다 들어간 성분을 베이커가 확인해 주세요. 확인한 내용은 손님 QR 페이지(www.bonnoel.com/b/)에 바로 나와요.</div>'
+      + '<div style="font-size:24px;font-weight:700;margin-top:6px">' + (un ? '<span style="color:var(--danger)">확인 전 ' + un + '개</span>' : '<span style="color:var(--ok)">전부 확인 완료</span>') + ' <span class="muted" style="font-size:14px;font-weight:400">/ 전체 ' + rows.length + '개</span></div>'
+      + '<div class="muted" style="font-size:12px;margin-top:4px">"확인 전"은 가격표 문구로 미리 눌러 둔 것이라, 손님 필터(계란 없는 빵 등)에는 안 들어가요.</div></div>';
+    html += '<input class="in" id="alg-q" type="search" placeholder="빵 이름 검색" value="' + esc(algSt.q) + '" autocomplete="off" style="margin-top:10px">';
+    html += '<div class="tabs" style="margin-top:8px">' + [['all', '전체'], ['un', '확인 전'], ['ok', '확인 완료']].map(function(t){ return '<button class="tab' + (algSt.tab === t[0] ? ' on' : '') + '" data-act="alg-tab" data-id="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>';
+    html += '<div id="alg-list">' + algListHtml(rows) + '</div>';
+    app.innerHTML = html;
+  };
+  function algListHtml(rows){
+    var q = algSt.q.replace(/\s+/g, '').toLowerCase();
+    var list = rows.filter(function(b){
+      if (algSt.tab === 'un' && algChecked(b)) return false;
+      if (algSt.tab === 'ok' && !algChecked(b)) return false;
+      return !q || ((b.name || '') + (b.kind || '')).replace(/\s+/g, '').toLowerCase().indexOf(q) >= 0;
+    });
+    if (!list.length) return '<div class="empty">해당하는 빵이 없어요.</div>';
+    var kinds = ALG_KINDS.slice(); list.forEach(function(b){ var k = b.kind || '그 밖에'; if (kinds.indexOf(k) < 0) kinds.push(k); });
+    var html = '';
+    kinds.forEach(function(k){
+      var items = list.filter(function(b){ return (b.kind || '그 밖에') === k; });
+      if (!items.length) return;
+      html += '<div class="group-title">' + esc(k) + ' <span class="muted">' + items.length + '</span></div><div class="card">';
+      items.forEach(function(b){
+        var al = b.allergens.map(algShort);
+        html += '<div class="item" data-act="alg-open" data-id="' + esc(b.id) + '" style="cursor:pointer"><div style="flex:1;min-width:0"><div style="font-weight:600">' + esc(b.name) + (b.price != null ? ' <span class="muted" style="font-weight:400;font-size:12px">' + won(b.price) + '원</span>' : '') + '</div>'
+          + '<div class="muted" style="font-size:12px;margin-top:2px">' + (al.length ? esc(al.join(' · ')) : (algChecked(b) ? '표시 대상 없음' : '성분 없음')) + '</div></div>' + algBadge(b) + '<span class="chev">›</span></div>';
+      });
+      html += '</div>';
+    });
+    return html;
+  }
+  async function algDetail(id){
+    var rows = await algLoad();
+    var b = rows.filter(function(x){ return x.id === id; })[0];
+    if (!b){ app.innerHTML = topbar('알레르기 체크', true, whoChip()) + '<div class="note">이 빵을 찾지 못했어요.</div>'; return; }
+    if (algSt.id !== id){ algSt.id = id; algSt.sel = b.allergens.slice(); algSt.note = b.allergy_note || ''; }
+    var html = topbar(b.name, true, whoChip());
+    html += '<div class="card" style="margin-top:12px;padding:14px">'
+      + '<div class="inline" style="justify-content:space-between"><span class="muted">' + esc(b.kind || '') + (b.price != null ? ' · ' + won(b.price) + '원' : '') + (b.price_note ? ' · ' + esc(b.price_note) : '') + '</span>' + algBadge(b) + '</div>'
+      + (b.description ? '<div style="margin-top:8px">' + esc(b.description) + '</div>' : '')
+      + (b.tag_note ? '<div class="muted" style="font-size:13px;margin-top:6px">가격표 문구: ' + esc(b.tag_note) + '</div>' : '')
+      + (b.ingredients ? '<div class="muted" style="font-size:13px;margin-top:6px">재료: ' + esc(b.ingredients) + '</div>' : '')
+      + '</div>';
+    html += '<div class="note" style="background:var(--accent-soft);color:var(--ink)">들어간 성분을 <b>전부</b> 눌러 주세요. 가격표 기준으로 미리 눌러 뒀으니 틀린 건 빼고 빠진 건 더해 주세요. <b>버터·생크림·치즈가 들어가면 "우유"</b>, 휘낭시에·다쿠아즈처럼 아몬드 가루가 들어가면 "아몬드"도 눌러 주세요.</div>';
+    ALG_GROUPS.forEach(function(g){
+      html += '<div class="group-title">' + esc(g[0]) + '</div><div class="pillrow" style="margin-top:0">' + g[1].map(function(a){ return '<button class="tab' + (algSt.sel.indexOf(a) >= 0 ? ' on' : '') + '" data-act="alg-chip" data-id="' + esc(a) + '">' + esc(a) + '</button>'; }).join('') + '</div>';
+    });
+    html += '<div class="group-title">메모 (선택)</div><input class="in" id="alg-note" placeholder="예: 토핑에만 아몬드 · 소스에 마요네즈(계란)" value="' + esc(algSt.note) + '">';
+    var people = algPeople(), me = session && session.staffId;
+    html += '<div class="group-title">확인한 사람 · 비밀번호 4자리로 서명</div><div class="card" style="padding:14px">'
+      + '<select class="in" id="alg-who">' + people.map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === me ? ' selected' : '') + '>' + esc(s.name) + (s.role === 'owner' ? ' 👑' : s.role === 'manager' ? ' ⭐' : '') + '</option>'; }).join('') + '</select>'
+      + '<div style="text-align:center;margin-top:12px"><input class="pin" id="alg-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="····"></div>'
+      + '<button class="btn primary block" style="margin-top:14px;padding:16px;font-size:17px" data-act="alg-save">확인했어요 (서명하고 저장)</button>'
+      + '<div class="muted" style="font-size:12px;margin-top:8px;text-align:center">운영 앱 로그인 비밀번호와 같아요. 누가 언제 확인했는지 기록이 남아요.</div></div>';
+    html += '<div style="text-align:center;margin:16px 0"><a class="muted" href="#/allergy" style="text-decoration:underline">목록으로</a></div>';
+    app.innerHTML = html;
+  }
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act]'); if (!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    if (!/^alg-/.test(act)) return;
+    try {
+      switch (act){
+        case 'alg-tab': algSt.tab = id; document.querySelectorAll('[data-act="alg-tab"]').forEach(function(t){ t.classList.toggle('on', t.getAttribute('data-id') === id); }); document.getElementById('alg-list').innerHTML = algListHtml(algSt.rows); break;
+        case 'alg-open': algSt.id = null; nav('#/allergy/' + encodeURIComponent(id)); break;
+        case 'alg-chip': { var i = algSt.sel.indexOf(id); if (i >= 0) algSt.sel.splice(i, 1); else algSt.sel.push(id); el.classList.toggle('on', i < 0); break; }
+        case 'alg-save': {
+          var who = document.getElementById('alg-who').value, pin = (document.getElementById('alg-pin').value || '').trim();
+          if (!who){ toast('확인한 사람을 골라 주세요'); return; }
+          if (!/^\d{4}$/.test(pin)){ toast('비밀번호 숫자 4자리를 넣어 주세요'); document.getElementById('alg-pin').focus(); return; }
+          algSt.note = document.getElementById('alg-note').value;
+          el.disabled = true;
+          var r;
+          try { r = await db.rpc('bread_allergy_check', { p_staff: who, p_pin: pin, p_id: algSt.id, p_allergens: algSt.sel, p_note: algSt.note }); }
+          finally { el.disabled = false; }
+          if (!r || r.ok === false){ toast((r && r.error) || '저장하지 못했어요'); document.getElementById('alg-pin').value = ''; return; }
+          var row = algSt.rows.filter(function(x){ return x.id === algSt.id; })[0];
+          if (row){ row.allergens = r.allergens || algSt.sel.slice(); row.allergy_status = 'checked'; row.allergy_checked_by = r.checked_by; row.allergy_checked_at = r.checked_at; row.allergy_note = algSt.note; }
+          toast('저장했어요 · ' + (r.checked_by || '') + ' 확인 ✓');
+          algSt.id = null; nav('#/allergy');
+          break;
+        }
+      }
+    } catch(err){ console.error(err); toast('실패: ' + (err.message || err)); }
+  });
+  app.addEventListener('input', function(e){
+    if (e.target.id === 'alg-q'){ algSt.q = e.target.value; var l = document.getElementById('alg-list'); if (l && algSt.rows) l.innerHTML = algListHtml(algSt.rows); }
+  });
+  // 시연 모드(?demo=1)용 가짜 표·함수
+  function breadDemoRows(){
+    var mk = function(id, name, kind, price, al, tag, checked){ return { id: id, name: name, kind: kind, category: 'bread', price: price, price_note: '', description: '', tag_note: tag || '', ingredients: '', allergens: al, allergy_status: checked ? 'checked' : 'unchecked', allergy_checked_by: checked ? '김베이커' : null, allergy_checked_at: checked ? daysAgo(1) : null, allergy_note: '', active: true, sort_order: 0 }; };
+    return [
+      mk('salt-bread', '소금빵', '소금빵·앙버터', 3800, ['밀가루(글루텐)', '설탕', '우유(버터·생크림·치즈)'], '설탕, 버터, 우유 함유', true),
+      mk('angbutter', '앙버터', '소금빵·앙버터', 5800, ['밀가루(글루텐)', '설탕', '우유(버터·생크림·치즈)'], 'NO계란 / 설탕, 버터, 우유'),
+      mk('chestnut-bread', '밤식빵', '식빵', 7500, ['밀가루(글루텐)', '아몬드', '달걀 흰자', '달걀 노른자', '설탕', '우유(버터·생크림·치즈)'], 'NO우유 / 아몬드, 계란, 설탕, 버터 함유'),
+      mk('rice-loaf', '쌀식빵', '식빵', 8000, ['밀가루(글루텐)', '설탕', '우유(버터·생크림·치즈)'], '설탕, 버터, 제빵용 글루텐 1% 함유'),
+      mk('baguette', '전통 바게트', '바게트', 4800, ['밀가루(글루텐)'], 'NO계란, 설탕, 버터, 우유', true),
+      mk('fig-campagne', '무화과 깜빠뉴', '깜빠뉴', 6500, ['밀가루(글루텐)', '호두', '아황산류(와인·건과일)'], 'NO계란, 버터, 우유'),
+      mk('sausage-bread', '소세지빵', '조리빵', 3300, ['밀가루(글루텐)', '돼지고기(햄·베이컨·소시지)', '달걀 흰자', '달걀 노른자', '설탕', '우유(버터·생크림·치즈)'], '계란, 설탕, 버터, 우유 함유'),
+      mk('financier', '휘낭시에', '구움과자', 2300, ['밀가루(글루텐)', '아몬드', '달걀 흰자', '설탕', '우유(버터·생크림·치즈)'], '흰자, 설탕, 버터 함유')
+    ];
+  }
+  function breadMemRpc(T, fn, a){
+    if (fn !== 'bread_allergy_check') return { ok: false, error: '모르는 함수' };
+    var s = (T.manual_staff || []).filter(function(x){ return x.id === a.p_staff; })[0];
+    if (!s || s.active === false) return { ok: false, error: '이름을 찾을 수 없어요. 다시 로그인해 주세요' };
+    if (!s.pin || s.pin !== a.p_pin) return { ok: false, error: '비밀번호가 틀려요' };
+    var b = (T.bread_info || []).filter(function(x){ return x.id === a.p_id; })[0];
+    if (!b) return { ok: false, error: '이 빵을 찾을 수 없어요' };
+    var now = new Date().toISOString();
+    b.allergens = (a.p_allergens || []).slice().sort(); b.allergy_status = 'checked'; b.allergy_checked_by = s.name; b.allergy_checked_at = now; b.allergy_note = a.p_note || '';
+    return { ok: true, checked_by: s.name, checked_at: now, allergens: b.allergens };
+  }
 
   // ===== 거래처 납품 · 월 명세서 (supabase-migration-vendor.sql, 기획/거래처명세서_설계.md) =====
   // 성수 매니저(매장폰)가 날짜별 납품 개수를 넣음 → 사장님이 월초에 지난달 명세서를 이미지·PDF로 카톡 → [보냈어요]로 금액 고정 → 입금 확인.
