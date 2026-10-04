@@ -2402,8 +2402,11 @@
   function fmtH(min){ return (min / 60).toFixed(1) + 'h'; }
   // 퇴근을 안 누른 기록을 "근무 중"으로 볼지. 오늘 기록은 출근 20시간 안이면 근무 중.
   // 지난 날 기록은 그날 근무표 끝나고 3시간까지만(자정 넘겨 마감하는 경우 대비), 그 뒤엔 "퇴근 안 누름"
+  // 자동 퇴근: 출근할 때 근무표 끝 시각을 퇴근으로 미리 넣어 둠(out_by 비움). 그 시각 전까지는 "근무 중"
+  function isAutoOut(r){ return !!(r.clock_out && !r.out_by && r.sched_start); }
   function isOpenRec(r){
-    if (!r.clock_in || r.clock_out || (Date.now() - new Date(r.clock_in)) >= 20 * 3600000) return false;
+    if (!r.clock_in || (Date.now() - new Date(r.clock_in)) >= 20 * 3600000) return false;
+    if (r.clock_out) return isAutoOut(r) && new Date(r.clock_out).getTime() > Date.now();
     if (r.work_date < todayStr() && r.sched_start && r.sched_end) return Date.now() < new Date(schedIso(r, r.sched_end)).getTime() + 3 * 3600000;
     return true;
   }
@@ -2646,7 +2649,7 @@
     var t = '', bad = function(v){ return ' · <span style="color:var(--danger)">' + v + '</span>'; };
     var wasFilled = x.edits && x.edits[0] && x.edits[0].field === '채움';
     if (x.sched_start && wasFilled) t += '근무표 ' + esc(hm5(x.sched_start) + '~' + hm5(x.sched_end)) + ' · <span class="badge' + (x.fill_status === 'approved' ? '' : ' warn') + '">나중에 채움 · ' + esc(x.edits[0].by) + (x.fill_status === 'requested' ? ' · 수락 대기' : x.fill_status === 'rejected' ? ' · 거절' : '') + '</span>';
-    else if (x.sched_start) t += '근무표 ' + esc(hm5(x.sched_start) + '~' + hm5(x.sched_end)) + ' · 실제 ' + hm(x.clock_in) + '~' + hm(x.clock_out) + (x.fill_status === 'approved' ? ' · <span class="badge">근무표대로 인정</span>' : '');
+    else if (x.sched_start) t += '근무표 ' + esc(hm5(x.sched_start) + '~' + hm5(x.sched_end)) + ' · 실제 ' + hm(x.clock_in) + '~' + hm(x.clock_out) + (isAutoOut(x) ? ' (자동 퇴근)' : '') + (x.fill_status === 'approved' ? ' · <span class="badge">근무표대로 인정</span>' : '');
     else if (x.no_schedule) t += '<span class="badge warn">근무표 없음</span> 실제 ' + hm(x.clock_in) + '~' + hm(x.clock_out);
     else t += hm(x.clock_in) + ' ~ ' + hm(x.clock_out);
     if (!n) return t + bad('퇴근 없음');
@@ -2672,7 +2675,9 @@
     if (to === from){ toast('근무표와 이미 같아요'); return; }
     if (!window.confirm('근무표 칸을 ' + from + ' → ' + to + ' 로 맞출까요?')) return;
     var edits = (r.edits || []).slice(); edits.push({ at: nowIso(), by: staffName(session.staffId), field: '근무표', from: from, to: to, reason: '근무표로 다시 맞추기' });
-    await db.update('ops_attendance', { id: id }, Object.assign({}, sf, { edits: edits })); toast('맞췄어요 (이력 남김)'); render();
+    var patch = Object.assign({}, sf, { edits: edits });
+    if (isAutoOut(r) && !sf.no_schedule) patch.clock_out = schedIso({ work_date: r.work_date, sched_start: sf.sched_start }, sf.sched_end);
+    await db.update('ops_attendance', { id: id }, patch); toast('맞췄어요 (이력 남김)'); render();
   }
 
   routes.clock = async function(params){
@@ -2699,7 +2704,7 @@
       var todayRecs = recs.filter(function(r){ return r.work_date === today; });
       if (todayRecs.length){
         html += '<div class="card section"><div class="sec-h">오늘 기록</div>';
-        todayRecs.forEach(function(r){ html += '<div class="hist"><span class="sp">' + esc(staffName(r.staff_id)) + '</span><span>' + (r.sched_start || r.no_schedule ? esc(attShow(r)) + (r.clock_out ? '' : ' <span class="badge ok">근무 중</span>') : hm(r.clock_in) + ' ~ ' + (r.clock_out ? hm(r.clock_out) : '<span class="badge ok">근무 중</span>')) + '</span></div>'; });
+        todayRecs.forEach(function(r){ html += '<div class="hist"><span class="sp">' + esc(staffName(r.staff_id)) + '</span><span>' + (r.sched_start || r.no_schedule ? esc(attShow(r)) + (isOpenRec(r) ? ' <span class="badge ok">근무 중</span>' : '') :hm(r.clock_in) + ' ~ ' + (r.clock_out ? hm(r.clock_out) : '<span class="badge ok">근무 중</span>')) + '</span></div>'; });
         html += '</div>';
       }
     } else {
@@ -2724,6 +2729,7 @@
         var noSchedToday = false;
         if (!open && await schedReady()){ var sfNow = await schedFields(b, s.id, today, nowMin()); noSchedToday = !!(sfNow && sfNow.no_schedule); }
         if (noSchedToday) html += '<div class="note" style="text-align:left;margin:0 0 14px">오늘 근무표에 없어서 출근을 누를 수 없어요.<br>근무표에 없는데 일했다면 아래 버튼으로 <b>추가 근무</b>를 올려 주세요. 사장님이 확인하면 급여에 들어가요.<div style="margin-top:10px"><button class="btn primary" data-act="extra-open-new">근무표에 없는 근무 올리기</button></div></div>';
+        else if (open && isAutoOut(open)) html += '<div style="font-size:17px;margin-bottom:6px">오늘 근무 <b>' + hm5(open.sched_start) + '~' + hm5(open.sched_end) + '</b></div><div class="muted" style="margin-bottom:16px">퇴근은 ' + hm(open.clock_out) + '에 자동으로 찍혀요. 따로 안 눌러도 돼요.</div><button class="btn" data-act="clock-out-early" data-id="' + esc(open.id) + '">일찍 퇴근해요 (조퇴·조기 마감)</button>';
         else if (open) html +='<div class="muted" style="margin-bottom:10px">' + (open.sched_start ? '오늘 근무 ' + hm5(open.sched_start) + '~' + hm5(open.sched_end) : open.no_schedule ? '오늘 근무표에 없는 출근이에요' : '출근 ' + hm(open.clock_in) + ' (' + fmtH(minutesBetween(open.clock_in, nowIso())) + ' 지남)') + '</div><button class="btn primary" data-act="clock-out" data-id="' + esc(open.id) + '" style="font-size:22px;padding:18px 40px">퇴근하기</button>';
         else html += '<button class="btn primary" data-act="clock-in" style="font-size:22px;padding:18px 40px;background:var(--ok);border-color:var(--ok)">출근하기</button>';
         html += '<div style="margin-top:18px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div><div style="margin-top:36px"><span class="muted" data-act="extra-open" style="cursor:pointer;font-size:13px;text-decoration:underline">추가 근무 올리기</span> <span class="muted" style="font-size:13px">·</span> <span class="muted" data-act="extra-open-early" style="cursor:pointer;font-size:13px;text-decoration:underline">조퇴·조기 마감 올리기</span></div><div style="margin-top:10px"><span class="muted" data-act="pin-change" data-id="' + esc(s.id) + '" style="cursor:pointer;font-size:13px;text-decoration:underline">비밀번호 바꾸기 (다른 사람이 대신 못 찍게)</span></div></div>';
@@ -2771,12 +2777,23 @@
       if (await fillShift([todayStr(), s, sf.sched_start, sf.sched_end, sf.sched_break_min || 0].join('|'), b, s, 'requested', true)) clockDone(); else render();
       return;
     }
-    await insertAttendance({ staff_id: s, branch_id: b, work_date: todayStr(), clock_in: nowIso(), in_by: s, edits: [] }, sf);
-    toast(staffName(s) + (!sf ? ' 출근 ' + hm(nowIso()) + ' 기록했어요' : sf.no_schedule ? ' 출근 기록했어요 · 오늘 근무표에 없어요' : ' 출근 처리했어요 · 오늘 근무 ' + sf.sched_start + '~' + sf.sched_end)); clockDone();
+    var autoOut = sf && !sf.no_schedule ? schedIso({ work_date: todayStr(), sched_start: sf.sched_start }, sf.sched_end) : null;
+    await insertAttendance({ staff_id: s, branch_id: b, work_date: todayStr(), clock_in: nowIso(), clock_out: autoOut, out_by: null, in_by: s, edits: [] }, sf);
+    toast(staffName(s) + (!sf ? ' 출근 ' + hm(nowIso()) + ' 기록했어요' : ' 출근 처리했어요 · 오늘 근무 ' + sf.sched_start + '~' + sf.sched_end + ' · 퇴근은 자동이에요')); clockDone();
   }
   async function clockOut(id){
     await db.update('ops_attendance', { id: id }, { clock_out: nowIso(), out_by: clockState.staffId });
     toast(staffName(clockState.staffId) + ' 퇴근 처리했어요. 수고했어요!'); clockDone();
+  }
+  async function clockOutEarly(id){ // 자동 퇴근 기록을 지금 시각으로 당기고, 줄어든 시간은 조기 퇴근으로 바로 반영(실제 일한 시간만 인정)
+    var r = (await db.select('ops_attendance', { eq: { id: id } }))[0]; if (!r || !isAutoOut(r)) return;
+    var now = new Date(), tse = new Date(r.clock_out), min = Math.floor((tse - now) / 60000 / EXTRA_STEP) * EXTRA_STEP;
+    if (min < EXTRA_STEP){ toast('근무표 끝나는 시각이 다 됐어요. 그냥 가셔도 돼요'); clockDone(); return; }
+    var reason = window.prompt(hm5(r.sched_end) + '보다 ' + min + '분 일찍 퇴근해요. 이유를 적어 주세요 (예: 빵 소진으로 조기 마감, 몸이 안 좋아 조퇴)', ''); if (reason === null) return;
+    await db.update('ops_attendance', { id: id }, { clock_out: now.toISOString(), out_by: clockState.staffId });
+    try { await db.insert('ops_attendance_extras', { attendance_id: r.id, staff_id: r.staff_id, branch_id: r.branch_id, work_date: r.work_date, kind: 'earlyLeave', start_at: now.toISOString(), end_at: tse.toISOString(), minutes: min, reason: reason.trim() || '일찍 퇴근', status: 'approved', decided_by: clockState.staffId, decided_at: nowIso() }); }
+    catch(e){ console.warn('조기 퇴근 기록 실패', e); }
+    toast(staffName(clockState.staffId) + ' 퇴근 처리했어요 (' + min + '분 일찍). 수고했어요!'); clockDone();
   }
   function clockDone(){ clockState.staffId = null; clockState.ok = false; clockState.extra = false; setTimeout(render, 1200); }
 
@@ -6339,6 +6356,7 @@
         case 'pin-change': await pinChange(id); break;
         case 'clock-in': el.disabled = true; await clockIn(); break;
         case 'clock-out': el.disabled = true; await clockOut(id); break;
+        case 'clock-out-early': el.disabled = true; await clockOutEarly(id); el.disabled = false; break;
         case 'hours-month': nav('#/hours/' + (isOwner() ? (current.params.arg || session.branchId) : session.branchId) + '/' + el.getAttribute('data-ym')); break;
         case 'hours-toggle': document.getElementById('hx-' + id).classList.toggle('hidden'); break;
         case 'hours-csv': downloadCsv(); break;
