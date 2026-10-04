@@ -192,6 +192,32 @@
   .gacha-sub{ text-align:center; font-size:15px; margin-bottom:8px; }
   /* 손님 폰 결과 · POP */
   .gcode{ display:inline-block; margin-top:10px; padding:8px 14px; border-radius:999px; background:var(--surface-sunken); border:1px solid var(--line-strong); font-size:15px; }
+  /* 소금이 집게 뽑기 */
+  .dmethod .btn.wide2{ grid-column:1 / -1; min-height:96px; }
+  .claw{ width:min(320px, 90vw); margin:6px auto 100px; user-select:none; -webkit-user-select:none; }
+  .claw-box{ position:relative; height:300px; background:linear-gradient(180deg, #fff7f8, #ffe9ec); border:6px solid #af4c60; border-bottom:0; border-radius:18px 18px 0 0; overflow:hidden; }
+  .claw-rail{ position:absolute; left:0; right:0; top:10px; height:6px; background:#af4c60; opacity:.5; }
+  .claw-arm{ position:absolute; top:13px; left:10%; width:56px; margin-left:-28px; animation:clawmove 2.6s ease-in-out infinite alternate; }
+  .claw.grab .claw-arm{ animation:none; }
+  .claw-cable{ width:4px; height:14px; background:#7a2d3d; margin:0 auto; transition:height .8s ease-in; }
+  .claw.down .claw-cable{ height:190px; }
+  .claw-hand{ font-size:40px; line-height:1; text-align:center; transform:rotate(90deg); display:inline-block; width:100%; transition:transform .3s; }
+  .claw.down .claw-hand,.claw.up .claw-hand{ transform:rotate(90deg) scale(.9); }
+  .claw-held{ position:absolute; left:50%; margin-left:-16px; bottom:-14px; font-size:30px; line-height:1; opacity:0; transition:opacity .2s; }
+  .claw.up .claw-held,.claw.carry .claw-held{ opacity:1; }
+  .claw.carry .claw-arm{ transition:left 1s ease-in-out; left:12% !important; }
+  .claw.drop .claw-held{ transition:transform .6s cubic-bezier(.4,0,1,1), opacity .2s .5s; transform:translateY(240px); opacity:0; }
+  @keyframes clawmove{ from{ left:14%; } to{ left:86%; } }
+  .claw-items{ position:absolute; left:0; right:0; bottom:0; height:96px; }
+  .claw-items span{ position:absolute; font-size:34px; line-height:1; filter:drop-shadow(0 2px 2px rgba(0,0,0,.15)); }
+  .claw-chute{ position:absolute; left:8px; bottom:0; width:58px; height:64px; background:#7a2d3d; border-radius:10px 10px 0 0; color:#fff; font-size:11px; text-align:center; padding-top:6px; box-shadow:inset 0 6px 10px rgba(0,0,0,.35); }
+  .claw-char{ position:absolute; right:6px; bottom:0; width:70px; mix-blend-mode:multiply; }
+  .claw-panel{ background:#af4c60; border-radius:0 0 22px 22px; padding:14px 16px 18px; color:#fff; display:flex; align-items:center; gap:12px; box-shadow:var(--shadow); }
+  .claw-btn{ width:96px; height:96px; border-radius:50%; background:#ffd84d; color:#7a2d3d; border:6px solid #fff3b0; font:700 20px var(--font-sans); cursor:pointer; box-shadow:0 5px 0 rgba(0,0,0,.25); flex:none; }
+  .claw-btn:active{ transform:translateY(4px); box-shadow:0 1px 0 rgba(0,0,0,.25); }
+  .claw-btn[disabled]{ opacity:.6; pointer-events:none; }
+  .claw-slot{ flex:1; height:96px; border-radius:14px; background:#7a2d3d; box-shadow:inset 0 6px 14px rgba(0,0,0,.4); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-size:13px; color:rgba(255,255,255,.8); }
+  .claw-slot b{ font:700 26px var(--font-serif); color:#ffd84d; }
   .gcode b{ font-size:22px; letter-spacing:4px; color:var(--accent); font-family:var(--font-latin), monospace; }
   .pop{ background:#fff; color:#231717; border:3px solid #af4c60; border-radius:18px; margin:12px 8px; padding:22px 20px 16px; position:relative; overflow:hidden; max-width:520px; margin-inline:auto; }
   .pop-brand{ font:600 13px var(--font-latin); letter-spacing:2px; color:#af4c60; }
@@ -341,7 +367,8 @@
   var SUPABASE_KEY = 'sb_publishable_Oiqo2urdo-9s-HIso3rkmQ_7pP-I0nV';
   var LINKS = { manual: 'https://manual.bonnoel.com', logbook: 'https://logbook.bonnoel.com',
     hiring: 'https://hiring.bonnoel.com/', hiringAdmin: 'https://hiring.bonnoel.com/#admin', hiringWelcome: 'https://hiring.bonnoel.com/#welcome' };
-  var DEMO = /[?&]demo=1/.test(location.search);   // ?demo=1 : 창고 없이 가짜 데이터로 눌러보기
+  var DEMO = /[?&]demo=1/.test(location.search);
+  (function(){ var gm = /[?&]g=([0-9a-fA-F-]{36})/.exec(location.search); if (gm){ try { history.replaceState(null, '', location.pathname + (DEMO ? '?demo=1' : '') + '#/g/' + gm[1]); } catch(e){ location.hash = '#/g/' + gm[1]; } } })();   // ?demo=1 : 창고 없이 가짜 데이터로 눌러보기
 
   var app = document.getElementById('app');
   var toastEl = document.getElementById('toast');
@@ -404,7 +431,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2.sql · draw3.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 · draw3 · draw4.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -9003,13 +9030,26 @@
   function drawPrizeList(L){
     return [1,2,3,4,5].map(function(k){ return '<div class="hist"><b style="width:34px">' + k + '등</b><span class="sp">' + (String(L[k] || '').trim() ? esc(L[k]) : '<span class="muted">(비어 있음)</span>') + '</span></div>'; }).join('');
   }
-  function drawReset(b){ drawSt = { b: b, stage: 'start', cond: {}, taken: [], busy: false, result: null, labels: {}, cap: 'ready', guest: false, guestRows: [] }; }
+  function drawReset(b){ drawSt = { b: b, stage: 'start', cond: {}, taken: [], busy: false, result: null, labels: {}, cap: 'ready', claw: 'ready', guest: false, guestRows: [] }; }
   var GACHA_CAPS = [['#ff8fa3', 18, 120], ['#7cc4ff', 70, 135], ['#ffd84d', 120, 118], ['#9ee37d', 40, 80], ['#c69cff', 95, 86], ['#ffb46b', 150, 92], ['#ff8fa3', 180, 130], ['#7cc4ff', 8, 160], ['#9ee37d', 60, 162], ['#ffd84d', 112, 158], ['#c69cff', 160, 150]];
   function drawMethodHtml(bname){
     return '<div class="dboard-head"><div class="dboard-title">🎉 어떻게 뽑을까요?</div><div>' + esc(bname) + ' · 둘 다 확률은 똑같아요</div></div>'
       + '<div class="dmethod"><button class="btn" data-act="draw-method" data-id="board"><span class="big">🟦</span>추억의 뽑기판<small>칸 하나 눌러 뒤집기</small></button>'
-      + '<button class="btn" data-act="draw-method" data-id="capsule"><span class="big">🎁</span>빵 캡슐 뽑기<small>손잡이 돌려서 캡슐 열기</small></button></div>'
+      + '<button class="btn" data-act="draw-method" data-id="capsule"><span class="big">🎁</span>빵 캡슐 뽑기<small>손잡이 돌려서 캡슐 열기</small></button>'
+      + '<button class="btn wide2" data-act="draw-method" data-id="claw"><span class="big">🤏</span>소금이 집게 뽑기<small>집게가 움직일 때 "잡기!" 누르기</small></button></div>'
       + '<div class="stickybar"><button class="btn block" data-act="draw-abort">‹ 돌아가기 (아직 안 뽑았어요)</button></div>';
+  }
+  var CLAW_ITEMS = [['🥐', 6], ['🍞', 24], ['🥖', 40], ['🧁', 56], ['🥨', 70], ['🥯', 84], ['🍪', 14], ['🥐', 48], ['🍰', 32], ['🥖', 64]];
+  function drawClawHtml(bname){
+    var cs = drawSt.claw, r = drawSt.result;
+    var items = CLAW_ITEMS.map(function(it, i){ return '<span style="left:' + it[1] + '%;bottom:' + (i % 2 ? 44 : 8) + 'px">' + it[0] + '</span>'; }).join('');
+    var slot = cs === 'ready' ? '소금이가 집게를<br>움직이고 있어요<br><b style="font-size:16px">👉 잡기!</b>' : cs === 'done' ? '<b>' + (r ? r.rank + '등' : '') + '</b>' + (r ? esc(r.prize || '') : '') : '집는 중…';
+    var sub = cs === 'done' ? '🎊 ' + (r ? r.rank + '등 · ' + esc(r.prize || '') : '') : cs === 'ready' ? '집게가 왔다 갔다 해요. <b>원하는 순간에 잡기!</b>' : '으쌰… 들어 올리는 중 🤏';
+    return '<div class="gacha-title">🥐 소금이 집게 뽑기</div><div class="gacha-sub">' + sub + '</div>'
+      + '<div class="claw" id="claw"><div class="claw-box"><div class="claw-rail"></div><div class="claw-arm" id="clawArm"><div class="claw-cable"></div><div class="claw-hand">🤏</div><div class="claw-held" id="clawHeld">🥐</div></div>'
+      + '<div class="claw-items">' + items + '</div><div class="claw-chute">출구<br>⬇</div><img class="claw-char" src="assets/characters/sogeumi.png" alt=""></div>'
+      + '<div class="claw-panel"><button class="claw-btn" data-act="draw-claw-grab"' + (cs === 'ready' ? '' : ' disabled') + '>잡기!</button><div class="claw-slot">' + slot + '</div></div></div>'
+      + (cs === 'ready' ? '<div class="stickybar"><button class="btn block" data-act="draw-method-back">‹ 다른 방법으로</button></div>' : '');
   }
   function drawCapsuleHtml(bname){
     var cap = drawSt.cap, r = drawSt.result;
@@ -9064,6 +9104,7 @@
     if (drawSt.stage === 'board'){ app.innerHTML = html + drawBoardHtml(bname); return; }
     if (drawSt.stage === 'method'){ app.innerHTML = html + drawMethodHtml(bname); return; }
     if (drawSt.stage === 'capsule'){ app.innerHTML = html + drawCapsuleHtml(bname); return; }
+    if (drawSt.stage === 'claw'){ app.innerHTML = html + drawClawHtml(bname); return; }
     if (drawSt.stage === 'result'){ app.innerHTML = html + drawResultHtml(bname); return; }
 
     var allChecked = DRAW_CONDS.every(function(c){ return drawSt.cond[c[0]]; });
@@ -9079,7 +9120,7 @@
     try { var gp = await drawCall('draw_guest_pending', { p_branch: b, p_staff: session.staffId }); guestRows = gp.rows || []; } catch(e){ console.warn('손님 뽑기 목록', e); }
     drawSt.guestRows = guestRows;
     html += '<div class="card" style="padding:14px"><div class="inline" style="justify-content:space-between;align-items:center"><div class="rtitle">📱 손님 폰으로 뽑은 것 (QR)</div><button class="btn sm" data-act="draw-guest-refresh">새로고침</button></div>'
-      + (guestRows.length ? guestRows.map(function(g){ return '<div class="row" data-act="draw-guest-row" data-id="' + esc(g.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + DRAW_RANK_EMOJI[g.rank] + '</div><div class="rt"><div class="rtitle">코드 <b style="letter-spacing:2px">' + esc(g.code || '') + '</b> · ' + g.rank + '등 ' + esc(g.prize || '') + '</div><div class="rsub">' + drawHm(g.drawn_at) + ' · ' + (g.method === 'capsule' ? '캡슐' : '뽑기판') + (g.status === 'expired' ? ' · <span style="color:var(--danger)">30분 지남</span>' : '') + '</div></div><div class="chev">›</div></div>'; }).join('')
+      + (guestRows.length ? guestRows.map(function(g){ return '<div class="row" data-act="draw-guest-row" data-id="' + esc(g.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + DRAW_RANK_EMOJI[g.rank] + '</div><div class="rt"><div class="rtitle">코드 <b style="letter-spacing:2px">' + esc(g.code || '') + '</b> · ' + g.rank + '등 ' + esc(g.prize || '') + '</div><div class="rsub">' + drawHm(g.drawn_at) + ' · ' + (g.method === 'capsule' ? '캡슐' : g.method === 'claw' ? '집게' : '뽑기판') + (g.status === 'expired' ? ' · <span style="color:var(--danger)">30분 지남</span>' : '') + '</div></div><div class="chev">›</div></div>'; }).join('')
         : '<div class="muted" style="font-size:13px;margin-top:6px">아직 없어요. 손님이 POP의 QR로 뽑으면 여기에 떠요. 손님 폰의 확인 코드와 맞는 줄을 눌러 지급 완료를 눌러 주세요.</div>') + '</div>';
     html += '<div class="note">손님 한 분당 하루 한 번이에요. 참여 뒤 리뷰를 지우면 다음부터 참여가 안 된다고 안내해 주세요. 확률은 종이 뽑기판과 같아요.</div>';
     app.innerHTML = html;
@@ -9125,6 +9166,7 @@
     if (drawSt.stage === 'board'){ app.innerHTML = html + drawBoardHtml(bname); return; }
     if (drawSt.stage === 'method'){ app.innerHTML = html + drawMethodHtml(bname); return; }
     if (drawSt.stage === 'capsule'){ app.innerHTML = html + drawCapsuleHtml(bname); return; }
+    if (drawSt.stage === 'claw'){ app.innerHTML = html + drawClawHtml(bname); return; }
     if (drawSt.stage === 'result'){ app.innerHTML = html + drawGuestResultHtml(bname); drawGuestPoll(); return; }
     html += '<div class="card" style="padding:16px;margin-top:10px;text-align:center"><div style="font:700 26px var(--font-serif);color:var(--accent)">🎁 리뷰 쓰고 빵 뽑기</div><div class="muted" style="margin-top:4px">' + esc(bname) + '</div>'
       + '<div style="text-align:left;margin:14px 0 6px;display:grid;gap:8px;font-size:15px">'
@@ -9146,7 +9188,7 @@
     for (var i = 0; i < list.length; i++){
       var b = list[i], L = {};
       try { var pr = await drawCall('draw_prizes_get', { p_branch: b.id }); L = pr.labels || {}; } catch(e){}
-      var url = appBase() + '#/g/' + b.id, qr = qrDataUrl(url);
+      var url = location.origin + location.pathname + '?g=' + b.id + (DEMO ? '&demo=1' : ''), qr = qrDataUrl(url);
       html += '<div class="pop"><img class="pop-char" src="assets/characters/sogeumi.png" alt=""><div class="pop-brand">BON NOËL · ' + esc(b.name) + '</div><div class="pop-title">리뷰 쓰고<br>빵 뽑기 🎁</div><div class="pop-sub">네이버 영수증 리뷰 · 카카오맵 · 구글</div>'
         + '<div class="pop-steps"><div><b>1</b><span>빵 구매 후 영수증을 받아 주세요</span></div><div><b>2</b><span>리뷰 쓰기 — 별점 ★5 · 사진 1장 이상 · 저장까지!</span></div><div><b>3</b><span>QR을 찍고 내 폰에서 뽑기 → 결과 화면을 직원에게 보여 주세요</span></div></div>'
         + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>바로 뽑기!<small>뽑기판 또는 캡슐 뽑기<br>하루 한 번 · 30분 안에 보여 주세요</small></div></div>'
@@ -9193,7 +9235,33 @@
           drawSt.stage = 'result'; render(); break;
         }
         case 'draw-pop-print': window.print(); break;
-        case 'draw-method': drawSt.cap = 'ready'; drawSt.stage = id === 'capsule' ? 'capsule' : 'board'; render(); break;
+        case 'draw-method': drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.stage = id === 'capsule' ? 'capsule' : id === 'claw' ? 'claw' : 'board'; render(); break;
+        case 'draw-claw-grab': {
+          if (drawSt.busy || drawSt.stage !== 'claw' || drawSt.claw !== 'ready') break;
+          drawSt.busy = true; drawSt.claw = 'grab';
+          var cw = document.getElementById('claw'), arm = document.getElementById('clawArm');
+          try {
+            // 지금 집게 위치에서 멈추기
+            var bx = cw.querySelector('.claw-box').getBoundingClientRect(), ar = arm.getBoundingClientRect();
+            arm.style.left = Math.round((ar.left + ar.width / 2 - bx.left) / bx.width * 100) + '%';
+            cw.classList.add('grab'); el.setAttribute('disabled', '');
+            var slot = cw.querySelector('.claw-slot'); if (slot) slot.innerHTML = '집는 중…';
+            var sub = app.querySelector('.gacha-sub'); if (sub) sub.innerHTML = '으쌰… 들어 올리는 중 🤏';
+            var wait = function(ms){ return new Promise(function(res){ setTimeout(res, ms); }); };
+            var call = drawSt.guest ? drawCall('draw_guest_pick', { p_branch: drawSt.b, p_device: drawDevice(), p_method: 'claw', p_cell: null }) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'claw' });
+            await wait(100); cw.classList.add('down'); await wait(900);
+            cw.classList.remove('down'); cw.classList.add('up'); await wait(900);
+            cw.classList.add('carry'); await wait(1050);
+            var rr = await call;   // 서버가 정한 등수 (저장된 뒤)
+            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'claw', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now() };
+            if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);
+            cw.classList.add('drop'); await wait(700);
+            drawSt.claw = 'done'; render();
+            setTimeout(function(){ if (drawSt.stage === 'claw' && drawSt.claw === 'done'){ drawSt.stage = 'result'; render(); } }, 1600);
+          } catch(err){ toast(err.message || err); drawSt.claw = 'ready'; render(); }
+          finally { drawSt.busy = false; }
+          break;
+        }
         case 'draw-method-back': drawSt.stage = 'method'; render(); break;
         case 'draw-abort': drawSt.stage = 'start'; render(); break;
         case 'draw-knob': {
