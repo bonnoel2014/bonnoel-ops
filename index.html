@@ -459,7 +459,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw9.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw10.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -9252,7 +9252,7 @@
     try {
       var call = drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('hunt', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'hunt' });
       var kr = await Promise.all([ call, new Promise(function(res){ setTimeout(res, 1300); }) ]), rr = kr[0];
-      drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'hunt', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone };
+      drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'hunt', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test };
       if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);
       drawSt.cond = {}; drawSt.stage = 'result'; render();
     } catch(err){ toast(err.message || err); drawSt.hunt = null; drawSt.stage = 'method'; render(); }
@@ -9266,7 +9266,7 @@
       : '<div class="note">📌 <b>지금 바로 카운터 직원에게 이 화면을 보여 주세요.</b> 상품을 받으면서 아래 버튼을 눌러 주세요(직원이 눌러도 돼요). 누르면 다시 쓸 수 없어요.</div>'
         + '<div style="text-align:center;margin:6px 0 2px;font-size:13px;color:var(--ink-soft)">지금 시각 <b id="g-clock" style="font-family:var(--font-latin),monospace;font-size:18px;color:var(--accent)">' + drawClock() + '</b> <span class="muted">(화면이 살아 있는지 직원이 봐요)</span></div>'
         + '<button class="btn primary block" style="margin:8px 8px 0;width:auto;padding:18px;font-size:19px" data-act="draw-guest-done">🥐 상품 받았어요 → 수령 완료</button>';
-    return drawCouponHtml(r, bname) + box + '<div class="muted" style="text-align:center;font-size:12px;margin:10px 0 90px">하루 한 번 · 참여 후 리뷰를 지우면 이후 참여가 안 돼요</div>'
+    return (r.is_test ? '<div class="note" style="margin-bottom:0">🧪 테스트 번호예요 — 하루 제한 없음, 집계에서 빠짐</div>' : '') + drawCouponHtml(r, bname) + box + '<div class="muted" style="text-align:center;font-size:12px;margin:10px 0 90px">하루 한 번 · 참여 후 리뷰를 지우면 이후 참여가 안 돼요</div>'
       + '<div class="stickybar"><button class="btn block" data-act="draw-abort">처음 화면으로</button></div>';
   }
   function drawGuestResultHtml_old(bname){
@@ -9445,7 +9445,7 @@
             cw.classList.remove('down'); cw.classList.add('up'); await wait(900);
             cw.classList.add('carry'); await wait(1050);
             var rr = await call;   // 서버가 정한 등수 (저장된 뒤)
-            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'claw', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone };
+            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'claw', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test };
             if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);
             cw.classList.add('drop'); await wait(700);
             drawSt.claw = 'done'; render();
@@ -9464,7 +9464,7 @@
           try {
             var kr = await Promise.all([ drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('capsule', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'capsule' }), new Promise(function(res){ setTimeout(res, 1150); }) ]);
             var rr = kr[0];
-            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'capsule', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone };
+            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'capsule', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test };
             if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);
             drawSt.cap = 'dropped'; drawSt.cond = {}; render();
           } catch(err){ toast(err.message || err); drawSt.cap = 'ready'; render(); }
@@ -9484,7 +9484,7 @@
           el.classList.add('flip');
           try {
             var r = drawSt.guest ? await drawCall('draw_guest_pick', drawGuestArgs('board', +id)) : await drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: +id, p_method: 'board' });
-            drawSt.result = { branch: drawSt.b, log_id: r.log_id, rank: r.rank, prize: r.prize, cell: r.cell, method: 'board', code: r.code, drawn_at: r.drawn_at, status: 'pending', at: Date.now(), expires_at: r.expires_at, phone_masked: r.phone_masked, branch_name: r.branch, phone: drawSt.phone };
+            drawSt.result = { branch: drawSt.b, log_id: r.log_id, rank: r.rank, prize: r.prize, cell: r.cell, method: 'board', code: r.code, drawn_at: r.drawn_at, status: 'pending', at: Date.now(), expires_at: r.expires_at, phone_masked: r.phone_masked, branch_name: r.branch, phone: drawSt.phone, is_test: !!r.is_test };
             if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);   // 저장된 뒤에만 결과를 보여 줌
             drawSt.stage = 'result'; drawSt.cond = {};
             await new Promise(function(res){ setTimeout(res, 650); });
