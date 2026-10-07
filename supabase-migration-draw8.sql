@@ -101,3 +101,5 @@ update draw_prizes set review_links = coalesce(review_links, '{}'::jsonb) || '{"
 where branch_id = (select id from manual_branches where name = '왕십리점') and coalesce(review_links ->> 'tmap', '') = '';
 update draw_prizes set review_links = coalesce(review_links, '{}'::jsonb) || '{"google":"https://share.google/UYPf3JtjBV0KIDNH5"}'::jsonb, updated_at = now()
 where branch_id = (select id from manual_branches where name = '왕십리점') and coalesce(review_links ->> 'google', '') = '';
+update draw_prizes set review_links = coalesce(review_links, '{}'::jsonb) || '{"kakao":"https://place.map.kakao.com/197855372"}'::jsonb, updated_at = now()
+where branch_id = (select id from manual_branches where name = '왕십리점') and coalesce(review_links ->> 'kakao', '') = '';
