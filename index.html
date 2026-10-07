@@ -230,7 +230,7 @@
   .coupon-body .line:last-child{ border-bottom:0; }
   .coupon-body .line b.k{ flex:none; width:84px; color:var(--ink-soft); font-weight:400; font-size:13px; padding-top:3px; }
   .coupon-code{ font:700 30px var(--font-latin), monospace; letter-spacing:6px; color:var(--accent); }
-  .coupon.used{ border-color:var(--ok); } .coupon.used .coupon-top{ background:var(--ok); }
+  .coupon.used{ border-color:var(--accent); } .coupon.used .coupon-top{ background:var(--accent-soft); color:var(--accent); } .coupon.used .coupon-top .win{ background:var(--accent); color:#fff; }
   .coupon.dead{ border-color:var(--ink-faint); } .coupon.dead .coupon-top{ background:var(--ink-faint); }
   .consent{ font-size:13px; color:var(--ink-soft); background:var(--surface-sunken); border-radius:var(--radius-m); padding:10px 12px; line-height:1.55; margin-top:6px; }
   .chk{ display:flex; gap:10px; align-items:flex-start; padding:10px 0; font-size:15px; }
@@ -9194,7 +9194,7 @@
       + '<label class="chk"><input type="checkbox" id="dg-c1"' + (sc.c1 ? ' checked' : '') + '><span>' + (pf ? '<b>' + esc(drawPlatformName(pf)) + '</b>에 <b>리뷰를 썼어요</b>' : '네이버 · 구글 · 카카오맵 · 티맵 중 하나에 <b>리뷰를 썼어요</b>') + '</span></label>'
       + (star ? '<label class="chk"><input type="checkbox" id="dg-c2"' + (sc.c2 ? ' checked' : '') + '><span><b>별점 ★5</b>를 남겼어요</span></label>' : '')
       + '<label class="chk"><input type="checkbox" id="dg-c3"' + (sc.c3 ? ' checked' : '') + '><span><b>사진 1장 이상</b> 넣고 <b>저장(등록)</b>까지 눌렀어요</span></label></div>'
-      + '<div class="card" style="padding:16px"><div class="rtitle" style="margin-bottom:2px">📱 휴대폰 번호를 넣어 주세요</div><div class="muted" style="font-size:13px">당첨 쿠폰이 이 번호로 발급돼요. 다음에 오셔서 번호로 쿠폰을 찾을 수 있어요.</div>'
+      + '<div class="card" style="padding:16px"><div class="rtitle" style="margin-bottom:2px">📱 휴대폰 번호를 넣어 주세요</div><div class="muted" style="font-size:13px">당첨 결과가 이 번호로 기록돼요. 화면을 닫아도 번호로 다시 볼 수 있어요.</div>'
       + '<input class="in" id="dg-phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="010-1234-5678" value="' + esc(drawPhoneFmt(drawSt.phone || drawSavedPhone())) + '" style="margin-top:10px;font-size:20px;letter-spacing:1px;text-align:center">'
       + '<label class="chk"><input type="checkbox" id="dg-consent"' + (drawSt.consent ? ' checked' : '') + '><span><b>[필수]</b> 개인정보 수집·이용 동의</span></label>'
       + '<div class="consent">수집 항목: 휴대폰 번호 · 목적: 리뷰 이벤트 당첨 확인, 쿠폰 발급·사용 확인 · 보관: 마지막 이용일로부터 1년 뒤 삭제 · 처리자: 본노엘 · 동의하지 않으면 이벤트에 참여할 수 없어요.</div>'
@@ -9207,17 +9207,17 @@
     var h = '<div class="card" style="padding:16px;margin-top:10px"><div class="rtitle" style="margin-bottom:2px">🎟️ 내 쿠폰 찾기</div><div class="muted" style="font-size:13px">뽑기할 때 넣은 휴대폰 번호로 찾아요.</div>'
       + '<input class="in" id="dg-find" type="tel" inputmode="numeric" placeholder="010-1234-5678" value="' + esc(drawPhoneFmt(drawSt.phone || drawSavedPhone())) + '" style="margin-top:10px;font-size:20px;text-align:center">'
       + '<button class="btn primary block" style="margin-top:8px" data-act="draw-coupon-find">찾기</button><button class="btn block" style="margin-top:8px" data-act="draw-abort">‹ 돌아가기</button></div>';
-    if (rows) h += '<div class="card" style="padding:14px">' + (rows.length ? rows.map(function(c){ return '<div class="row" data-act="draw-coupon-open" data-id="' + esc(c.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + DRAW_RANK_EMOJI[c.rank] + '</div><div class="rt"><div class="rtitle">' + c.rank + '등 ' + esc(c.prize || '') + '</div><div class="rsub">' + esc(c.branch || '') + ' · ' + (c.status === 'pending' ? '<b style="color:var(--accent)">사용 가능</b> · ' + drawDateK(c.expires_at) + '까지' : c.status === 'expired' ? '기간 지남' : '사용 완료') + '</div></div><div class="chev">›</div></div>'; }).join('') : '<div class="muted">이 번호로 발급된 쿠폰이 없어요.</div>') + '</div>';
+    if (rows) h += '<div class="card" style="padding:14px">' + (rows.length ? rows.map(function(c){ return '<div class="row" data-act="draw-coupon-open" data-id="' + esc(c.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + DRAW_RANK_EMOJI[c.rank] + '</div><div class="rt"><div class="rtitle">' + c.rank + '등 ' + esc(c.prize || '') + '</div><div class="rsub">' + esc(c.branch || '') + ' · ' + (c.status === 'pending' ? '<b style="color:var(--accent)">사용 가능</b> · ' + drawDateK(c.expires_at) + '까지' : c.status === 'expired' ? '기한 지남' : '수령 완료') + '</div></div><div class="chev">›</div></div>'; }).join('') : '<div class="muted">이 번호로 뽑은 기록이 없어요.</div>') + '</div>';
     return h;
   }
   function drawCouponHtml(r, bname, staffView){
     var st = r.status || 'pending', label = r.prize || drawSt.labels[r.rank] || '', cls = (st === 'given' || st === 'substituted') ? ' used' : (st === 'expired' || st === 'cancelled') ? ' dead' : '';
-    var head = st === 'given' || st === 'substituted' ? '사용 완료' : st === 'expired' ? '유효기간 지남' : st === 'cancelled' ? '취소됨' : '축하합니다!';
+    var head = st === 'given' || st === 'substituted' ? '수령 완료' : st === 'expired' ? '수령 기한 지남' : st === 'cancelled' ? '취소됨' : '축하합니다!';
     return '<div class="coupon' + cls + '"><div class="coupon-top"><span class="win">🎉 WIN!</span><div class="t">' + head + '</div><div class="p">' + DRAW_RANK_EMOJI[r.rank] + ' ' + r.rank + '등 · ' + esc(label) + '</div></div>'
       + '<div class="coupon-body">'
       + '<div class="line"><b class="k">쿠폰 번호</b><span class="coupon-code">' + esc(r.code || '----') + '</span></div>'
       + '<div class="line"><b class="k">사용 매장</b><span>' + esc(r.branch_name || bname || '') + '</span></div>'
-      + '<div class="line"><b class="k">받는 기한</b><span>' + (r.expires_at ? '오늘 안에 <span class="muted">(' + drawDateK(r.expires_at).replace(/^\d{4}년 /, '') + ' 전까지)</span>' : '오늘 안에') + '</span></div>'
+      + '<div class="line"><b class="k">받는 방법</b><span><b>당첨 즉시</b> 카운터에서 바로 받기</span></div>'
       + '<div class="line"><b class="k">발급</b><span>' + drawDateK(r.drawn_at) + ' ' + drawHm(r.drawn_at) + (r.phone_masked ? ' · ' + esc(r.phone_masked) : '') + '</span></div>'
       + (st === 'given' || st === 'substituted' ? '<div class="line"><b class="k">사용</b><span>' + drawDateK(r.done_at) + (st === 'substituted' && r.substitute ? ' · 대신 드린 것: ' + esc(r.substitute) : '') + '</span></div>' : '')
       + '</div></div>';
@@ -9260,12 +9260,12 @@
   }
   function drawGuestResultHtml(bname){
     var r = drawSt.result, st = r.status || 'pending';
-    var box = (st === 'given' || st === 'substituted') ? '<div class="note ok">✅ 사용 완료 · 감사합니다! 맛있게 드세요 🥐</div>'
-      : st === 'expired' ? '<div class="note danger">받는 기한(당일)이 지났어요. 다음에 리뷰 이벤트에 다시 참여해 주세요.</div>'
+    var box = (st === 'given' || st === 'substituted') ? '<div class="note" style="background:var(--accent-soft);border-color:var(--accent);color:var(--ink)">🥐 <b>수령 완료</b> · 감사합니다! 맛있게 드세요</div>'
+      : st === 'expired' ? '<div class="note danger">당첨 당일에 받지 않아 기한이 지났어요. 직원에게 말씀해 주세요.</div>'
       : st === 'cancelled' ? '<div class="note">취소된 쿠폰이에요. 직원에게 문의해 주세요.</div>'
-      : '<div class="note">📌 <b>카운터 직원에게 이 화면을 보여 주세요.</b> 상품을 받으면서 아래 버튼을 눌러 주세요(직원이 눌러도 돼요). 누르면 다시 쓸 수 없어요.</div>'
+      : '<div class="note">📌 <b>지금 바로 카운터 직원에게 이 화면을 보여 주세요.</b> 상품을 받으면서 아래 버튼을 눌러 주세요(직원이 눌러도 돼요). 누르면 다시 쓸 수 없어요.</div>'
         + '<div style="text-align:center;margin:6px 0 2px;font-size:13px;color:var(--ink-soft)">지금 시각 <b id="g-clock" style="font-family:var(--font-latin),monospace;font-size:18px;color:var(--accent)">' + drawClock() + '</b> <span class="muted">(화면이 살아 있는지 직원이 봐요)</span></div>'
-        + '<button class="btn primary block" style="margin:8px 8px 0;width:auto;padding:18px;font-size:19px" data-act="draw-guest-done">✅ 상품 받았어요 → 사용 완료</button>';
+        + '<button class="btn primary block" style="margin:8px 8px 0;width:auto;padding:18px;font-size:19px" data-act="draw-guest-done">🥐 상품 받았어요 → 수령 완료</button>';
     return drawCouponHtml(r, bname) + box + '<div class="muted" style="text-align:center;font-size:12px;margin:10px 0 90px">하루 한 번 · 참여 후 리뷰를 지우면 이후 참여가 안 돼요</div>'
       + '<div class="stickybar"><button class="btn block" data-act="draw-abort">처음 화면으로</button></div>';
   }
@@ -9319,7 +9319,7 @@
       + '<button class="btn primary block" style="margin-top:12px;padding:16px;font-size:18px" data-act="draw-guest-start">리뷰 쓰러 가기 → 뽑기 🎰</button>'
       + '<button class="btn block" style="margin-top:8px" data-act="draw-find">🎟️ 내 쿠폰 찾기 (번호로)</button></div>';
     html += '<div class="card" style="padding:14px"><div class="rtitle" style="margin-bottom:4px">' + esc(bname) + ' 상품</div>' + drawPrizeList(drawSt.labels) + '</div>';
-    html += '<div class="note">한 분당 하루 한 번이에요. 당첨 상품은 그 자리에서 바로 받으세요(오늘 안에). 참여 후 리뷰를 지우면 이후 참여가 안 돼요.</div>';
+    html += '<div class="note">한 분당 하루 한 번이에요. 당첨 상품은 그 자리에서 바로 받아요. 참여 후 리뷰를 지우면 이후 참여가 안 돼요.</div>';
     app.innerHTML = html;
   };
 
@@ -9409,9 +9409,9 @@
         case 'draw-coupon-clear': drawSt.q = ''; render(); break;
         case 'draw-guest-done': {
           if (!drawSt.result || drawSt.result.status !== 'pending') break;
-          if (!confirm('상품을 받으셨나요? 누르면 "사용 완료"로 바뀌고 다시 쓸 수 없어요.')) break;
+          if (!confirm('상품을 받으셨나요? 누르면 "수령 완료"로 바뀌고 다시 쓸 수 없어요.')) break;
           el.disabled = true;
-          try { var gd = await drawCall('draw_guest_done', { p_log: drawSt.result.log_id, p_device: drawDevice(), p_phone: drawSt.result.phone || drawSavedPhone() || null }); drawSt.result.status = gd.status || 'given'; drawSt.result.done_at = gd.done_at || new Date().toISOString(); drawGuestSave(drawSt.result); toast('사용 완료! 맛있게 드세요 🥐'); render(); }
+          try { var gd = await drawCall('draw_guest_done', { p_log: drawSt.result.log_id, p_device: drawDevice(), p_phone: drawSt.result.phone || drawSavedPhone() || null }); drawSt.result.status = gd.status || 'given'; drawSt.result.done_at = gd.done_at || new Date().toISOString(); drawGuestSave(drawSt.result); toast('수령 완료! 맛있게 드세요 🥐'); render(); }
           catch(err){ toast(err.message || err); el.disabled = false; }
           break;
         }
