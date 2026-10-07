@@ -239,9 +239,11 @@
   .hunt-timer{ position:relative; height:26px; margin:4px 12px 8px; background:var(--surface-sunken); border-radius:999px; overflow:hidden; border:1px solid var(--line-strong); }
   .hunt-bar{ position:absolute; left:0; top:0; bottom:0; width:100%; background:linear-gradient(90deg, #9ee37d, #ffd84d 60%, #ff8fa3); transition:width .25s linear; }
   .hunt-timer span{ position:absolute; left:0; right:0; top:0; line-height:24px; text-align:center; font-weight:700; font-size:14px; color:#231717; }
-  .hunt-board{ display:grid; grid-template-columns:repeat(12, 1fr); gap:2px; padding:8px; margin:0 8px 100px; background:#fff3d6; border:4px solid #af4c60; border-radius:16px; }
+  .hunt-hint{ display:flex; gap:10px; align-items:center; margin:0 12px 8px; padding:8px 10px; background:var(--surface); border:1px solid var(--line-strong); border-radius:var(--radius-m); font-size:13px; line-height:1.4; }
+  .hunt-hint img{ width:48px; height:48px; object-fit:cover; object-position:top; mix-blend-mode:multiply; flex:none; }
+  .hunt-board{ display:grid; grid-template-columns:repeat(8, 1fr); gap:3px; padding:8px; margin:0 8px 100px; background:#fff3d6; border:4px solid #af4c60; border-radius:16px; }
   .hcell{ aspect-ratio:1; min-width:0; border:0; background:transparent; font-size:22px; line-height:1; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-  .hcell img{ width:92%; height:92%; object-fit:cover; object-position:top; mix-blend-mode:multiply; border-radius:4px; }
+  .hcell img{ width:96%; height:96%; object-fit:cover; object-position:top; mix-blend-mode:multiply; border-radius:4px; }
   .hcell.miss{ animation:hshake .3s; }
   .hcell.hit{ background:#ffd84d; border-radius:50%; animation:hpop .6s; outline:3px solid var(--accent); }
   .hunt-board.done .hcell:not(.hit){ opacity:.35; }
@@ -9222,13 +9224,18 @@
       + (st === 'given' || st === 'substituted' ? '<div class="line"><b class="k">사용</b><span>' + drawDateK(r.done_at) + (st === 'substituted' && r.substitute ? ' · 대신 드린 것: ' + esc(r.substitute) : '') + '</span></div>' : '')
       + '</div></div>';
   }
-  var HUNT_DECOYS = ['🥐', '🍞', '🥖', '🥯', '🥨', '🧁', '🍩', '🍪', '🥞', '🧇', '🥐', '🍞'];
+  // 가짜 소금이 변장: 앞치마 색이 살짝 다르거나(색조 회전), 색이 바랬거나, 좌우가 뒤집혀 "BNL"이 거꾸로. 진짜는 원래 색 그대로 + 글씨 바로.
+  var HUNT_DISGUISES = [
+    'filter:hue-rotate(-30deg)', 'filter:hue-rotate(-20deg)', 'filter:hue-rotate(20deg)', 'filter:hue-rotate(30deg)', 'filter:hue-rotate(-20deg)', 'filter:hue-rotate(20deg)', 'filter:hue-rotate(45deg)', 'filter:hue-rotate(-45deg)', 'filter:hue-rotate(75deg)', 'filter:hue-rotate(120deg)', 'filter:hue-rotate(190deg)', 'filter:hue-rotate(260deg)',
+    'filter:saturate(.3)', 'filter:saturate(.3)', 'filter:sepia(.7)',
+    'transform:scaleX(-1)', 'transform:scaleX(-1)', 'transform:scaleX(-1)', 'transform:scaleX(-1) rotate(10deg)', 'filter:hue-rotate(-20deg);transform:scaleX(-1)', 'filter:hue-rotate(20deg);transform:scaleX(-1)', 'filter:saturate(.3);transform:scaleX(-1)' ];
   var HUNT_SECONDS = 30, huntTimer = null;
   function drawHuntHtml(bname){
     var hs = drawSt.hunt;
-    if (!hs || !hs.cells){ var n = 168, t = Math.floor(Math.random() * n); hs = drawSt.hunt = { cells: [], target: t, done: false, start: 0 }; for (var i = 0; i < n; i++) hs.cells.push(i === t ? null : HUNT_DECOYS[Math.floor(Math.random() * HUNT_DECOYS.length)]); }
-    var cells = hs.cells.map(function(c, i){ var rot = ((i * 37) % 41) - 20, sc = 0.85 + ((i * 13) % 7) / 20; return '<button class="hcell" data-act="draw-hunt-tap" data-id="' + i + '" style="transform:rotate(' + rot + 'deg) scale(' + sc + ')" aria-label="빵">' + (c === null ? '<img src="assets/characters/sogeumi.png" alt="">' : c) + '</button>'; }).join('');
-    return '<div class="gacha-title">🔍 소금이를 찾아라!</div><div class="gacha-sub" id="hunt-sub">빵 더미 속에 숨은 <b>소금이</b>를 ' + HUNT_SECONDS + '초 안에 찾아 눌러 주세요</div>'
+    if (!hs || !hs.cells){ var n = 120, t = Math.floor(Math.random() * n); hs = drawSt.hunt = { cells: [], target: t, done: false, start: 0 }; for (var i = 0; i < n; i++) hs.cells.push(i === t ? '' : HUNT_DISGUISES[Math.floor(Math.random() * HUNT_DISGUISES.length)]); }
+    var cells = hs.cells.map(function(c, i){ var rot = ((i * 37) % 25) - 12; return '<button class="hcell" data-act="draw-hunt-tap" data-id="' + i + '" style="transform:rotate(' + rot + 'deg)" aria-label="소금이"><img src="assets/characters/sogeumi.png" alt="" style="' + c + '"></button>'; }).join('');
+    return '<div class="gacha-title">🔍 진짜 소금이를 찾아라!</div><div class="gacha-sub" id="hunt-sub">변장한 소금이들 사이에서 <b>진짜 소금이</b> 하나를 ' + HUNT_SECONDS + '초 안에 찾아 눌러 주세요</div>'
+      + '<div class="hunt-hint"><img src="assets/characters/sogeumi.png" alt=""><div><b>진짜 소금이</b>는 이렇게 생겼어요<br><span class="muted">원래 색 그대로 · 분홍 앞치마 · 모자 글씨가 바로 보임<br>가짜는 색이 다르거나 바랬거나 좌우가 뒤집혀 있어요</span></div></div>'
       + '<div class="hunt-timer"><div class="hunt-bar" id="hunt-bar"></div><span id="hunt-sec">' + HUNT_SECONDS + '초</span></div>'
       + '<div class="hunt-board" id="hunt-board">' + cells + '</div>'
       + '<div class="stickybar"><button class="btn block" data-act="draw-method-back">‹ 다른 방법으로</button></div>';
@@ -9248,7 +9255,7 @@
     var hs = drawSt.hunt; if (!hs || hs.done) return; hs.done = true; drawHuntStop(); drawSt.busy = true;
     var board = document.getElementById('hunt-board'), sub = document.getElementById('hunt-sub');
     if (board){ board.classList.add('done'); var tc = board.querySelector('[data-id="' + hs.target + '"]'); if (tc) tc.classList.add('hit'); board.querySelectorAll('.hcell').forEach(function(x){ x.disabled = true; }); }
-    if (sub) sub.innerHTML = found ? '찾았다! 🎉 소금이가 뽑기를 돌려요…' : '시간 끝! 소금이가 여기 있었어요 😅 그래도 뽑기는 똑같이!';
+    if (sub) sub.innerHTML = found ? '찾았다! 🎉 진짜 소금이가 뽑기를 돌려요…' : '시간 끝! 진짜 소금이는 여기 있었어요 😅 그래도 뽑기는 똑같이!';
     try {
       var call = drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('hunt', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'hunt' });
       var kr = await Promise.all([ call, new Promise(function(res){ setTimeout(res, 1300); }) ]), rr = kr[0];
