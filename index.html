@@ -235,6 +235,18 @@
   .consent{ font-size:13px; color:var(--ink-soft); background:var(--surface-sunken); border-radius:var(--radius-m); padding:10px 12px; line-height:1.55; margin-top:6px; }
   .chk{ display:flex; gap:10px; align-items:flex-start; padding:10px 0; font-size:15px; }
   .chk input{ width:22px; height:22px; flex:none; margin-top:2px; accent-color:var(--accent); }
+  /* 소금이를 찾아라 */
+  .hunt-timer{ position:relative; height:26px; margin:4px 12px 8px; background:var(--surface-sunken); border-radius:999px; overflow:hidden; border:1px solid var(--line-strong); }
+  .hunt-bar{ position:absolute; left:0; top:0; bottom:0; width:100%; background:linear-gradient(90deg, #9ee37d, #ffd84d 60%, #ff8fa3); transition:width .25s linear; }
+  .hunt-timer span{ position:absolute; left:0; right:0; top:0; line-height:24px; text-align:center; font-weight:700; font-size:14px; color:#231717; }
+  .hunt-board{ display:grid; grid-template-columns:repeat(12, 1fr); gap:2px; padding:8px; margin:0 8px 100px; background:#fff3d6; border:4px solid #af4c60; border-radius:16px; }
+  .hcell{ aspect-ratio:1; min-width:0; border:0; background:transparent; font-size:22px; line-height:1; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .hcell img{ width:92%; height:92%; object-fit:cover; object-position:top; mix-blend-mode:multiply; border-radius:4px; }
+  .hcell.miss{ animation:hshake .3s; }
+  .hcell.hit{ background:#ffd84d; border-radius:50%; animation:hpop .6s; outline:3px solid var(--accent); }
+  .hunt-board.done .hcell:not(.hit){ opacity:.35; }
+  @keyframes hshake{ 0%,100%{ transform:translateX(0);} 25%{ transform:translateX(-4px);} 75%{ transform:translateX(4px);} }
+  @keyframes hpop{ 0%{ transform:scale(1);} 50%{ transform:scale(1.6);} 100%{ transform:scale(1.2);} }
   .pop{ background:#fff; color:#231717; border:3px solid #af4c60; border-radius:18px; margin:12px 8px; padding:22px 20px 16px; position:relative; overflow:hidden; max-width:520px; margin-inline:auto; }
   .pop-brand{ font:600 13px var(--font-latin); letter-spacing:2px; color:#af4c60; }
   .pop-title{ font:700 40px/1.15 var(--font-serif); color:#af4c60; margin:4px 0 2px; }
@@ -447,7 +459,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 · draw3 · draw4 · draw5.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw6.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -9052,7 +9064,8 @@
     return '<div class="dboard-head"><div class="dboard-title">🎉 어떻게 뽑을까요?</div><div>' + esc(bname) + ' · 둘 다 확률은 똑같아요</div></div>'
       + '<div class="dmethod"><button class="btn" data-act="draw-method" data-id="board"><span class="big">🟦</span>추억의 뽑기판<small>칸 하나 눌러 뒤집기</small></button>'
       + '<button class="btn" data-act="draw-method" data-id="capsule"><span class="big">🎁</span>빵 캡슐 뽑기<small>손잡이 돌려서 캡슐 열기</small></button>'
-      + '<button class="btn wide2" data-act="draw-method" data-id="claw"><span class="big">🤏</span>소금이 집게 뽑기<small>집게가 움직일 때 "잡기!" 누르기</small></button></div>'
+      + '<button class="btn wide2" data-act="draw-method" data-id="claw"><span class="big">🤏</span>소금이 집게 뽑기<small>집게가 움직일 때 "잡기!" 누르기</small></button>'
+      + '<button class="btn wide2" data-act="draw-method" data-id="hunt"><span class="big">🔍</span>소금이를 찾아라<small>빵 더미 속 소금이를 30초 안에 찾기 (못 찾아도 뽑기는 똑같이)</small></button></div>'
       + '<div class="stickybar"><button class="btn block" data-act="draw-abort">‹ 돌아가기 (아직 안 뽑았어요)</button></div>';
   }
   var CLAW_ITEMS = [['🥐', 6], ['🍞', 24], ['🥖', 40], ['🧁', 56], ['🥨', 70], ['🥯', 84], ['🍪', 14], ['🥐', 48], ['🍰', 32], ['🥖', 64]];
@@ -9091,9 +9104,9 @@
   }
   function drawResultHtml(bname){
     var r = drawSt.result, label = r.prize || drawSt.labels[r.rank] || '';
-    return '<div class="dresult"><div class="dresult-emoji">' + DRAW_RANK_EMOJI[r.rank] + '</div><div class="dresult-rank">' + r.rank + '등!</div><div class="dresult-prize">' + esc(label) + '</div><div class="muted">' + esc(bname) + ' · 축하드려요 🎊</div>' + '</div>' + (r.fromGuest ? drawCouponHtml(r, bname, true) + '<div class="muted" style="font-size:13px;text-align:center;margin:0 0 6px">손님 폰의 쿠폰과 같은지 보고 상품을 건넨 뒤 아래를 눌러 주세요' + (r.status === 'expired' ? '<br><span style="color:var(--danger)">유효기간이 지난 쿠폰이에요. 드릴지는 매장에서 판단해 주세요.</span>' : '') + '</div>' : '')
+    return '<div class="dresult"><div class="dresult-emoji">' + DRAW_RANK_EMOJI[r.rank] + '</div><div class="dresult-rank">' + r.rank + '등!</div><div class="dresult-prize">' + esc(label) + '</div><div class="muted">' + esc(bname) + ' · 축하드려요 🎊</div>' + '</div>' + (r.fromGuest ? drawCouponHtml(r, bname, true) + '<div class="muted" style="font-size:13px;text-align:center;margin:0 0 6px">손님 폰의 쿠폰과 같은지 보고 상품을 건넨 뒤 아래를 눌러 주세요' + (r.status === 'expired' ? '<br><span style="color:var(--danger)">받는 기한(당일)이 지났어요. 드릴지는 매장에서 판단해 주세요.</span>' : '') + '</div>' : '')
       + '<div class="card" style="padding:14px"><div class="muted" style="font-size:13px;margin-bottom:8px">직원이 눌러 주세요 — 상품을 건네고 나서</div>'
-      + '<button class="btn primary block" style="padding:16px;font-size:17px" data-act="draw-given">' + (r.fromGuest ? '✅ 쿠폰 사용 처리 (상품 지급)' : '✅ 지급 완료') + '</button>'
+      + '<button class="btn primary block" style="padding:16px;font-size:17px" data-act="draw-given">' + (r.fromGuest ? '✅ 지급 완료 (손님 폰 뽑기)' : '✅ 지급 완료') + '</button>'
       + '<button class="btn block" style="margin-top:8px" data-act="draw-sub">🔁 다른 걸로 드림 (품절·마감 등)</button>'
       + '<button class="btn block" style="margin-top:8px;color:var(--danger)" data-act="draw-cancel">✖ 잘못 뽑힘 → 취소 (매장 코드)</button></div>';
   }
@@ -9121,6 +9134,7 @@
     if (drawSt.stage === 'method'){ app.innerHTML = html + drawMethodHtml(bname); return; }
     if (drawSt.stage === 'capsule'){ app.innerHTML = html + drawCapsuleHtml(bname); return; }
     if (drawSt.stage === 'claw'){ app.innerHTML = html + drawClawHtml(bname); return; }
+    if (drawSt.stage === 'hunt'){ app.innerHTML = html + drawHuntHtml(bname); drawHuntStart(); return; }
     if (drawSt.stage === 'result'){ app.innerHTML = html + drawResultHtml(bname); return; }
 
     var allChecked = DRAW_CONDS.every(function(c){ return drawSt.cond[c[0]]; });
@@ -9135,8 +9149,8 @@
     var guestRows = [], gErr = '';
     try { var gp = drawSt.q ? await drawCall('draw_coupon_lookup', { p_branch: b, p_staff: session.staffId, p_q: drawSt.q }) : await drawCall('draw_guest_pending', { p_branch: b, p_staff: session.staffId }); guestRows = gp.rows || []; } catch(e){ gErr = e.message || String(e); console.warn('손님 쿠폰 목록', e); }
     drawSt.guestRows = guestRows;
-    html += '<div class="card" style="padding:14px"><div class="inline" style="justify-content:space-between;align-items:center"><div class="rtitle">🎟️ 손님 쿠폰 확인 (QR 뽑기)</div><button class="btn sm" data-act="draw-guest-refresh">새로고침</button></div>'
-      + '<div class="muted" style="font-size:13px;margin:4px 0 8px">손님이 보여 주는 쿠폰 번호(4글자)나 휴대폰 뒤 4자리로 찾아서, 상품을 건네고 [쿠폰 사용 처리]를 눌러 주세요.</div>'
+    html += '<div class="card" style="padding:14px"><div class="inline" style="justify-content:space-between;align-items:center"><div class="rtitle">📱 손님 폰 뽑기 확인 (QR)</div><button class="btn sm" data-act="draw-guest-refresh">새로고침</button></div>'
+      + '<div class="muted" style="font-size:13px;margin:4px 0 8px">손님이 보여 주는 화면의 코드(4글자)나 휴대폰 뒤 4자리로 찾아서, 상품을 건네고 [지급 완료]를 눌러 주세요. 아래 목록엔 최근 24시간 것이 바로 떠요.</div>'
       + '<div class="inline" style="gap:6px"><input class="in" id="dq-q" placeholder="쿠폰 번호 또는 번호 뒤 4자리" value="' + esc(drawSt.q || '') + '" style="flex:1;text-transform:uppercase"><button class="btn primary" data-act="draw-coupon-search">찾기</button>' + (drawSt.q ? '<button class="btn" data-act="draw-coupon-clear">✕</button>' : '') + '</div>'
       + (gErr ? '<div class="note danger" style="margin-top:8px">' + esc(gErr) + '</div>' : '')
       + '<div class="muted" style="font-size:12px;margin-top:8px">' + (drawSt.q ? '"' + esc(drawSt.q) + '" 검색 결과' : '최근 24시간 발급 · 아직 안 쓴 쿠폰') + '</div>'
@@ -9181,17 +9195,53 @@
       + '<div class="coupon-body">'
       + '<div class="line"><b class="k">쿠폰 번호</b><span class="coupon-code">' + esc(r.code || '----') + '</span></div>'
       + '<div class="line"><b class="k">사용 매장</b><span>' + esc(r.branch_name || bname || '') + '</span></div>'
-      + '<div class="line"><b class="k">유효기간</b><span>' + (r.expires_at ? drawDateK(r.expires_at) + '까지 <span class="muted">(발급일부터 3주)</span>' : '-') + '</span></div>'
+      + '<div class="line"><b class="k">받는 기한</b><span>' + (r.expires_at ? '오늘 안에 <span class="muted">(' + drawDateK(r.expires_at).replace(/^\d{4}년 /, '') + ' 전까지)</span>' : '오늘 안에') + '</span></div>'
       + '<div class="line"><b class="k">발급</b><span>' + drawDateK(r.drawn_at) + ' ' + drawHm(r.drawn_at) + (r.phone_masked ? ' · ' + esc(r.phone_masked) : '') + '</span></div>'
       + (st === 'given' || st === 'substituted' ? '<div class="line"><b class="k">사용</b><span>' + drawDateK(r.done_at) + (st === 'substituted' && r.substitute ? ' · 대신 드린 것: ' + esc(r.substitute) : '') + '</span></div>' : '')
       + '</div></div>';
   }
+  var HUNT_DECOYS = ['🥐', '🍞', '🥖', '🥯', '🥨', '🧁', '🍩', '🍪', '🥞', '🧇', '🥐', '🍞'];
+  var HUNT_SECONDS = 30, huntTimer = null;
+  function drawHuntHtml(bname){
+    var hs = drawSt.hunt;
+    if (!hs || !hs.cells){ var n = 168, t = Math.floor(Math.random() * n); hs = drawSt.hunt = { cells: [], target: t, done: false, start: 0 }; for (var i = 0; i < n; i++) hs.cells.push(i === t ? null : HUNT_DECOYS[Math.floor(Math.random() * HUNT_DECOYS.length)]); }
+    var cells = hs.cells.map(function(c, i){ var rot = ((i * 37) % 41) - 20, sc = 0.85 + ((i * 13) % 7) / 20; return '<button class="hcell" data-act="draw-hunt-tap" data-id="' + i + '" style="transform:rotate(' + rot + 'deg) scale(' + sc + ')" aria-label="빵">' + (c === null ? '<img src="assets/characters/sogeumi.png" alt="">' : c) + '</button>'; }).join('');
+    return '<div class="gacha-title">🔍 소금이를 찾아라!</div><div class="gacha-sub" id="hunt-sub">빵 더미 속에 숨은 <b>소금이</b>를 ' + HUNT_SECONDS + '초 안에 찾아 눌러 주세요</div>'
+      + '<div class="hunt-timer"><div class="hunt-bar" id="hunt-bar"></div><span id="hunt-sec">' + HUNT_SECONDS + '초</span></div>'
+      + '<div class="hunt-board" id="hunt-board">' + cells + '</div>'
+      + '<div class="stickybar"><button class="btn block" data-act="draw-method-back">‹ 다른 방법으로</button></div>';
+  }
+  function drawHuntStop(){ if (huntTimer){ clearInterval(huntTimer); huntTimer = null; } }
+  function drawHuntStart(){
+    drawHuntStop(); var hs = drawSt.hunt; if (!hs || hs.done) return;
+    hs.start = Date.now();
+    huntTimer = setInterval(function(){
+      if (drawSt.stage !== 'hunt' || !drawSt.hunt || drawSt.hunt.done){ drawHuntStop(); return; }
+      var left = Math.max(0, HUNT_SECONDS - (Date.now() - hs.start) / 1000), bar = document.getElementById('hunt-bar'), sec = document.getElementById('hunt-sec');
+      if (bar) bar.style.width = (left / HUNT_SECONDS * 100) + '%'; if (sec) sec.textContent = Math.ceil(left) + '초';
+      if (left <= 0) drawHuntFinish(false);
+    }, 250);
+  }
+  async function drawHuntFinish(found){
+    var hs = drawSt.hunt; if (!hs || hs.done) return; hs.done = true; drawHuntStop(); drawSt.busy = true;
+    var board = document.getElementById('hunt-board'), sub = document.getElementById('hunt-sub');
+    if (board){ board.classList.add('done'); var tc = board.querySelector('[data-id="' + hs.target + '"]'); if (tc) tc.classList.add('hit'); board.querySelectorAll('.hcell').forEach(function(x){ x.disabled = true; }); }
+    if (sub) sub.innerHTML = found ? '찾았다! 🎉 소금이가 뽑기를 돌려요…' : '시간 끝! 소금이가 여기 있었어요 😅 그래도 뽑기는 똑같이!';
+    try {
+      var call = drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('hunt', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'hunt' });
+      var kr = await Promise.all([ call, new Promise(function(res){ setTimeout(res, 1300); }) ]), rr = kr[0];
+      drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'hunt', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone };
+      if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);
+      drawSt.cond = {}; drawSt.stage = 'result'; render();
+    } catch(err){ toast(err.message || err); drawSt.hunt = null; drawSt.stage = 'method'; render(); }
+    finally { drawSt.busy = false; }
+  }
   function drawGuestResultHtml(bname){
     var r = drawSt.result, st = r.status || 'pending';
     var box = (st === 'given' || st === 'substituted') ? '<div class="note ok">✅ 사용 완료 · 감사합니다! 맛있게 드세요 🥐</div>'
-      : st === 'expired' ? '<div class="note danger">유효기간이 지난 쿠폰이에요. 다음 방문 때 리뷰 이벤트에 다시 참여해 주세요.</div>'
+      : st === 'expired' ? '<div class="note danger">받는 기한(당일)이 지났어요. 다음에 리뷰 이벤트에 다시 참여해 주세요.</div>'
       : st === 'cancelled' ? '<div class="note">취소된 쿠폰이에요. 직원에게 문의해 주세요.</div>'
-      : '<div class="note">📌 <b>다음 방문 때 카운터에서 이 화면을 보여 주세요.</b> 그 자리에서 상품을 드려요.<br>화면을 닫아도 돼요 — 다시 보려면 QR을 찍고 <b>내 쿠폰 찾기</b>에 번호를 넣으면 돼요.</div>';
+      : '<div class="note">📌 <b>지금 카운터 직원에게 이 화면을 보여 주세요.</b> 바로 드려요.<br>화면을 닫았으면 QR을 다시 찍고 <b>내 쿠폰 찾기</b>에 번호를 넣으면 돼요.</div>';
     return drawCouponHtml(r, bname) + box + '<div class="muted" style="text-align:center;font-size:12px;margin:10px 0 90px">하루 한 번 · 참여 후 리뷰를 지우면 이후 참여가 안 돼요</div>'
       + '<div class="stickybar"><button class="btn block" data-act="draw-abort">처음 화면으로</button></div>';
   }
@@ -9230,16 +9280,17 @@
     if (drawSt.stage === 'method'){ app.innerHTML = html + drawMethodHtml(bname); return; }
     if (drawSt.stage === 'capsule'){ app.innerHTML = html + drawCapsuleHtml(bname); return; }
     if (drawSt.stage === 'claw'){ app.innerHTML = html + drawClawHtml(bname); return; }
+    if (drawSt.stage === 'hunt'){ app.innerHTML = html + drawHuntHtml(bname); drawHuntStart(); return; }
     if (drawSt.stage === 'phone'){ app.innerHTML = html + drawPhoneHtml(bname); var pi = document.getElementById('dg-phone'); if (pi && !pi.value) pi.focus(); return; }
     if (drawSt.stage === 'find'){ app.innerHTML = html + drawFindHtml(bname); return; }
     if (drawSt.stage === 'result'){ app.innerHTML = html + drawGuestResultHtml(bname); drawGuestPoll(); return; }
     html += '<div class="card" style="padding:16px;margin-top:10px;text-align:center"><div style="font:700 26px var(--font-serif);color:var(--accent)">🎁 리뷰 쓰고 빵 뽑기</div><div class="muted" style="margin-top:4px">' + esc(bname) + '</div>'
       + '<div style="text-align:left;margin:14px 0 6px;display:grid;gap:8px;font-size:15px">'
-      + '<div><b>1</b>&nbsp; 빵 구매 후 영수증 받기</div><div><b>2</b>&nbsp; 네이버 영수증 리뷰 · 카카오맵 · 구글 중 하나에 리뷰 쓰기<br><span class="muted" style="font-size:13px;padding-left:22px">별점 ★5 · 사진 1장 이상 · 저장(등록)까지</span></div><div><b>3</b>&nbsp; 휴대폰 번호 넣고 뽑기 → <b>당첨 쿠폰</b>은 다음 방문 때 카운터에서!</div></div>'
+      + '<div><b>1</b>&nbsp; 빵 구매 후 영수증 받기</div><div><b>2</b>&nbsp; 네이버 영수증 리뷰 · 카카오맵 · 구글 중 하나에 리뷰 쓰기<br><span class="muted" style="font-size:13px;padding-left:22px">별점 ★5 · 사진 1장 이상 · 저장(등록)까지</span></div><div><b>3</b>&nbsp; 휴대폰 번호 넣고 뽑기 → 결과 화면을 카운터에 보여 주고 <b>바로 받기!</b></div></div>'
       + '<button class="btn primary block" style="margin-top:12px;padding:16px;font-size:18px" data-act="draw-guest-start">리뷰 다 썼어요 → 뽑기 시작 🎰</button>'
       + '<button class="btn block" style="margin-top:8px" data-act="draw-find">🎟️ 내 쿠폰 찾기 (번호로)</button></div>';
     html += '<div class="card" style="padding:14px"><div class="rtitle" style="margin-bottom:4px">' + esc(bname) + ' 상품</div>' + drawPrizeList(drawSt.labels) + '</div>';
-    html += '<div class="note">한 분당 하루 한 번이에요. 당첨 쿠폰은 발급일부터 3주 안에 다음 방문 때 쓰실 수 있어요. 참여 후 리뷰를 지우면 이후 참여가 안 돼요.</div>';
+    html += '<div class="note">한 분당 하루 한 번이에요. 당첨 상품은 그 자리에서 바로 받으세요(오늘 안에). 참여 후 리뷰를 지우면 이후 참여가 안 돼요.</div>';
     app.innerHTML = html;
   };
 
@@ -9256,8 +9307,8 @@
       try { var pr = await drawCall('draw_prizes_get', { p_branch: b.id }); L = pr.labels || {}; } catch(e){}
       var url = location.origin + location.pathname + '?g=' + b.id + (DEMO ? '&demo=1' : ''), qr = qrDataUrl(url);
       html += '<div class="pop"><img class="pop-char" src="assets/characters/sogeumi.png" alt=""><div class="pop-brand">BON NOËL · ' + esc(b.name) + '</div><div class="pop-title">리뷰 쓰고<br>빵 뽑기 🎁</div><div class="pop-sub">네이버 영수증 리뷰 · 카카오맵 · 구글</div>'
-        + '<div class="pop-steps"><div><b>1</b><span>빵 구매 후 영수증을 받아 주세요</span></div><div><b>2</b><span>리뷰 쓰기 — 별점 ★5 · 사진 1장 이상 · 저장까지!</span></div><div><b>3</b><span>QR 찍고 번호 넣고 뽑기 → <b>당첨 쿠폰</b>은 다음 방문 때 카운터에서!</span></div></div>'
-        + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>바로 뽑기!<small>뽑기판 · 캡슐 · 집게 중 골라서<br>하루 한 번 · 쿠폰은 3주 안에 사용</small></div></div>'
+        + '<div class="pop-steps"><div><b>1</b><span>빵 구매 후 영수증을 받아 주세요</span></div><div><b>2</b><span>리뷰 쓰기 — 별점 ★5 · 사진 1장 이상 · 저장까지!</span></div><div><b>3</b><span>QR 찍고 번호 넣고 뽑기 → 결과 화면 보여 주고 <b>바로 받기!</b></span></div></div>'
+        + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>바로 뽑기!<small>뽑기판 · 캡슐 · 집게 · 소금이 찾기<br>하루 한 번 · 당첨은 그 자리에서 바로!</small></div></div>'
         + '<div class="pop-prizes">' + [1,2,3,4,5].map(function(k){ return '<div><b>' + k + '등</b>' + esc(L[k] || '') + '</div>'; }).join('') + '</div>'
         + '<div class="pop-foot">확률은 종이 뽑기판과 같아요 (520알 중 1등 1개). 참여 후 리뷰를 삭제하면 이후 리뷰 이벤트 참여가 불가합니다. 당첨 상품이 품절이면 다른 빵으로 드려요.<br><span style="color:#b9a0a3">' + esc(url) + '</span></div></div>';
     }
@@ -9329,7 +9380,12 @@
           drawSt.stage = 'result'; render(); break;
         }
         case 'draw-pop-print': window.print(); break;
-        case 'draw-method': drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.stage = id === 'capsule' ? 'capsule' : id === 'claw' ? 'claw' : 'board'; render(); break;
+        case 'draw-method': drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.hunt = null; drawSt.stage = id === 'capsule' ? 'capsule' : id === 'claw' ? 'claw' : id === 'hunt' ? 'hunt' : 'board'; render(); break;
+        case 'draw-hunt-tap': {
+          var hh = drawSt.hunt; if (!hh || hh.done || drawSt.busy) break;
+          if (+id === hh.target) drawHuntFinish(true); else { el.classList.remove('miss'); void el.offsetWidth; el.classList.add('miss'); }
+          break;
+        }
         case 'draw-claw-grab': {
           if (drawSt.busy || drawSt.stage !== 'claw' || drawSt.claw !== 'ready') break;
           drawSt.busy = true; drawSt.claw = 'grab';
@@ -9467,7 +9523,7 @@
         if (D.logs.some(function(x){ return x.source === 'guest' && (x.phone === phd || x.device_id === a.p_device) && new Date(x.drawn_at).toDateString() === today && x.status !== 'cancelled'; })) return { ok: false, error: '오늘은 이미 뽑았어요 😊 내일 또 와 주세요' };
         var gres = drawMemRpc(T, 'draw_pick', { p_branch: a.p_branch, p_staff: 'k1', p_cell: a.p_cell == null ? null : a.p_cell, p_method: a.p_method });
         if (!gres.ok) return gres;
-        var glog = findLog(gres.log_id); glog.source = 'guest'; glog.device_id = a.p_device; glog.phone = phd; glog.marketing_ok = !!a.p_marketing; glog.coupon_expires_at = new Date(Date.now() + 21 * 864e5).toISOString(); glog.confirm_code = Array.apply(null, Array(4)).map(function(){ return 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]; }).join('');
+        var glog = findLog(gres.log_id); glog.source = 'guest'; glog.device_id = a.p_device; glog.phone = phd; glog.marketing_ok = !!a.p_marketing; glog.coupon_expires_at = (function(){ var d = new Date(); d.setHours(24, 0, 0, 0); return d.toISOString(); })(); glog.confirm_code = Array.apply(null, Array(4)).map(function(){ return 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]; }).join('');
         return Object.assign(gres, { code: glog.confirm_code, drawn_at: glog.drawn_at, expires_at: glog.coupon_expires_at, phone_masked: phd.slice(0, 3) + '-****-' + phd.slice(7), branch: branchName(a.p_branch) });
       }
       case 'draw_guest_status': lg = findLog(a.p_log); return lg ? { ok: true, status: lg.status, rank: lg.rank, prize: lg.prize_label, code: lg.confirm_code, drawn_at: lg.drawn_at, substitute: lg.substitute || null, expires_at: lg.coupon_expires_at, branch: branchName(lg.branch_id), branch_id: lg.branch_id, done_at: lg.done_at || null } : { ok: false, error: '기록을 못 찾았어요' };
