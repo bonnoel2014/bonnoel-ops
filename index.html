@@ -295,8 +295,7 @@
   .pop-limit{ display:inline-block; margin-top:8px; padding:6px 14px; border-radius:999px; background:#af4c60; color:#fff; font-weight:700; font-size:14px; }
   .pop-prizes.many{ grid-template-columns:repeat(3, 1fr); } .pop-prizes.many div{ min-height:56px; }
   .pop-foot{ font-size:11.5px; color:#6b4b4f; margin-top:8px; line-height:1.5; }
-  .pop-char{ position:absolute; right:14px; top:14px; width:74px; mix-blend-mode:multiply; }
-  @media print{ .pop{ page-break-after:always; break-after:page; max-width:none; margin:0; border-width:4px; min-height:95vh; padding:34px 30px; } .pop-title{ font-size:54px; } .pop-steps{ font-size:18px; } .pop-qr img{ width:220px; height:220px; } .pop-qr .cap{ font-size:24px; } .pop-prizes div{ font-size:15px; min-height:84px; } .pop-prizes div b{ font-size:18px; } .pop-foot{ font-size:14px; } .pop-char{ width:110px; } .pop:last-child{ page-break-after:auto; break-after:auto; } }
+  @media print{ .pop{ page-break-after:always; break-after:page; max-width:none; margin:0; border-width:4px; min-height:95vh; padding:34px 30px; } .pop-title{ font-size:54px; } .pop-steps{ font-size:18px; } .pop-qr img{ width:220px; height:220px; } .pop-qr .cap{ font-size:24px; } .pop-prizes div{ font-size:15px; min-height:84px; } .pop-prizes div b{ font-size:18px; } .pop-foot{ font-size:14px; } .pop:last-child{ page-break-after:auto; break-after:auto; } }
   .expand{ padding:10px 14px 14px 72px; background:var(--surface-sunken); border-bottom:1px solid var(--line); }
 
   .toast{ position:fixed; left:50%; bottom:90px; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--paper); padding:10px 16px; border-radius:999px; font-size:14px; opacity:0; transition:.2s; pointer-events:none; z-index:20; max-width:90vw; text-align:center; }
@@ -9484,7 +9483,7 @@
       var b = list[i], L = {};
       try { var pr = await drawCall('draw_prizes_get', { p_branch: b.id }); L = pr.labels || {}; } catch(e){}
       var url = location.origin + location.pathname + '?g=' + b.id + (DEMO ? '&demo=1' : ''), qr = qrDataUrl(url);
-      html += '<div class="pop"><img class="pop-char" src="assets/characters/sogeumi.png" alt=""><div class="pop-brand">BON NOËL · ' + esc(b.name) + '</div><div class="pop-title">리뷰 쓰고<br>빵 뽑기 🎁</div><div class="pop-sub">네이버 · 구글 · 카카오맵 · 티맵 리뷰</div><div class="pop-limit">✨ 100% 당첨 · 하루 20명 한정 · 선착순!</div>'
+      html += '<div class="pop"><div class="pop-brand">BON NOËL · ' + esc(b.name) + '</div><div class="pop-title">리뷰 쓰고<br>빵 뽑기 🎁</div><div class="pop-sub">네이버 · 구글 · 카카오맵 · 티맵 리뷰</div><div class="pop-limit">✨ 100% 당첨 · 하루 20명 한정 · 선착순!</div>'
         + '<div class="pop-steps"><div><b>1</b><span>빵 구매 후 영수증을 받아 주세요</span></div><div><b>2</b><span>리뷰 쓰기 — 별점 ★5 · 사진 1장 이상 · 저장까지!</span></div><div><b>3</b><span>QR 찍고 번호 넣고 뽑기 → 결과 화면 보여 주고 <b>바로 받기!</b></span></div></div>'
         + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>바로 뽑기!<small>뽑기판 · 캡슐 · 집게 · 소금이 찾기 · 빵 퀴즈<br>100% 당첨 · 하루 20명 · 당첨은 그 자리에서!</small></div></div>'
         + '<div class="pop-prizes' + (drawRanks().length > 5 ? ' many' : '') + '">' + drawRanks().map(function(k){ return '<div><b>' + k + '등</b>' + esc(L[k] || '') + '</div>'; }).join('') + '</div>'
