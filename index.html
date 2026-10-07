@@ -459,7 +459,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw8.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw9.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -9263,7 +9263,9 @@
     var box = (st === 'given' || st === 'substituted') ? '<div class="note ok">✅ 사용 완료 · 감사합니다! 맛있게 드세요 🥐</div>'
       : st === 'expired' ? '<div class="note danger">받는 기한(당일)이 지났어요. 다음에 리뷰 이벤트에 다시 참여해 주세요.</div>'
       : st === 'cancelled' ? '<div class="note">취소된 쿠폰이에요. 직원에게 문의해 주세요.</div>'
-      : '<div class="note">📌 <b>지금 카운터 직원에게 이 화면을 보여 주세요.</b> 바로 드려요.<br>화면을 닫았으면 QR을 다시 찍고 <b>내 쿠폰 찾기</b>에 번호를 넣으면 돼요.</div>';
+      : '<div class="note">📌 <b>카운터 직원에게 이 화면을 보여 주세요.</b> 상품을 받으면서 아래 버튼을 눌러 주세요(직원이 눌러도 돼요). 누르면 다시 쓸 수 없어요.</div>'
+        + '<div style="text-align:center;margin:6px 0 2px;font-size:13px;color:var(--ink-soft)">지금 시각 <b id="g-clock" style="font-family:var(--font-latin),monospace;font-size:18px;color:var(--accent)">' + drawClock() + '</b> <span class="muted">(화면이 살아 있는지 직원이 봐요)</span></div>'
+        + '<button class="btn primary block" style="margin:8px 8px 0;width:auto;padding:18px;font-size:19px" data-act="draw-guest-done">✅ 상품 받았어요 → 사용 완료</button>';
     return drawCouponHtml(r, bname) + box + '<div class="muted" style="text-align:center;font-size:12px;margin:10px 0 90px">하루 한 번 · 참여 후 리뷰를 지우면 이후 참여가 안 돼요</div>'
       + '<div class="stickybar"><button class="btn block" data-act="draw-abort">처음 화면으로</button></div>';
   }
@@ -9277,14 +9279,18 @@
       + '<div class="gcode">확인 코드 <b>' + esc(r.code || '----') + '</b> · ' + drawHm(r.drawn_at) + '</div></div>' + box
       + '<div class="muted" style="text-align:center;font-size:12px;margin-top:10px">하루 한 번이에요 · 참여 후 리뷰를 지우면 이후 참여가 안 돼요</div>';
   }
-  var drawGuestTimer = null;
+  function drawClock(){ var d = new Date(); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2); }
+  var drawGuestTimer = null, drawGuestTick = 0;
   function drawGuestPoll(){
     if (drawGuestTimer) clearInterval(drawGuestTimer);
+    drawGuestTick = 0;
     drawGuestTimer = setInterval(async function(){
       if (!drawSt.guest || drawSt.stage !== 'result' || !drawSt.result || current.route !== 'g'){ clearInterval(drawGuestTimer); drawGuestTimer = null; return; }
+      var ck = document.getElementById('g-clock'); if (ck) ck.textContent = drawClock();
+      if (++drawGuestTick % 5 !== 0) return;
       try { var s = await drawCall('draw_guest_status', { p_log: drawSt.result.log_id, p_device: drawDevice(), p_phone: drawSt.result.phone || drawSavedPhone() || null });
         if (s.status !== drawSt.result.status){ drawSt.result.status = s.status; drawSt.result.substitute = s.substitute; drawSt.result.done_at = s.done_at; drawGuestSave(drawSt.result); render(); } } catch(e){}
-    }, 5000);
+    }, 1000);
   }
   routes.g = async function(params){
     var b = params.arg;
@@ -9401,6 +9407,14 @@
           drawSt.q = qv; render(); break;
         }
         case 'draw-coupon-clear': drawSt.q = ''; render(); break;
+        case 'draw-guest-done': {
+          if (!drawSt.result || drawSt.result.status !== 'pending') break;
+          if (!confirm('상품을 받으셨나요? 누르면 "사용 완료"로 바뀌고 다시 쓸 수 없어요.')) break;
+          el.disabled = true;
+          try { var gd = await drawCall('draw_guest_done', { p_log: drawSt.result.log_id, p_device: drawDevice(), p_phone: drawSt.result.phone || drawSavedPhone() || null }); drawSt.result.status = gd.status || 'given'; drawSt.result.done_at = gd.done_at || new Date().toISOString(); drawGuestSave(drawSt.result); toast('사용 완료! 맛있게 드세요 🥐'); render(); }
+          catch(err){ toast(err.message || err); el.disabled = false; }
+          break;
+        }
         case 'draw-guest-refresh': render(); break;
         case 'draw-guest-row': {
           var gr = (drawSt.guestRows || []).filter(function(x){ return x.id === id; })[0]; if (!gr) break;
@@ -9554,6 +9568,7 @@
         var glog = findLog(gres.log_id); glog.source = 'guest'; glog.device_id = a.p_device; glog.phone = phd; glog.marketing_ok = !!a.p_marketing; glog.review_source = a.p_review || null; glog.coupon_expires_at = (function(){ var d = new Date(); d.setHours(24, 0, 0, 0); return d.toISOString(); })(); glog.confirm_code = Array.apply(null, Array(4)).map(function(){ return 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]; }).join('');
         return Object.assign(gres, { code: glog.confirm_code, drawn_at: glog.drawn_at, expires_at: glog.coupon_expires_at, phone_masked: phd.slice(0, 3) + '-****-' + phd.slice(7), branch: branchName(a.p_branch) });
       }
+      case 'draw_guest_done': lg = findLog(a.p_log); if (!lg) return { ok: false, error: '기록을 못 찾았어요' }; if (lg.status === 'pending'){ lg.status = 'given'; lg.done_at = new Date().toISOString(); lg.done_by = 'guest'; } return { ok: true, status: lg.status, done_at: lg.done_at };
       case 'draw_guest_status': lg = findLog(a.p_log); return lg ? { ok: true, status: lg.status, rank: lg.rank, prize: lg.prize_label, code: lg.confirm_code, drawn_at: lg.drawn_at, substitute: lg.substitute || null, expires_at: lg.coupon_expires_at, branch: branchName(lg.branch_id), branch_id: lg.branch_id, done_at: lg.done_at || null } : { ok: false, error: '기록을 못 찾았어요' };
       case 'draw_coupon_find': { var fph = String(a.p_phone || '').replace(/\D/g, ''); return { ok: true, rows: D.logs.filter(function(x){ return x.source === 'guest' && x.phone === fph; }).map(function(x){ return { id: x.id, code: x.confirm_code, rank: x.rank, prize: x.prize_label, status: x.status, drawn_at: x.drawn_at, expires_at: x.coupon_expires_at, branch: branchName(x.branch_id), branch_id: x.branch_id, done_at: x.done_at || null }; }).reverse() }; }
       case 'draw_coupon_lookup': { var qq = String(a.p_q || '').trim().toUpperCase(), qd = qq.replace(/\D/g, ''); return { ok: true, rows: D.logs.filter(function(x){ return x.branch_id === a.p_branch && x.source === 'guest' && (x.status === 'pending' || x.status === 'expired') && (x.confirm_code === qq || (qd.length >= 4 && x.phone && x.phone.slice(-qd.length) === qd)); }).map(function(x){ return { id: x.id, code: x.confirm_code, rank: x.rank, prize: x.prize_label, status: x.status, method: x.method, drawn_at: x.drawn_at, expires_at: x.coupon_expires_at, phone_masked: x.phone ? x.phone.slice(0, 3) + '-****-' + x.phone.slice(7) : null }; }).reverse() }; }
