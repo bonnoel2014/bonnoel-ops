@@ -264,6 +264,8 @@
   .pop-prizes div{ background:#fff5f6; border-radius:10px; padding:8px 4px; text-align:center; font-size:12px; line-height:1.3; min-height:64px; }
   .pop-prizes div b{ display:block; color:#af4c60; font-size:14px; margin-bottom:3px; }
   .pop-prizes div:first-child{ background:#af4c60; color:#fff; } .pop-prizes div:first-child b{ color:#ffe1e3; }
+  .pop-limit{ display:inline-block; margin-top:8px; padding:6px 14px; border-radius:999px; background:#af4c60; color:#fff; font-weight:700; font-size:14px; }
+  .pop-prizes.many{ grid-template-columns:repeat(3, 1fr); } .pop-prizes.many div{ min-height:56px; }
   .pop-foot{ font-size:11.5px; color:#6b4b4f; margin-top:8px; line-height:1.5; }
   .pop-char{ position:absolute; right:14px; top:14px; width:74px; mix-blend-mode:multiply; }
   @media print{ .pop{ page-break-after:always; break-after:page; max-width:none; margin:0; border-width:4px; min-height:95vh; padding:34px 30px; } .pop-title{ font-size:54px; } .pop-steps{ font-size:18px; } .pop-qr img{ width:220px; height:220px; } .pop-qr .cap{ font-size:24px; } .pop-prizes div{ font-size:15px; min-height:84px; } .pop-prizes div b{ font-size:18px; } .pop-foot{ font-size:14px; } .pop-char{ width:110px; } .pop:last-child{ page-break-after:auto; break-after:auto; } }
@@ -461,7 +463,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw10.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw11.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -9050,15 +9052,20 @@
   // 종이 뽑기판(520알: 1등 1 · 2등 3 · 3등 16 · 4등 100 · 5등 400)을 매장폰 화면으로.
   // 등수는 서버 함수(draw_pick)가 남은 알 비율로 정하고, 매장폰은 결과만 받는다. 남은 알·집계 숫자는 사장님 앱에서만.
   var DRAW_TOTAL = 520, DRAW_PENDING_KEY = 'bonnoel_ops_draw_pending';
-  var DRAW_RANK_EMOJI = { 1: '🏆', 2: '🥈', 3: '🥉', 4: '🎁', 5: '🍪' };
+  var DRAW_RANK_EMOJI = { 1: '🏆', 2: '🥈', 3: '🥉', 4: '🎁', 5: '🍪', 6: '🍰', 7: '🎟️', 8: '🔁', 9: '🎫' };
+  var DRAW_KINDS = ['instant', 'instant', 'instant', 'instant', 'instant', 'instant', 'coupon', 'redraw', 'coupon'];   // 서버 draw_config 와 같은 기본값
+  var DRAW_KIND_LABEL = { instant: '즉시', coupon: '다음 방문 쿠폰', redraw: '한 번 더 뽑기' };
+  function drawKinds(){ return (drawSt.kinds && drawSt.kinds.length) ? drawSt.kinds : DRAW_KINDS; }
+  function drawKind(rank){ return drawKinds()[rank - 1] || 'instant'; }
+  function drawRanks(){ var n = drawKinds().length, a = []; for (var i = 1; i <= n; i++) a.push(i); return a; }
   var DRAW_CONDS = [ ['star', '별점 5개'], ['photo', '사진 1장 이상'], ['saved', '저장(등록) 눌렀는지'] ];
   var drawSt = { b: null, stage: 'start', cond: {}, taken: [], busy: false, result: null, labels: {} };
   async function drawCall(fn, args){ var r = await db.rpc(fn, args); if (r && r.ok === false) throw new Error(r.error || '실패했어요'); return r; }
   function drawPendingLoad(){ try { return JSON.parse(localStorage.getItem(DRAW_PENDING_KEY) || 'null'); } catch(e){ return null; } }
   function drawPendingSave(x){ try { if (x) localStorage.setItem(DRAW_PENDING_KEY, JSON.stringify(x)); else localStorage.removeItem(DRAW_PENDING_KEY); } catch(e){} }
-  function drawLabelsOk(L){ return [1,2,3,4,5].every(function(k){ return String(L[k] || '').trim(); }); }
+  function drawLabelsOk(L){ return drawRanks().every(function(k){ return String(L[k] || '').trim(); }); }
   function drawPrizeList(L){
-    return [1,2,3,4,5].map(function(k){ return '<div class="hist"><b style="width:34px">' + k + '등</b><span class="sp">' + (String(L[k] || '').trim() ? esc(L[k]) : '<span class="muted">(비어 있음)</span>') + '</span></div>'; }).join('');
+    return drawRanks().map(function(k){ var kd = drawKind(k); return '<div class="hist"><b style="width:34px">' + k + '등</b><span class="sp">' + (String(L[k] || '').trim() ? esc(L[k]) : '<span class="muted">(비어 있음)</span>') + (kd !== 'instant' ? ' <span class="badge muted">' + DRAW_KIND_LABEL[kd] + '</span>' : '') + '</span></div>'; }).join('');
   }
   function drawReset(b){ drawSt = { b: b, stage: 'start', cond: {}, taken: [], busy: false, result: null, labels: {}, cap: 'ready', claw: 'ready', guest: false, guestRows: [], phone: '', consent: false, marketing: false, found: null, q: '' }; }
   var GACHA_CAPS = [['#ff8fa3', 18, 120], ['#7cc4ff', 70, 135], ['#ffd84d', 120, 118], ['#9ee37d', 40, 80], ['#c69cff', 95, 86], ['#ffb46b', 150, 92], ['#ff8fa3', 180, 130], ['#7cc4ff', 8, 160], ['#9ee37d', 60, 162], ['#ffd84d', 112, 158], ['#c69cff', 160, 150]];
@@ -9108,7 +9115,7 @@
     var r = drawSt.result, label = r.prize || drawSt.labels[r.rank] || '';
     return '<div class="dresult"><div class="dresult-emoji">' + DRAW_RANK_EMOJI[r.rank] + '</div><div class="dresult-rank">' + r.rank + '등!</div><div class="dresult-prize">' + esc(label) + '</div><div class="muted">' + esc(bname) + ' · 축하드려요 🎊</div>' + '</div>' + (r.fromGuest ? drawCouponHtml(r, bname, true) + '<div class="muted" style="font-size:13px;text-align:center;margin:0 0 6px">손님 폰의 쿠폰과 같은지 보고 상품을 건넨 뒤 아래를 눌러 주세요' + (r.status === 'expired' ? '<br><span style="color:var(--danger)">받는 기한(당일)이 지났어요. 드릴지는 매장에서 판단해 주세요.</span>' : '') + '</div>' : '')
       + '<div class="card" style="padding:14px"><div class="muted" style="font-size:13px;margin-bottom:8px">직원이 눌러 주세요 — 상품을 건네고 나서</div>'
-      + '<button class="btn primary block" style="padding:16px;font-size:17px" data-act="draw-given">' + (r.fromGuest ? '✅ 지급 완료 (손님 폰 뽑기)' : '✅ 지급 완료') + '</button>'
+      + ((r.kind || drawKind(r.rank)) === 'redraw' && r.status !== 'given' ? '<button class="btn primary block" style="padding:16px;font-size:17px" data-act="draw-redraw">🔁 한 번 더 뽑기!</button>' : '<button class="btn primary block" style="padding:16px;font-size:17px" data-act="draw-given">' + ((r.kind || drawKind(r.rank)) === 'coupon' ? '✅ 할인 적용 완료' : r.fromGuest ? '✅ 지급 완료 (손님 폰 뽑기)' : '✅ 지급 완료') + '</button>')
       + '<button class="btn block" style="margin-top:8px" data-act="draw-sub">🔁 다른 걸로 드림 (품절·마감 등)</button>'
       + '<button class="btn block" style="margin-top:8px;color:var(--danger)" data-act="draw-cancel">✖ 잘못 뽑힘 → 취소 (매장 코드)</button></div>';
   }
@@ -9124,7 +9131,7 @@
     if (pend && pend.branch === b && !drawSt.result){ drawSt.result = pend; drawSt.stage = 'result'; }
     html += branchTabs(b, false);
     var bname = branchName(b);
-    try { var pr = await drawCall('draw_prizes_get', { p_branch: b }); drawSt.labels = pr.labels || {}; }
+    try { var pr = await drawCall('draw_prizes_get', { p_branch: b }); drawSt.labels = pr.labels || {}; drawSt.kinds = (pr.kinds && pr.kinds.length) ? pr.kinds : DRAW_KINDS; drawSt.todayLeft = (pr.today_left == null ? null : +pr.today_left); drawSt.dailyLimit = +pr.daily_limit || 20; }
     catch(e){ app.innerHTML = html + '<div class="note danger">' + esc(e.message || e) + '</div>'; return; }
     var labelsOk = drawLabelsOk(drawSt.labels);
 
@@ -9142,6 +9149,7 @@
     var allChecked = DRAW_CONDS.every(function(c){ return drawSt.cond[c[0]]; });
     html += '<div class="card" style="padding:14px;margin-top:10px"><div class="rtitle" style="margin-bottom:4px">' + esc(bname) + ' · 손님 리뷰 확인</div>'
       + '<div class="muted" style="font-size:13px">네이버 영수증 리뷰 · 카카오맵 · 구글 리뷰. 손님 폰 화면을 보고 세 가지를 눌러 주세요.</div>'
+      + (drawSt.todayLeft != null ? '<div style="margin-top:6px;font-size:14px">✨ 100% 당첨 · 하루 ' + (drawSt.dailyLimit || 20) + '명 한정 · 오늘 남은 자리 <b style="color:var(--accent)">' + drawSt.todayLeft + '</b>명</div>' : '')
       + '<div class="name-grid" style="margin-top:10px">' + DRAW_CONDS.map(function(c){ return '<button class="btn' + (drawSt.cond[c[0]] ? ' primary' : '') + '" data-act="draw-cond" data-id="' + c[0] + '">' + (drawSt.cond[c[0]] ? '✓ ' : '') + esc(c[1]) + '</button>'; }).join('') + '</div>'
       + '<button class="btn primary block" style="margin-top:12px;padding:16px;font-size:18px" data-act="draw-begin"' + (allChecked && labelsOk ? '' : ' disabled') + '>🎰 손님께 건네기 → 뽑기</button>'
       + (labelsOk ? '' : '<div class="note danger" style="margin-top:10px">상품표가 비어 있어요. 아래 "상품표 바꾸기"에서 1~5등을 먼저 채워 주세요.</div>')
@@ -9156,7 +9164,7 @@
       + '<div class="inline" style="gap:6px"><input class="in" id="dq-q" placeholder="쿠폰 번호 또는 번호 뒤 4자리" value="' + esc(drawSt.q || '') + '" style="flex:1;text-transform:uppercase"><button class="btn primary" data-act="draw-coupon-search">찾기</button>' + (drawSt.q ? '<button class="btn" data-act="draw-coupon-clear">✕</button>' : '') + '</div>'
       + (gErr ? '<div class="note danger" style="margin-top:8px">' + esc(gErr) + '</div>' : '')
       + '<div class="muted" style="font-size:12px;margin-top:8px">' + (drawSt.q ? '"' + esc(drawSt.q) + '" 검색 결과' : '최근 24시간 발급 · 아직 안 쓴 쿠폰') + '</div>'
-      + (guestRows.length ? guestRows.map(function(g){ return '<div class="row" data-act="draw-guest-row" data-id="' + esc(g.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + DRAW_RANK_EMOJI[g.rank] + '</div><div class="rt"><div class="rtitle">코드 <b style="letter-spacing:2px">' + esc(g.code || '') + '</b> · ' + g.rank + '등 ' + esc(g.prize || '') + '</div><div class="rsub">' + (g.phone_masked ? esc(g.phone_masked) + ' · ' : '') + drawDateK(g.drawn_at).replace(/^\d{4}년 /, '') + ' 발급' + (g.expires_at ? ' · ' + drawDateK(g.expires_at).replace(/^\d{4}년 /, '') + '까지' : '') + (g.status === 'expired' ? ' · <span style="color:var(--danger)">기간 지남</span>' : '') + '</div></div><div class="chev">›</div></div>'; }).join('')
+      + (guestRows.length ? guestRows.map(function(g){ return '<div class="row" data-act="draw-guest-row" data-id="' + esc(g.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + (DRAW_RANK_EMOJI[g.rank] || '🎁') + '</div><div class="rt"><div class="rtitle">코드 <b style="letter-spacing:2px">' + esc(g.code || '') + '</b> · ' + g.rank + '등 ' + esc(g.prize || '') + (g.kind === 'coupon' ? ' <span class="badge muted">다음 방문 쿠폰</span>' : '') + '</div><div class="rsub">' + (g.phone_masked ? esc(g.phone_masked) + ' · ' : '') + drawDateK(g.drawn_at).replace(/^\d{4}년 /, '') + ' 발급' + (g.expires_at ? ' · ' + drawDateK(g.expires_at).replace(/^\d{4}년 /, '') + '까지' : '') + (g.status === 'expired' ? ' · <span style="color:var(--danger)">기간 지남</span>' : '') + '</div></div><div class="chev">›</div></div>'; }).join('')
         : '<div class="muted" style="font-size:13px;margin-top:6px">' + (drawSt.q ? '맞는 쿠폰이 없어요. 번호나 코드를 다시 확인해 주세요.' : '최근 24시간 안에 발급된 쿠폰이 없어요. 손님이 오시면 위에서 찾아 주세요.') + '</div>') + '</div>';
     html += '<div class="note">손님 한 분당 하루 한 번이에요. 참여 뒤 리뷰를 지우면 다음부터 참여가 안 된다고 안내해 주세요. 확률은 종이 뽑기판과 같아요.</div>';
     app.innerHTML = html;
@@ -9171,7 +9179,7 @@
   var DRAW_PHONE_KEY = 'bonnoel_draw_phone';
   function drawPhoneFmt(p){ p = String(p || '').replace(/\D/g, ''); if (p.length === 11) return p.slice(0, 3) + '-' + p.slice(3, 7) + '-' + p.slice(7); if (p.length === 10) return p.slice(0, 3) + '-' + p.slice(3, 6) + '-' + p.slice(6); return p; }
   function drawDateK(iso){ if (!iso) return ''; var d = new Date(iso); return d.getFullYear() + '년 ' + (d.getMonth() + 1) + '월 ' + d.getDate() + '일(' + ['일','월','화','수','목','금','토'][d.getDay()] + ')'; }
-  function drawGuestArgs(method, cell){ return { p_branch: drawSt.b, p_device: drawDevice(), p_method: method, p_cell: cell, p_phone: drawSt.phone || '', p_consent: true, p_marketing: !!drawSt.marketing, p_review: drawSt.review || null }; }
+  function drawGuestArgs(method, cell){ return { p_branch: drawSt.b, p_device: drawDevice(), p_method: method, p_cell: cell, p_phone: drawSt.phone || '', p_consent: true, p_marketing: !!drawSt.marketing, p_review: drawSt.review || null, p_redraw: drawSt.redraw || null }; }
   function drawSavedPhone(){ try { return localStorage.getItem(DRAW_PHONE_KEY) || ''; } catch(e){ return ''; } }
   var DRAW_PLATFORMS = [ ['naver', '네이버', '🟢', '영수증 리뷰 · 별점 ★5 · 사진'], ['google', '구글', '🔵', '별점 ★5 · 사진'], ['kakao', '카카오맵', '🟡', '별점 ★5 · 사진'], ['tmap', '티맵', '🟣', '리뷰 · 사진'] ];
   var DRAW_STAR_PLATFORMS = { naver: 1, google: 1, kakao: 1 };
@@ -9209,17 +9217,17 @@
     var h = '<div class="card" style="padding:16px;margin-top:10px"><div class="rtitle" style="margin-bottom:2px">🎟️ 내 쿠폰 찾기</div><div class="muted" style="font-size:13px">뽑기할 때 넣은 휴대폰 번호로 찾아요.</div>'
       + '<input class="in" id="dg-find" type="tel" inputmode="numeric" placeholder="010-1234-5678" value="' + esc(drawPhoneFmt(drawSt.phone || drawSavedPhone())) + '" style="margin-top:10px;font-size:20px;text-align:center">'
       + '<button class="btn primary block" style="margin-top:8px" data-act="draw-coupon-find">찾기</button><button class="btn block" style="margin-top:8px" data-act="draw-abort">‹ 돌아가기</button></div>';
-    if (rows) h += '<div class="card" style="padding:14px">' + (rows.length ? rows.map(function(c){ return '<div class="row" data-act="draw-coupon-open" data-id="' + esc(c.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + DRAW_RANK_EMOJI[c.rank] + '</div><div class="rt"><div class="rtitle">' + c.rank + '등 ' + esc(c.prize || '') + '</div><div class="rsub">' + esc(c.branch || '') + ' · ' + (c.status === 'pending' ? '<b style="color:var(--accent)">사용 가능</b> · ' + drawDateK(c.expires_at) + '까지' : c.status === 'expired' ? '기한 지남' : '수령 완료') + '</div></div><div class="chev">›</div></div>'; }).join('') : '<div class="muted">이 번호로 뽑은 기록이 없어요.</div>') + '</div>';
+    if (rows) h += '<div class="card" style="padding:14px">' + (rows.length ? rows.map(function(c){ return '<div class="row" data-act="draw-coupon-open" data-id="' + esc(c.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + DRAW_RANK_EMOJI[c.rank] + '</div><div class="rt"><div class="rtitle">' + c.rank + '등 ' + esc(c.prize || '') + '</div><div class="rsub">' + esc(c.branch || '') + ' · ' + (c.status === 'pending' ? '<b style="color:var(--accent)">' + (c.kind === 'coupon' ? '쿠폰 사용 가능' : c.kind === 'redraw' ? '한 번 더 뽑기 가능' : '수령 전') + '</b> · ' + drawDateK(c.expires_at) + '까지' : c.status === 'expired' ? '기한 지남' : '수령 완료') + '</div></div><div class="chev">›</div></div>'; }).join('') : '<div class="muted">이 번호로 뽑은 기록이 없어요.</div>') + '</div>';
     return h;
   }
   function drawCouponHtml(r, bname, staffView){
-    var st = r.status || 'pending', label = r.prize || drawSt.labels[r.rank] || '', cls = (st === 'given' || st === 'substituted') ? ' used' : (st === 'expired' || st === 'cancelled') ? ' dead' : '';
-    var head = st === 'given' || st === 'substituted' ? '수령 완료' : st === 'expired' ? '수령 기한 지남' : st === 'cancelled' ? '취소됨' : '축하합니다!';
+    var st = r.status || 'pending', label = r.prize || drawSt.labels[r.rank] || '', cls = (st === 'given' || st === 'substituted') ? ' used' : (st === 'expired' || st === 'cancelled') ? ' dead' : '', kd = r.kind || drawKind(r.rank);
+    var head = st === 'given' || st === 'substituted' ? (kd === 'coupon' ? '사용 완료' : kd === 'redraw' ? '한 번 더 뽑았어요' : '수령 완료') : st === 'expired' ? (kd === 'coupon' ? '유효기간 지남' : '수령 기한 지남') : st === 'cancelled' ? '취소됨' : (kd === 'redraw' ? '한 번 더!' : '축하합니다!');
     return '<div class="coupon' + cls + '"><div class="coupon-top"><span class="win">🎉 WIN!</span><div class="t">' + head + '</div><div class="p">' + DRAW_RANK_EMOJI[r.rank] + ' ' + r.rank + '등 · ' + esc(label) + '</div></div>'
       + '<div class="coupon-body">'
       + '<div class="line"><b class="k">쿠폰 번호</b><span class="coupon-code">' + esc(r.code || '----') + '</span></div>'
       + '<div class="line"><b class="k">사용 매장</b><span>' + esc(r.branch_name || bname || '') + '</span></div>'
-      + '<div class="line"><b class="k">받는 방법</b><span><b>당첨 즉시</b> 카운터에서 바로 받기</span></div>'
+      + '<div class="line"><b class="k">받는 방법</b><span>' + (kd === 'coupon' ? '<b>다음 방문 때</b> 카운터에서 (' + (r.expires_at ? drawDateK(r.expires_at) + '까지' : '3주 안에') + ')' : kd === 'redraw' ? '그 자리에서 <b>한 번 더 뽑기</b>' : '<b>당첨 즉시</b> 카운터에서 바로 받기') + '</span></div>'
       + '<div class="line"><b class="k">발급</b><span>' + drawDateK(r.drawn_at) + ' ' + drawHm(r.drawn_at) + (r.phone_masked ? ' · ' + esc(r.phone_masked) : '') + '</span></div>'
       + (st === 'given' || st === 'substituted' ? '<div class="line"><b class="k">사용</b><span>' + drawDateK(r.done_at) + (st === 'substituted' && r.substitute ? ' · 대신 드린 것: ' + esc(r.substitute) : '') + '</span></div>' : '')
       + '</div></div>';
@@ -9257,17 +9265,21 @@
     if (board){ board.classList.add('done'); var tc = board.querySelector('[data-id="' + hs.target + '"]'); if (tc) tc.classList.add('hit'); board.querySelectorAll('.hcell').forEach(function(x){ x.disabled = true; }); }
     if (sub) sub.innerHTML = found ? '찾았다! 🎉 진짜 소금이가 뽑기를 돌려요…' : '시간 끝! 진짜 소금이는 여기 있었어요 😅 그래도 뽑기는 똑같이!';
     try {
-      var call = drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('hunt', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'hunt' });
+      var call = drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('hunt', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'hunt', p_redraw: drawSt.redraw || null });
       var kr = await Promise.all([ call, new Promise(function(res){ setTimeout(res, 1300); }) ]), rr = kr[0];
-      drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'hunt', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test };
-      if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);
+      drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'hunt', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test, kind: rr.kind || drawKind(rr.rank) };
+      if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result); drawSt.redraw = null;
       drawSt.cond = {}; drawSt.stage = 'result'; render();
     } catch(err){ toast(err.message || err); drawSt.hunt = null; drawSt.stage = 'method'; render(); }
     finally { drawSt.busy = false; }
   }
   function drawGuestResultHtml(bname){
-    var r = drawSt.result, st = r.status || 'pending';
-    var box = (st === 'given' || st === 'substituted') ? '<div class="note" style="background:var(--accent-soft);border-color:var(--accent);color:var(--ink)">🥐 <b>수령 완료</b> · 감사합니다! 맛있게 드세요</div>'
+    var r = drawSt.result, st = r.status || 'pending', kd = r.kind || drawKind(r.rank);
+    var box = (st === 'given' || st === 'substituted') ? (kd === 'redraw' ? '<div class="note" style="background:var(--accent-soft);border-color:var(--accent);color:var(--ink)">🔁 한 번 더 뽑기를 썼어요</div>' : '<div class="note" style="background:var(--accent-soft);border-color:var(--accent);color:var(--ink)">🥐 <b>' + (kd === 'coupon' ? '사용 완료' : '수령 완료') + '</b> · 감사합니다! 맛있게 드세요</div>')
+      : (st === 'pending' && kd === 'redraw') ? '<div class="note">🔁 <b>한 번 더 뽑을 수 있어요!</b> 아래 버튼을 누르면 바로 다시 뽑아요.</div><button class="btn primary block" style="margin:8px 8px 0;width:auto;padding:18px;font-size:19px" data-act="draw-redraw">🔁 한 번 더 뽑기!</button>'
+      : (st === 'pending' && kd === 'coupon') ? '<div class="note">🎟️ <b>다음 방문 때</b> 카운터에서 이 화면을 보여 주시면 할인해 드려요 (' + (r.expires_at ? drawDateK(r.expires_at) + '까지' : '3주 안에') + ').<br>화면을 닫아도 QR을 다시 찍고 <b>내 쿠폰 찾기</b>에 번호를 넣으면 돼요. 쓸 때 직원과 함께 아래 버튼을 눌러 주세요.</div>'
+        + '<div style="text-align:center;margin:6px 0 2px;font-size:13px;color:var(--ink-soft)">지금 시각 <b id="g-clock" style="font-family:var(--font-latin),monospace;font-size:18px;color:var(--accent)">' + drawClock() + '</b></div>'
+        + '<button class="btn primary block" style="margin:8px 8px 0;width:auto;padding:18px;font-size:19px" data-act="draw-guest-done">🎟️ 할인 받았어요 → 사용 완료</button>'
       : st === 'expired' ? '<div class="note danger">당첨 당일에 받지 않아 기한이 지났어요. 직원에게 말씀해 주세요.</div>'
       : st === 'cancelled' ? '<div class="note">취소된 쿠폰이에요. 직원에게 문의해 주세요.</div>'
       : '<div class="note">📌 <b>지금 바로 카운터 직원에게 이 화면을 보여 주세요.</b> 상품을 받으면서 아래 버튼을 눌러 주세요(직원이 눌러도 돼요). 누르면 다시 쓸 수 없어요.</div>'
@@ -9306,7 +9318,7 @@
     var br = null; try { br = (await db.select('manual_branches', { eq: { id: b } }))[0]; } catch(e){}
     if (!b || !br){ app.innerHTML = html + '<div class="note danger">매장을 찾을 수 없어요. 매장에 있는 QR을 다시 찍어 주세요.</div>'; return; }
     var bname = br.name;
-    try { var pr = await drawCall('draw_prizes_get', { p_branch: b }); drawSt.labels = pr.labels || {}; drawSt.links = pr.links || {}; }
+    try { var pr = await drawCall('draw_prizes_get', { p_branch: b }); drawSt.labels = pr.labels || {}; drawSt.links = pr.links || {}; drawSt.kinds = (pr.kinds && pr.kinds.length) ? pr.kinds : DRAW_KINDS; drawSt.todayLeft = (pr.today_left == null ? null : +pr.today_left); drawSt.dailyLimit = +pr.daily_limit || 20; }
     catch(e){ app.innerHTML = html + '<div class="note danger">' + esc(e.message || e) + '</div>'; return; }
     var pend = drawGuestLoad();
     if (pend && pend.branch === b && !drawSt.result && Date.now() - (pend.at || 0) < 3 * 3600e3){ drawSt.result = pend; drawSt.stage = 'result'; }
@@ -9320,10 +9332,13 @@
     if (drawSt.stage === 'phone'){ app.innerHTML = html + drawPhoneHtml(bname); var pi = document.getElementById('dg-phone'); if (pi && !pi.value) pi.focus(); return; }
     if (drawSt.stage === 'find'){ app.innerHTML = html + drawFindHtml(bname); return; }
     if (drawSt.stage === 'result'){ app.innerHTML = html + drawGuestResultHtml(bname); drawGuestPoll(); return; }
+    var soldOut = drawSt.todayLeft != null && drawSt.todayLeft <= 0;
     html += '<div class="card" style="padding:16px;margin-top:10px;text-align:center"><div style="font:700 26px var(--font-serif);color:var(--accent)">🎁 리뷰 쓰고 빵 뽑기</div><div class="muted" style="margin-top:4px">' + esc(bname) + '</div>'
+      + '<div style="margin-top:10px;display:inline-block;padding:8px 14px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:15px">✨ 100% 당첨 · 하루 ' + (drawSt.dailyLimit || 20) + '명 한정</div>'
+      + (drawSt.todayLeft != null ? '<div style="margin-top:6px;font-size:15px">' + (soldOut ? '<b style="color:var(--danger)">오늘 ' + (drawSt.dailyLimit || 20) + '명이 다 찼어요 😢</b> 내일 또 와 주세요' : '오늘 남은 자리 <b style="font-size:22px;color:var(--accent)">' + drawSt.todayLeft + '</b>명') + '</div>' : '')
       + '<div style="text-align:left;margin:14px 0 6px;display:grid;gap:8px;font-size:15px">'
       + '<div><b>1</b>&nbsp; 빵 구매 후 영수증 받기</div><div><b>2</b>&nbsp; 네이버 · 구글 · 카카오맵 · 티맵 중 하나 골라 리뷰 쓰기<br><span class="muted" style="font-size:13px;padding-left:22px">별점 ★5(별점 있는 곳) · 사진 1장 이상 · 저장(등록)까지</span></div><div><b>3</b>&nbsp; 휴대폰 번호 넣고 뽑기 → 결과 화면을 카운터에 보여 주고 <b>바로 받기!</b></div></div>'
-      + '<button class="btn primary block" style="margin-top:12px;padding:16px;font-size:18px" data-act="draw-guest-start">리뷰 쓰러 가기 → 뽑기 🎰</button>'
+      + (soldOut ? '<button class="btn block" style="margin-top:12px;padding:16px;font-size:18px" disabled>오늘 마감 · 내일 다시 열려요</button>' : '<button class="btn primary block" style="margin-top:12px;padding:16px;font-size:18px" data-act="draw-guest-start">리뷰 쓰러 가기 → 뽑기 🎰</button>')
       + '<button class="btn block" style="margin-top:8px" data-act="draw-find">🎟️ 내 쿠폰 찾기 (번호로)</button></div>';
     html += '<div class="card" style="padding:14px"><div class="rtitle" style="margin-bottom:4px">' + esc(bname) + ' 상품</div>' + drawPrizeList(drawSt.labels) + '</div>';
     html += '<div class="note">한 분당 하루 한 번이에요. 당첨 상품은 그 자리에서 바로 받아요. 참여 후 리뷰를 지우면 이후 참여가 안 돼요.</div>';
@@ -9342,10 +9357,10 @@
       var b = list[i], L = {};
       try { var pr = await drawCall('draw_prizes_get', { p_branch: b.id }); L = pr.labels || {}; } catch(e){}
       var url = location.origin + location.pathname + '?g=' + b.id + (DEMO ? '&demo=1' : ''), qr = qrDataUrl(url);
-      html += '<div class="pop"><img class="pop-char" src="assets/characters/sogeumi.png" alt=""><div class="pop-brand">BON NOËL · ' + esc(b.name) + '</div><div class="pop-title">리뷰 쓰고<br>빵 뽑기 🎁</div><div class="pop-sub">네이버 영수증 리뷰 · 카카오맵 · 구글</div>'
+      html += '<div class="pop"><img class="pop-char" src="assets/characters/sogeumi.png" alt=""><div class="pop-brand">BON NOËL · ' + esc(b.name) + '</div><div class="pop-title">리뷰 쓰고<br>빵 뽑기 🎁</div><div class="pop-sub">네이버 · 구글 · 카카오맵 · 티맵 리뷰</div><div class="pop-limit">✨ 100% 당첨 · 하루 20명 한정 · 선착순!</div>'
         + '<div class="pop-steps"><div><b>1</b><span>빵 구매 후 영수증을 받아 주세요</span></div><div><b>2</b><span>리뷰 쓰기 — 별점 ★5 · 사진 1장 이상 · 저장까지!</span></div><div><b>3</b><span>QR 찍고 번호 넣고 뽑기 → 결과 화면 보여 주고 <b>바로 받기!</b></span></div></div>'
         + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>바로 뽑기!<small>뽑기판 · 캡슐 · 집게 · 소금이 찾기<br>하루 한 번 · 당첨은 그 자리에서 바로!</small></div></div>'
-        + '<div class="pop-prizes">' + [1,2,3,4,5].map(function(k){ return '<div><b>' + k + '등</b>' + esc(L[k] || '') + '</div>'; }).join('') + '</div>'
+        + '<div class="pop-prizes' + (drawRanks().length > 5 ? ' many' : '') + '">' + drawRanks().map(function(k){ return '<div><b>' + k + '등</b>' + esc(L[k] || '') + '</div>'; }).join('') + '</div>'
         + '<div class="pop-foot">확률은 종이 뽑기판과 같아요 (520알 중 1등 1개). 참여 후 리뷰를 삭제하면 이후 리뷰 이벤트 참여가 불가합니다. 당첨 상품이 품절이면 다른 빵으로 드려요.<br><span style="color:#b9a0a3">' + esc(url) + '</span></div></div>';
     }
     app.innerHTML = html;
@@ -9360,15 +9375,15 @@
     if (!b){ app.innerHTML = html + '<div class="note">매장을 골라서 들어와야 해요.</div>'; return; }
     html += branchTabs(b, false);
     var L = {};
-    try { var pr = await drawCall('draw_prizes_get', { p_branch: b }); L = pr.labels || {}; }
+    try { var pr = await drawCall('draw_prizes_get', { p_branch: b }); L = pr.labels || {}; drawSt.kinds = (pr.kinds && pr.kinds.length) ? pr.kinds : DRAW_KINDS; }
     catch(e){ app.innerHTML = html + '<div class="note danger">' + esc(e.message || e) + '</div>'; return; }
     var people = base.staff.filter(function(s){ return s.active !== false && (s.role === 'manager' || s.role === 'owner') && (s.role === 'owner' || !s.branch_id || s.branch_id === b); });
     html += '<div class="card" style="padding:14px;margin-top:10px"><div class="rtitle">' + esc(branchName(b)) + ' 1~5등 상품</div><div class="form">'
-      + [1,2,3,4,5].map(function(k){ return '<label>' + k + '등</label><input class="in" id="dp-' + k + '" value="' + esc(L[k] || '') + '" placeholder="예: 마들렌 1개">'; }).join('')
+      + drawRanks().map(function(k){ var kd = drawKind(k); return '<label>' + k + '등' + (kd !== 'instant' ? ' <span class="muted">(' + DRAW_KIND_LABEL[kd] + ')</span>' : '') + '</label><input class="in" id="dp-' + k + '" value="' + esc(L[k] || '') + '" placeholder="예: 마들렌 1개">'; }).join('')
       + '<label>바꾸는 사람 (매니저·사장님)</label><select class="in" id="dp-who">' + people.map(function(s){ return '<option value="' + esc(s.id) + '">' + esc(s.name) + '</option>'; }).join('') + '</select>'
       + '<label>그 사람 비밀번호 4자리</label><input class="in" id="dp-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off">'
       + '<button class="btn primary block" style="margin-top:12px" data-act="draw-prizes-save">저장</button></div></div>';
-    html += '<div class="note">확률은 종이 뽑기판과 똑같아요 (520알: 1등 1 · 2등 3 · 3등 16 · 4등 100 · 5등 400). 여기서는 상품 문구만 바뀌고 확률은 안 바뀌어요. 1등이 선결제 충전금이면 지급은 선결제 메뉴에서 직접 충전해 주세요.</div>';
+    html += '<div class="note">520알 배분(등수별 알 수)은 사장님 앱에서 정해요. 여기서는 상품 문구만 바뀌고 확률은 안 바뀌어요. "다음 방문 쿠폰" 등수는 손님이 다음에 와서 쓰고, "한 번 더 뽑기" 등수는 그 자리에서 한 번 더 뽑아요. 1등이 선결제 충전금이면 지급은 선결제 메뉴에서 직접 충전해 주세요.</div>';
     app.innerHTML = html;
   };
 
@@ -9405,7 +9420,7 @@
         }
         case 'draw-coupon-open': {
           var fc = (drawSt.found || []).filter(function(x){ return x.id === id; })[0]; if (!fc) break;
-          drawSt.result = { branch: fc.branch_id || drawSt.b, log_id: fc.id, rank: fc.rank, prize: fc.prize, code: fc.code, drawn_at: fc.drawn_at, status: fc.status, expires_at: fc.expires_at, branch_name: fc.branch, done_at: fc.done_at, phone: drawSt.phone, at: Date.now() };
+          drawSt.result = { branch: fc.branch_id || drawSt.b, log_id: fc.id, rank: fc.rank, prize: fc.prize, code: fc.code, drawn_at: fc.drawn_at, status: fc.status, expires_at: fc.expires_at, branch_name: fc.branch, done_at: fc.done_at, phone: drawSt.phone, kind: fc.kind, at: Date.now() };
           drawGuestSave(drawSt.result); drawSt.stage = 'result'; render(); break;
         }
         case 'draw-coupon-search': {
@@ -9414,6 +9429,12 @@
           drawSt.q = qv; render(); break;
         }
         case 'draw-coupon-clear': drawSt.q = ''; render(); break;
+        case 'draw-redraw': {
+          if (!drawSt.result) break;
+          drawSt.redraw = drawSt.result.log_id; drawSt.result = null;
+          if (drawSt.guest) drawGuestSave(null); else drawPendingSave(null);
+          drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.hunt = null; drawSt.stage = 'method'; render(); break;
+        }
         case 'draw-guest-done': {
           if (!drawSt.result || drawSt.result.status !== 'pending') break;
           if (!confirm('상품을 받으셨나요? 누르면 "수령 완료"로 바뀌고 다시 쓸 수 없어요.')) break;
@@ -9425,7 +9446,7 @@
         case 'draw-guest-refresh': render(); break;
         case 'draw-guest-row': {
           var gr = (drawSt.guestRows || []).filter(function(x){ return x.id === id; })[0]; if (!gr) break;
-          drawSt.result = { branch: drawSt.b, log_id: gr.id, rank: gr.rank, prize: gr.prize, code: gr.code, drawn_at: gr.drawn_at, method: gr.method, fromGuest: true, status: gr.status, expires_at: gr.expires_at, phone_masked: gr.phone_masked, at: Date.now() };
+          drawSt.result = { branch: drawSt.b, log_id: gr.id, rank: gr.rank, prize: gr.prize, code: gr.code, drawn_at: gr.drawn_at, method: gr.method, fromGuest: true, status: gr.status, expires_at: gr.expires_at, phone_masked: gr.phone_masked, kind: gr.kind, at: Date.now() };
           drawSt.stage = 'result'; render(); break;
         }
         case 'draw-pop-print': window.print(); break;
@@ -9447,13 +9468,13 @@
             var slot = cw.querySelector('.claw-slot'); if (slot) slot.innerHTML = '집는 중…';
             var sub = app.querySelector('.gacha-sub'); if (sub) sub.innerHTML = '으쌰… 들어 올리는 중 🤏';
             var wait = function(ms){ return new Promise(function(res){ setTimeout(res, ms); }); };
-            var call = drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('claw', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'claw' });
+            var call = drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('claw', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'claw', p_redraw: drawSt.redraw || null });
             await wait(100); cw.classList.add('down'); await wait(900);
             cw.classList.remove('down'); cw.classList.add('up'); await wait(900);
             cw.classList.add('carry'); await wait(1050);
             var rr = await call;   // 서버가 정한 등수 (저장된 뒤)
-            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'claw', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test };
-            if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);
+            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'claw', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test, kind: rr.kind || drawKind(rr.rank) };
+            if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result); drawSt.redraw = null;
             cw.classList.add('drop'); await wait(700);
             drawSt.claw = 'done'; render();
             setTimeout(function(){ if (drawSt.stage === 'claw' && drawSt.claw === 'done'){ drawSt.stage = 'result'; render(); } }, 1600);
@@ -9469,10 +9490,10 @@
           var g = document.getElementById('gacha'); if (g) g.classList.add('turning');
           el.setAttribute('disabled', '');
           try {
-            var kr = await Promise.all([ drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('capsule', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'capsule' }), new Promise(function(res){ setTimeout(res, 1150); }) ]);
+            var kr = await Promise.all([ drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('capsule', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'capsule', p_redraw: drawSt.redraw || null }), new Promise(function(res){ setTimeout(res, 1150); }) ]);
             var rr = kr[0];
-            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'capsule', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test };
-            if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);
+            drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'capsule', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test, kind: rr.kind || drawKind(rr.rank) };
+            if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result); drawSt.redraw = null;
             drawSt.cap = 'dropped'; drawSt.cond = {}; render();
           } catch(err){ toast(err.message || err); drawSt.cap = 'ready'; render(); }
           finally { drawSt.busy = false; }
@@ -9490,9 +9511,9 @@
           app.querySelectorAll('.dcell').forEach(function(x){ x.disabled = true; });   // 두 번째 터치 막기
           el.classList.add('flip');
           try {
-            var r = drawSt.guest ? await drawCall('draw_guest_pick', drawGuestArgs('board', +id)) : await drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: +id, p_method: 'board' });
-            drawSt.result = { branch: drawSt.b, log_id: r.log_id, rank: r.rank, prize: r.prize, cell: r.cell, method: 'board', code: r.code, drawn_at: r.drawn_at, status: 'pending', at: Date.now(), expires_at: r.expires_at, phone_masked: r.phone_masked, branch_name: r.branch, phone: drawSt.phone, is_test: !!r.is_test };
-            if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result);   // 저장된 뒤에만 결과를 보여 줌
+            var r = drawSt.guest ? await drawCall('draw_guest_pick', drawGuestArgs('board', +id)) : await drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: +id, p_method: 'board', p_redraw: drawSt.redraw || null });
+            drawSt.result = { branch: drawSt.b, log_id: r.log_id, rank: r.rank, prize: r.prize, cell: r.cell, method: 'board', code: r.code, drawn_at: r.drawn_at, status: 'pending', at: Date.now(), expires_at: r.expires_at, phone_masked: r.phone_masked, branch_name: r.branch, phone: drawSt.phone, is_test: !!r.is_test, kind: r.kind || drawKind(r.rank) };
+            if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result); drawSt.redraw = null;   // 저장된 뒤에만 결과를 보여 줌
             drawSt.stage = 'result'; drawSt.cond = {};
             await new Promise(function(res){ setTimeout(res, 650); });
             render();
@@ -9515,9 +9536,9 @@
           drawFinish('취소했어요' + (cr.returned ? ' · 그 알은 판으로 돌아갔어요' : '')); break;
         }
         case 'draw-prizes-save': {
-          var labels = {}; [1,2,3,4,5].forEach(function(k){ labels[k] = (document.getElementById('dp-' + k).value || '').trim(); });
+          var labels = {}; drawRanks().forEach(function(k){ labels[k] = (document.getElementById('dp-' + k).value || '').trim(); });
           var who = document.getElementById('dp-who').value, pin = document.getElementById('dp-pin').value;
-          if (!drawLabelsOk(labels)){ toast('1~5등을 다 채워 주세요'); break; }
+          if (!drawLabelsOk(labels)){ toast('1~' + drawRanks().length + '등을 다 채워 주세요'); break; }
           if (!/^\d{4}$/.test(pin)){ toast('비밀번호 4자리를 넣어 주세요'); break; }
           el.disabled = true;
           try { await drawCall('draw_prizes_set', { p_branch: drawSt.b || pickBranch(current.params, false), p_staff: who, p_pin: pin, p_labels: labels }); toast('상품표를 저장했어요'); drawSt.labels = labels; nav('#/draw' + (isOwner() ? '/' + (drawSt.b || pickBranch(current.params, false)) : '')); }
@@ -9532,17 +9553,18 @@
   function drawMemRpc(T, fn, a){
     if (!T.__draw){
       T.__draw = { boards: {}, logs: [], prizes: {
-        b2: { 1: '식빵(대) + 파운드 + 마들렌', 2: '식빵(대)', 3: '파운드', 4: '휘낭시에', 5: '마들렌' },
-        b1: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '휘낭시에 1개', 4: '파운드 1개', 5: '마들렌 1개' },
-        b3: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '파운드 1개', 4: '휘낭시에 1개', 5: '마들렌 1개' },
-        b4: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '휘낭시에 1개 + 마들렌 1개', 4: '파운드 1개', 5: '마들렌 1개' } } };
+        b2: { 1: '식빵(대) + 파운드 + 마들렌', 2: '식빵(대)', 3: '파운드', 4: '휘낭시에', 5: '마들렌', 6: '맛보기 파운드', 7: '다음 방문 시 1,000원 할인', 8: '한 번 더 뽑기', 9: '다음 방문 시 500원 할인' },
+        b1: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '휘낭시에 1개', 4: '파운드 1개', 5: '마들렌 1개', 6: '맛보기 파운드', 7: '다음 방문 시 1,000원 할인', 8: '한 번 더 뽑기', 9: '다음 방문 시 500원 할인' },
+        b3: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '파운드 1개', 4: '휘낭시에 1개', 5: '마들렌 1개', 6: '맛보기 파운드', 7: '다음 방문 시 1,000원 할인', 8: '한 번 더 뽑기', 9: '다음 방문 시 500원 할인' },
+        b4: { 1: '선결제 충전금 30,000원', 2: '러스크 1봉', 3: '휘낭시에 1개 + 마들렌 1개', 4: '파운드 1개', 5: '마들렌 1개', 6: '맛보기 파운드', 7: '다음 방문 시 1,000원 할인', 8: '한 번 더 뽑기', 9: '다음 방문 시 500원 할인' } } };
+      T.__draw.kinds = DRAW_KINDS.slice();
     }
     var D = T.__draw;
-    function board(b){ var x = D.boards[b]; if (!x || x.closed){ x = D.boards[b] = { id: uid(), seq: x ? x.seq + 1 : 1, remaining: [1, 3, 16, 100, 400], taken: [], closed: false }; } return x; }
+    function board(b){ var x = D.boards[b]; if (!x || x.closed){ x = D.boards[b] = { id: uid(), seq: x ? x.seq + 1 : 1, remaining: [1, 3, 16, 60, 120, 80, 60, 60, 120], taken: [], closed: false }; } return x; }
     function findLog(id){ return D.logs.filter(function(x){ return x.id === id; })[0]; }
     var bd, lg;
     switch (fn){
-      case 'draw_prizes_get': return { ok: true, labels: D.prizes[a.p_branch] || {}, links: (D.links || {})[a.p_branch] || { naver: 'https://naver.me/example', google: 'https://g.page/r/example/review' } };
+      case 'draw_prizes_get': { var tdy = new Date().toDateString(), used = D.logs.filter(function(x){ return x.branch_id === a.p_branch && x.status !== 'cancelled' && !x.redraw_of && new Date(x.drawn_at).toDateString() === tdy; }).length; return { ok: true, kinds: D.kinds, counts: [1, 3, 16, 60, 120, 80, 60, 60, 120], daily_limit: 20, today_left: Math.max(0, 20 - used), labels: D.prizes[a.p_branch] || {}, links: (D.links || {})[a.p_branch] || { naver: 'https://naver.me/example', google: 'https://g.page/r/example/review' } }; }
       case 'draw_prizes_set': {
         var s = (T.manual_staff || []).filter(function(x){ return x.id === a.p_staff; })[0];
         if (!s || ['manager', 'owner'].indexOf(s.role) < 0) return { ok: false, error: '매니저나 사장님만 바꿀 수 있어요' };
@@ -9557,29 +9579,30 @@
         if (cell == null){ var free = []; for (var fi = 0; fi < 520; fi++) if (bd.taken.indexOf(fi) < 0) free.push(fi); cell = free[Math.floor(Math.random() * free.length)]; }
         else if (bd.taken.indexOf(cell) >= 0) return { ok: false, error: '이미 뽑힌 칸이에요. 다른 칸을 눌러 주세요' };
         a = Object.assign({}, a, { p_cell: cell });
-        var total = bd.remaining.reduce(function(x, y){ return x + y; }, 0), pick = Math.floor(Math.random() * total) + 1, acc = 0, r = 5;
-        for (var i = 0; i < 5; i++){ acc += bd.remaining[i]; if (pick <= acc){ r = i + 1; break; } }
+        if (a.p_redraw){ var rdl = findLog(a.p_redraw); if (!rdl || rdl.prize_kind !== 'redraw') return { ok: false, error: '한 번 더 뽑기 기록을 못 찾았어요' }; if (rdl.status !== 'pending') return { ok: false, error: '이미 쓴 "한 번 더 뽑기"예요' }; rdl.status = 'given'; rdl.done_at = new Date().toISOString(); rdl.done_by = 'redraw'; }
+        var nr = bd.remaining.length, total = bd.remaining.reduce(function(x, y){ return x + y; }, 0), pick = Math.floor(Math.random() * total) + 1, acc = 0, r = nr;
+        for (var i = 0; i < nr; i++){ acc += bd.remaining[i]; if (pick <= acc){ r = i + 1; break; } }
         bd.remaining[r - 1]--; bd.taken.push(a.p_cell);
-        lg = { id: uid(), board_id: bd.id, branch_id: a.p_branch, cell: a.p_cell, rank: r, prize_label: D.prizes[a.p_branch][r], status: 'pending', method: a.p_method || 'board', drawn_at: new Date().toISOString() };
+        lg = { id: uid(), board_id: bd.id, branch_id: a.p_branch, cell: a.p_cell, rank: r, prize_label: D.prizes[a.p_branch][r], prize_kind: D.kinds[r - 1] || 'instant', redraw_of: a.p_redraw || null, status: 'pending', method: a.p_method || 'board', drawn_at: new Date().toISOString() };
         D.logs.push(lg); if (total - 1 <= 0) bd.closed = true;
-        return { ok: true, log_id: lg.id, rank: r, prize: lg.prize_label, cell: a.p_cell, method: lg.method };
+        return { ok: true, log_id: lg.id, rank: r, prize: lg.prize_label, kind: lg.prize_kind, cell: a.p_cell, method: lg.method };
       }
       case 'draw_done': lg = findLog(a.p_log); if (!lg) return { ok: false, error: '뽑기 기록을 못 찾았어요' }; lg.status = a.p_status; lg.substitute = a.p_substitute || null; lg.done_at = new Date().toISOString(); return { ok: true };
       case 'draw_guest_pick': {
         var today = new Date().toDateString(), phd = String(a.p_phone || '').replace(/\D/g, '');
         if (!/^01[0-9]{8,9}$/.test(phd)) return { ok: false, error: '휴대폰 번호를 다시 확인해 주세요 (예: 010-1234-5678)' };
         if (!a.p_consent) return { ok: false, error: '개인정보 수집·이용에 동의해야 참여할 수 있어요' };
-        if (D.logs.some(function(x){ return x.source === 'guest' && (x.phone === phd || x.device_id === a.p_device) && new Date(x.drawn_at).toDateString() === today && x.status !== 'cancelled'; })) return { ok: false, error: '오늘은 이미 뽑았어요 😊 내일 또 와 주세요' };
-        var gres = drawMemRpc(T, 'draw_pick', { p_branch: a.p_branch, p_staff: 'k1', p_cell: a.p_cell == null ? null : a.p_cell, p_method: a.p_method });
+        if (!a.p_redraw && D.logs.some(function(x){ return x.source === 'guest' && !x.redraw_of && (x.phone === phd || x.device_id === a.p_device) && new Date(x.drawn_at).toDateString() === today && x.status !== 'cancelled'; })) return { ok: false, error: '오늘은 이미 뽑았어요 😊 내일 또 와 주세요' };
+        var gres = drawMemRpc(T, 'draw_pick', { p_branch: a.p_branch, p_staff: 'k1', p_cell: a.p_cell == null ? null : a.p_cell, p_method: a.p_method, p_redraw: a.p_redraw || null });
         if (!gres.ok) return gres;
-        var glog = findLog(gres.log_id); glog.source = 'guest'; glog.device_id = a.p_device; glog.phone = phd; glog.marketing_ok = !!a.p_marketing; glog.review_source = a.p_review || null; glog.coupon_expires_at = (function(){ var d = new Date(); d.setHours(24, 0, 0, 0); return d.toISOString(); })(); glog.confirm_code = Array.apply(null, Array(4)).map(function(){ return 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]; }).join('');
-        return Object.assign(gres, { code: glog.confirm_code, drawn_at: glog.drawn_at, expires_at: glog.coupon_expires_at, phone_masked: phd.slice(0, 3) + '-****-' + phd.slice(7), branch: branchName(a.p_branch) });
+        var glog = findLog(gres.log_id); glog.source = 'guest'; glog.device_id = a.p_device; glog.phone = phd; glog.marketing_ok = !!a.p_marketing; glog.review_source = a.p_review || null; glog.coupon_expires_at = (function(){ var d = new Date(); if (glog.prize_kind === 'coupon') d.setDate(d.getDate() + 21); else d.setHours(24, 0, 0, 0); return d.toISOString(); })(); glog.confirm_code = Array.apply(null, Array(4)).map(function(){ return 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]; }).join('');
+        return Object.assign(gres, { code: glog.confirm_code, kind: glog.prize_kind, drawn_at: glog.drawn_at, expires_at: glog.coupon_expires_at, phone_masked: phd.slice(0, 3) + '-****-' + phd.slice(7), branch: branchName(a.p_branch) });
       }
       case 'draw_guest_done': lg = findLog(a.p_log); if (!lg) return { ok: false, error: '기록을 못 찾았어요' }; if (lg.status === 'pending'){ lg.status = 'given'; lg.done_at = new Date().toISOString(); lg.done_by = 'guest'; } return { ok: true, status: lg.status, done_at: lg.done_at };
-      case 'draw_guest_status': lg = findLog(a.p_log); return lg ? { ok: true, status: lg.status, rank: lg.rank, prize: lg.prize_label, code: lg.confirm_code, drawn_at: lg.drawn_at, substitute: lg.substitute || null, expires_at: lg.coupon_expires_at, branch: branchName(lg.branch_id), branch_id: lg.branch_id, done_at: lg.done_at || null } : { ok: false, error: '기록을 못 찾았어요' };
-      case 'draw_coupon_find': { var fph = String(a.p_phone || '').replace(/\D/g, ''); return { ok: true, rows: D.logs.filter(function(x){ return x.source === 'guest' && x.phone === fph; }).map(function(x){ return { id: x.id, code: x.confirm_code, rank: x.rank, prize: x.prize_label, status: x.status, drawn_at: x.drawn_at, expires_at: x.coupon_expires_at, branch: branchName(x.branch_id), branch_id: x.branch_id, done_at: x.done_at || null }; }).reverse() }; }
-      case 'draw_coupon_lookup': { var qq = String(a.p_q || '').trim().toUpperCase(), qd = qq.replace(/\D/g, ''); return { ok: true, rows: D.logs.filter(function(x){ return x.branch_id === a.p_branch && x.source === 'guest' && (x.status === 'pending' || x.status === 'expired') && (x.confirm_code === qq || (qd.length >= 4 && x.phone && x.phone.slice(-qd.length) === qd)); }).map(function(x){ return { id: x.id, code: x.confirm_code, rank: x.rank, prize: x.prize_label, status: x.status, method: x.method, drawn_at: x.drawn_at, expires_at: x.coupon_expires_at, phone_masked: x.phone ? x.phone.slice(0, 3) + '-****-' + x.phone.slice(7) : null }; }).reverse() }; }
-      case 'draw_guest_pending': return { ok: true, rows: D.logs.filter(function(x){ return x.branch_id === a.p_branch && x.source === 'guest' && x.status === 'pending'; }).map(function(x){ return { id: x.id, code: x.confirm_code, rank: x.rank, prize: x.prize_label, status: x.status, method: x.method, drawn_at: x.drawn_at, expires_at: x.coupon_expires_at, phone_masked: x.phone ? x.phone.slice(0, 3) + '-****-' + x.phone.slice(7) : null }; }).reverse() };
+      case 'draw_guest_status': lg = findLog(a.p_log); return lg ? { ok: true, status: lg.status, rank: lg.rank, prize: lg.prize_label, kind: lg.prize_kind, code: lg.confirm_code, drawn_at: lg.drawn_at, substitute: lg.substitute || null, expires_at: lg.coupon_expires_at, branch: branchName(lg.branch_id), branch_id: lg.branch_id, done_at: lg.done_at || null } : { ok: false, error: '기록을 못 찾았어요' };
+      case 'draw_coupon_find': { var fph = String(a.p_phone || '').replace(/\D/g, ''); return { ok: true, rows: D.logs.filter(function(x){ return x.source === 'guest' && x.phone === fph; }).map(function(x){ return { id: x.id, code: x.confirm_code, rank: x.rank, prize: x.prize_label, kind: x.prize_kind, status: x.status, drawn_at: x.drawn_at, expires_at: x.coupon_expires_at, branch: branchName(x.branch_id), branch_id: x.branch_id, done_at: x.done_at || null }; }).reverse() }; }
+      case 'draw_coupon_lookup': { var qq = String(a.p_q || '').trim().toUpperCase(), qd = qq.replace(/\D/g, ''); return { ok: true, rows: D.logs.filter(function(x){ return x.branch_id === a.p_branch && x.source === 'guest' && (x.status === 'pending' || x.status === 'expired') && (x.confirm_code === qq || (qd.length >= 4 && x.phone && x.phone.slice(-qd.length) === qd)); }).map(function(x){ return { id: x.id, code: x.confirm_code, rank: x.rank, prize: x.prize_label, kind: x.prize_kind, status: x.status, method: x.method, drawn_at: x.drawn_at, expires_at: x.coupon_expires_at, phone_masked: x.phone ? x.phone.slice(0, 3) + '-****-' + x.phone.slice(7) : null }; }).reverse() }; }
+      case 'draw_guest_pending': return { ok: true, rows: D.logs.filter(function(x){ return x.branch_id === a.p_branch && x.source === 'guest' && x.status === 'pending'; }).map(function(x){ return { id: x.id, code: x.confirm_code, rank: x.rank, prize: x.prize_label, kind: x.prize_kind, status: x.status, method: x.method, drawn_at: x.drawn_at, expires_at: x.coupon_expires_at, phone_masked: x.phone ? x.phone.slice(0, 3) + '-****-' + x.phone.slice(7) : null }; }).reverse() };
       case 'draw_cancel': {
         var codes = (T.__pp && T.__pp.codes) || { b1: '111111', b2: '222222', b3: '333333', b4: '444444' };
         if (a.p_code !== '000000' && a.p_code !== codes[a.p_branch]) return { ok: false, error: '선결제 코드가 틀려요 (시연: 매장 코드 또는 000000)' };
