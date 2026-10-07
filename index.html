@@ -9222,11 +9222,14 @@
       return url ? '<a class="btn' + (on ? ' primary' : '') + '" href="' + esc(url) + '" target="_blank" rel="noopener" data-act="draw-platform" data-id="' + p[0] + '">' + inner + '</a>'
                  : '<button class="btn' + (on ? ' primary' : '') + '" data-act="draw-platform" data-id="' + p[0] + '">' + inner + '</button>';
     }).join('');
-    return '<div class="dboard-head"><div class="dboard-title">✍️ 어디에 리뷰를 쓸까요?</div><div>' + esc(bname) + ' · 하나를 고르면 그 리뷰 쓰기 화면이 열려요</div><div class="muted" style="font-size:12px">리뷰를 쓰고 나서 <b>이 화면으로 돌아오면</b> 이어서 뽑기할 수 있어요</div></div>'
-      + '<div class="dmethod">' + btns + '</div>'
+    var lim = drawSt.dailyLimit || 20, left = drawSt.todayLeft;
+    return '<div class="dboard-head" style="padding-bottom:4px"><div class="dboard-title">🎁 리뷰 쓰고 빵 뽑기</div><div>' + esc(bname) + ' · <b style="color:var(--accent)">100% 당첨</b> · 하루 ' + lim + '명 한정' + (left != null ? ' · 오늘 남은 자리 <b style="color:var(--accent);font-size:18px">' + left + '</b>명' : '') + '</div></div>'
+      + '<div class="card" style="padding:12px 14px;margin:6px 8px 0"><div style="font-weight:700;font-size:16px">✍️ 1. 어디에 리뷰를 쓸까요? <span class="muted" style="font-weight:400;font-size:13px">누르면 그 앱이 열려요</span></div><div class="muted" style="font-size:12px;margin-top:2px">별점 ★5(별점 있는 곳) · 사진 1장 이상 · 저장까지! 쓰고 나서 <b>이 화면으로 돌아오면</b> 이어서 뽑기</div></div>'
+      + '<div class="dmethod" style="margin-top:8px">' + btns + '</div>'
       + (cur ? '<div class="card" style="padding:14px;margin:0 8px"><div style="font-size:15px"><b>' + esc(drawPlatformName(cur)) + '</b>에 쓰기로 했어요 ' + (links[cur] ? '<span class="muted">(새 창에서 열렸어요. 안 열렸으면 위 버튼을 다시 눌러 주세요)</span>' : '') + '</div>'
-          + '<button class="btn primary block" style="margin-top:10px;padding:16px;font-size:18px" data-act="draw-platform-next">리뷰 다 썼어요 → 다음</button></div>' : '')
-      + '<div class="stickybar"><button class="btn block" data-act="draw-abort">‹ 돌아가기</button></div>';
+          + '<button class="btn primary block" style="margin-top:10px;padding:16px;font-size:18px" data-act="draw-platform-next">2. 리뷰 다 썼어요 → 번호 넣고 뽑기</button></div>' : '<div class="muted" style="text-align:center;font-size:13px;margin:4px 8px">리뷰를 쓴 뒤 → 번호 넣기 → 뽑기 → 결과 화면 보여 주고 <b>바로 받기!</b></div>')
+      + '<div class="card" style="padding:14px;margin:8px 8px 90px"><div class="rtitle" style="margin-bottom:4px">' + esc(bname) + ' 상품</div>' + drawPrizeList(drawSt.labels) + '</div>'
+      + '<div class="stickybar"><button class="btn block" data-act="draw-find">🎟️ 내 쿠폰 찾기 (번호로)</button></div>';
   }
   function drawPhoneHtml(bname){
     var sc = drawSt.sc || {}, pf = drawSt.review || '', star = !!DRAW_STAR_PLATFORMS[pf];
@@ -9246,7 +9249,7 @@
     var rows = drawSt.found || null;
     var h = '<div class="card" style="padding:16px;margin-top:10px"><div class="rtitle" style="margin-bottom:2px">🎟️ 내 쿠폰 찾기</div><div class="muted" style="font-size:13px">뽑기할 때 넣은 휴대폰 번호로 찾아요.</div>'
       + '<input class="in" id="dg-find" type="tel" inputmode="numeric" placeholder="010-1234-5678" value="' + esc(drawPhoneFmt(drawSt.phone || drawSavedPhone())) + '" style="margin-top:10px;font-size:20px;text-align:center">'
-      + '<button class="btn primary block" style="margin-top:8px" data-act="draw-coupon-find">찾기</button><button class="btn block" style="margin-top:8px" data-act="draw-abort">‹ 돌아가기</button></div>';
+      + '<button class="btn primary block" style="margin-top:8px" data-act="draw-coupon-find">찾기</button><button class="btn block" style="margin-top:8px" data-act="draw-abort">‹ 뽑기 화면으로</button></div>';
     if (rows) h += '<div class="card" style="padding:14px">' + (rows.length ? rows.map(function(c){ return '<div class="row" data-act="draw-coupon-open" data-id="' + esc(c.id) + '" style="cursor:pointer"><div class="tile" style="background:var(--tile-yellow)">' + DRAW_RANK_EMOJI[c.rank] + '</div><div class="rt"><div class="rtitle">' + c.rank + '등 ' + esc(c.prize || '') + '</div><div class="rsub">' + esc(c.branch || '') + ' · ' + (c.status === 'pending' ? '<b style="color:var(--accent)">' + (c.kind === 'coupon' ? '쿠폰 사용 가능' : c.kind === 'redraw' ? '한 번 더 뽑기 가능' : '수령 전') + '</b> · ' + drawDateK(c.expires_at) + '까지' : c.status === 'expired' ? '기한 지남' : '수령 완료') + '</div></div><div class="chev">›</div></div>'; }).join('') : '<div class="muted">이 번호로 뽑은 기록이 없어요.</div>') + '</div>';
     return h;
   }
@@ -9456,6 +9459,7 @@
     if (drawSt.stage === 'find'){ app.innerHTML = html + drawFindHtml(bname); return; }
     if (drawSt.stage === 'result'){ app.innerHTML = html + drawGuestResultHtml(bname); drawGuestPoll(); drawCelebrate(drawSt.result); return; }
     var soldOut = drawSt.todayLeft != null && drawSt.todayLeft <= 0;
+    if (!soldOut){ drawSt.stage = 'platform'; app.innerHTML = html + drawPlatformHtml(bname); return; }
     html += '<div class="card" style="padding:16px;margin-top:10px;text-align:center"><div style="font:700 26px var(--font-serif);color:var(--accent)">🎁 리뷰 쓰고 빵 뽑기</div><div class="muted" style="margin-top:4px">' + esc(bname) + '</div>'
       + '<div style="margin-top:10px;display:inline-block;padding:8px 14px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:15px">✨ 100% 당첨 · 하루 ' + (drawSt.dailyLimit || 20) + '명 한정</div>'
       + (drawSt.todayLeft != null ? '<div style="margin-top:6px;font-size:15px">' + (soldOut ? '<b style="color:var(--danger)">오늘 ' + (drawSt.dailyLimit || 20) + '명이 다 찼어요 😢</b> 내일 또 와 주세요' : '오늘 남은 자리 <b style="font-size:22px;color:var(--accent)">' + drawSt.todayLeft + '</b>명') + '</div>' : '')
