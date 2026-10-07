@@ -99,7 +99,7 @@ grant execute on function draw_guest_pick(uuid, text, text, int, text, boolean, 
 -- 씨앗: 사장님이 알려 준 링크 (왕십리점 티맵, 2026-10-07). 나머지는 사장님 앱 → 리뷰 뽑기 → [리뷰 링크]에서 입력
 update draw_prizes set review_links = coalesce(review_links, '{}'::jsonb) || '{"tmap":"https://tmap.life/f7fa15d6"}'::jsonb, updated_at = now()
 where branch_id = (select id from manual_branches where name = '왕십리점') and coalesce(review_links ->> 'tmap', '') = '';
-update draw_prizes set review_links = coalesce(review_links, '{}'::jsonb) || '{"google":"https://g.page/r/Ca2IswjN14e0EAE/review"}'::jsonb, updated_at = now()
+update draw_prizes set review_links = coalesce(review_links, '{}'::jsonb) || '{"google":"https://share.google/O0IIiYCcBSthbTYB5"}'::jsonb, updated_at = now()
 where branch_id = (select id from manual_branches where name = '왕십리점');
 update draw_prizes set review_links = coalesce(review_links, '{}'::jsonb) || '{"kakao":"https://place.map.kakao.com/197855372"}'::jsonb, updated_at = now()
 where branch_id = (select id from manual_branches where name = '왕십리점') and coalesce(review_links ->> 'kakao', '') = '';
