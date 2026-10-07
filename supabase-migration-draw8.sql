@@ -95,3 +95,7 @@ end $$;
 
 revoke all on function draw__pick_core(uuid, int, text, uuid, text, text, text, text, boolean, text) from public, anon, authenticated;
 grant execute on function draw_guest_pick(uuid, text, text, int, text, boolean, boolean, text), draw_prizes_get(uuid) to anon, authenticated;
+
+-- 씨앗: 사장님이 알려 준 링크 (왕십리점 티맵, 2026-10-07). 나머지는 사장님 앱 → 리뷰 뽑기 → [리뷰 링크]에서 입력
+update draw_prizes set review_links = coalesce(review_links, '{}'::jsonb) || '{"tmap":"https://tmap.life/f7fa15d6"}'::jsonb, updated_at = now()
+where branch_id = (select id from manual_branches where name = '왕십리점') and coalesce(review_links ->> 'tmap', '') = '';
