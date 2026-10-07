@@ -239,6 +239,25 @@
   .hunt-timer{ position:relative; height:26px; margin:4px 12px 8px; background:var(--surface-sunken); border-radius:999px; overflow:hidden; border:1px solid var(--line-strong); }
   .hunt-bar{ position:absolute; left:0; top:0; bottom:0; width:100%; background:linear-gradient(90deg, #9ee37d, #ffd84d 60%, #ff8fa3); transition:width .25s linear; }
   .hunt-timer span{ position:absolute; left:0; right:0; top:0; line-height:24px; text-align:center; font-weight:700; font-size:14px; color:#231717; }
+  /* 당첨 축하: 빵 비 + 폭죽 */
+  .celebrate{ position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:50; }
+  .rain-item{ position:absolute; top:-80px; width:52px; height:52px; animation:rainfall linear forwards; }
+  .rain-item > span{ display:block; width:100%; height:100%; animation:rainsway ease-in-out infinite alternate; font-size:40px; line-height:52px; text-align:center; }
+  .rain-item img{ width:100%; height:100%; object-fit:cover; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,.18); background:#fff; }
+  @keyframes rainfall{ 0%{ transform:translateY(0) rotate(-8deg); opacity:0;} 6%{ opacity:1;} 100%{ transform:translateY(115vh) rotate(10deg); opacity:1;} }
+  @keyframes rainsway{ from{ transform:translateX(-22px) rotate(-10deg);} to{ transform:translateX(22px) rotate(10deg);} }
+  .confetti{ position:absolute; width:9px; height:14px; border-radius:2px; animation:confetti-fall linear forwards; top:-20px; }
+  @keyframes confetti-fall{ 0%{ transform:translate3d(0,0,0) rotate(0deg); opacity:1;} 100%{ transform:translate3d(var(--dx), 110vh, 0) rotate(1080deg); opacity:.9;} }
+  .burst{ position:absolute; left:50%; top:34%; width:0; height:0; }
+  .burst i{ position:absolute; left:0; top:0; width:10px; height:10px; border-radius:50%; animation:burst .9s ease-out forwards; }
+  @keyframes burst{ 0%{ transform:translate(0,0) scale(1); opacity:1;} 100%{ transform:translate(var(--bx), var(--by)) scale(.3); opacity:0;} }
+  .celebrate-text{ position:absolute; left:0; right:0; top:22%; text-align:center; font:700 34px var(--font-serif); color:var(--accent); text-shadow:0 2px 0 #fff, 0 0 18px rgba(255,255,255,.9); animation:dpop .6s ease-out; }
+  /* 시작 카운트다운 */
+  .countdown{ position:fixed; inset:0; z-index:60; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(255,253,253,.82); backdrop-filter:blur(2px); }
+  .countdown .num{ font:700 120px/1 var(--font-serif); color:var(--accent); animation:cdpop .9s ease-out; text-shadow:0 4px 0 #fff, 0 0 30px rgba(175,76,96,.25); }
+  .countdown .num.go{ font-size:64px; }
+  .countdown .lbl{ margin-top:14px; font-size:16px; color:var(--ink-soft); }
+  @keyframes cdpop{ 0%{ transform:scale(2.2); opacity:0;} 35%{ transform:scale(1); opacity:1;} 100%{ transform:scale(.9); opacity:.9;} }
   /* 빵 찾기 퀴즈 */
   .quiz-target{ text-align:center; margin:4px 12px 8px; padding:10px 12px; background:var(--surface); border:2px solid var(--accent); border-radius:var(--radius-m); font:700 22px var(--font-serif); color:var(--accent); }
   .quiz-target small{ display:block; font:400 13px var(--font-sans); color:var(--ink-soft); margin-top:2px; }
@@ -9153,9 +9172,9 @@
     if (drawSt.stage === 'method'){ app.innerHTML = html + drawMethodHtml(bname); return; }
     if (drawSt.stage === 'capsule'){ app.innerHTML = html + drawCapsuleHtml(bname); return; }
     if (drawSt.stage === 'claw'){ app.innerHTML = html + drawClawHtml(bname); return; }
-    if (drawSt.stage === 'hunt'){ app.innerHTML = html + drawHuntHtml(bname); drawHuntStart(); return; }
-    if (drawSt.stage === 'quiz'){ app.innerHTML = html + drawQuizHtml(bname); drawQuizStart(); return; }
-    if (drawSt.stage === 'result'){ app.innerHTML = html + drawResultHtml(bname); return; }
+    if (drawSt.stage === 'hunt'){ app.innerHTML = html + drawHuntHtml(bname); drawCountdown(5, drawHuntStart, '변장한 소금이들 사이에서 진짜를!'); return; }
+    if (drawSt.stage === 'quiz'){ app.innerHTML = html + drawQuizHtml(bname); drawCountdown(drawSt.quiz && drawSt.quiz.tries ? 3 : 5, drawQuizStart, '「' + drawSt.quiz.target.n + '」을(를) 찾을 준비!'); return; }
+    if (drawSt.stage === 'result'){ app.innerHTML = html + drawResultHtml(bname); if (!drawSt.result.fromGuest) drawCelebrate(drawSt.result); return; }
 
     var allChecked = DRAW_CONDS.every(function(c){ return drawSt.cond[c[0]]; });
     html += '<div class="card" style="padding:14px;margin-top:10px"><div class="rtitle" style="margin-bottom:4px">' + esc(bname) + ' · 손님 리뷰 확인</div>'
@@ -9309,6 +9328,23 @@
     } catch(err){ toast(err.message || err); drawSt.quiz = null; drawSt.stage = 'method'; render(); }
     finally { drawSt.busy = false; }
   }
+  // 시작 전 긴장감: 5·4·3·2·1 → 시작! (두 번째 기회는 3부터)
+  var cdTimer = null;
+  function drawCountdown(n, cb, label){
+    if (cdTimer){ clearInterval(cdTimer); cdTimer = null; }
+    var old = document.querySelector('.countdown'); if (old) old.remove();
+    if (!n){ drawSt.countdown = false; cb(); return; }
+    drawSt.countdown = true;
+    var el = document.createElement('div'); el.className = 'countdown'; document.body.appendChild(el);
+    var k = n, stage = drawSt.stage;
+    function show(){ el.innerHTML = k > 0 ? '<div class="num">' + k + '</div><div class="lbl">' + esc(label || '준비하세요…') + '</div>' : '<div class="num go">시작! 🔥</div>'; }
+    show();
+    cdTimer = setInterval(function(){
+      if (drawSt.stage !== stage){ clearInterval(cdTimer); cdTimer = null; el.remove(); drawSt.countdown = false; return; }
+      k--; show();
+      if (k < 0){ clearInterval(cdTimer); cdTimer = null; el.remove(); drawSt.countdown = false; cb(); }
+    }, 1000);
+  }
   function drawHuntStop(){ if (huntTimer){ clearInterval(huntTimer); huntTimer = null; } }
   function drawHuntStart(){
     drawHuntStop(); var hs = drawSt.hunt; if (!hs || hs.done) return;
@@ -9333,6 +9369,31 @@
       drawSt.cond = {}; drawSt.stage = 'result'; render();
     } catch(err){ toast(err.message || err); drawSt.hunt = null; drawSt.stage = 'method'; render(); }
     finally { drawSt.busy = false; }
+  }
+  // 당첨 축하 연출: 당첨 빵이 비처럼 떨어지고 폭죽이 터짐 (결과가 처음 뜰 때 한 번)
+  var CELEB_COLORS = ['#af4c60', '#ffe1e3', '#ffd84d', '#ff8fa3', '#fff', '#e1c6c7', '#f7b267'];
+  function drawPrizeImage(label){
+    var L = String(label || '');
+    var hit = QUIZ_BREADS.filter(function(b){ var key = b.n.replace(/\s/g, ''); return L.replace(/\s/g, '').indexOf(key) >= 0; }).sort(function(a, b){ return b.n.length - a.n.length; })[0];
+    if (hit) return 'assets/breads/' + hit.f;
+    var kw = [['마들렌', 'madeleine.jpg'], ['휘낭시에', 'choco-financier.jpg'], ['파운드', 'pound-slice.jpg'], ['소금빵', 'salt-bread.jpg'], ['앙버터', 'angbutter.jpg'], ['프레첼', 'pretzel.jpg'], ['카스테라', 'castella.jpg'], ['식빵', null], ['러스크', null]];
+    for (var i = 0; i < kw.length; i++) if (L.indexOf(kw[i][0]) >= 0) return kw[i][1] ? 'assets/breads/' + kw[i][1] : null;
+    return null;
+  }
+  function drawCelebrate(r){
+    if (!r || drawSt.celebrated === r.log_id || (r.status && r.status !== 'pending')) return;
+    drawSt.celebrated = r.log_id;
+    var old = document.querySelector('.celebrate'); if (old) old.remove();
+    var kd = r.kind || drawKind(r.rank), img = drawPrizeImage(r.prize || drawSt.labels[r.rank]), emo = kd === 'redraw' ? '🔁' : kd === 'coupon' ? '🎟️' : (DRAW_RANK_EMOJI[r.rank] || '🎁');
+    var el = document.createElement('div'); el.className = 'celebrate'; var h = '';
+    // 폭죽 (가운데서 터짐)
+    h += '<div class="burst">'; for (var i = 0; i < 36; i++){ var ang = (i / 36) * Math.PI * 2, dist = 90 + Math.random() * 120; h += '<i style="background:' + CELEB_COLORS[i % CELEB_COLORS.length] + ';--bx:' + Math.round(Math.cos(ang) * dist) + 'px;--by:' + Math.round(Math.sin(ang) * dist) + 'px;animation-delay:' + (Math.random() * .15) + 's"></i>'; } h += '</div>';
+    // 색종이
+    for (var c = 0; c < 70; c++){ h += '<div class="confetti" style="left:' + (Math.random() * 100) + '%;background:' + CELEB_COLORS[c % CELEB_COLORS.length] + ';--dx:' + Math.round((Math.random() - .5) * 160) + 'px;animation-duration:' + (2.6 + Math.random() * 2.2) + 's;animation-delay:' + (Math.random() * 1.2) + 's;width:' + (6 + Math.random() * 6) + 'px"></div>'; }
+    // 빵 비
+    for (var k = 0; k < 22; k++){ h += '<div class="rain-item" style="left:' + (2 + Math.random() * 90) + '%;animation-duration:' + (3 + Math.random() * 2.5) + 's;animation-delay:' + (Math.random() * 2.2) + 's;width:' + (40 + Math.random() * 28) + 'px;height:' + (40 + Math.random() * 28) + 'px"><span style="animation-duration:' + (.7 + Math.random() * .8) + 's">' + (img ? '<img src="' + img + '" alt="">' : emo) + '</span></div>'; }
+    el.innerHTML = h; document.body.appendChild(el);
+    setTimeout(function(){ if (el.parentNode) el.remove(); }, 6500);
   }
   function drawGuestResultHtml(bname){
     var r = drawSt.result, st = r.status || 'pending', kd = r.kind || drawKind(r.rank);
@@ -9388,12 +9449,12 @@
     if (drawSt.stage === 'method'){ app.innerHTML = html + drawMethodHtml(bname); return; }
     if (drawSt.stage === 'capsule'){ app.innerHTML = html + drawCapsuleHtml(bname); return; }
     if (drawSt.stage === 'claw'){ app.innerHTML = html + drawClawHtml(bname); return; }
-    if (drawSt.stage === 'hunt'){ app.innerHTML = html + drawHuntHtml(bname); drawHuntStart(); return; }
-    if (drawSt.stage === 'quiz'){ app.innerHTML = html + drawQuizHtml(bname); drawQuizStart(); return; }
+    if (drawSt.stage === 'hunt'){ app.innerHTML = html + drawHuntHtml(bname); drawCountdown(5, drawHuntStart, '변장한 소금이들 사이에서 진짜를!'); return; }
+    if (drawSt.stage === 'quiz'){ app.innerHTML = html + drawQuizHtml(bname); drawCountdown(drawSt.quiz && drawSt.quiz.tries ? 3 : 5, drawQuizStart, '「' + drawSt.quiz.target.n + '」을(를) 찾을 준비!'); return; }
     if (drawSt.stage === 'platform'){ app.innerHTML = html + drawPlatformHtml(bname); return; }
     if (drawSt.stage === 'phone'){ app.innerHTML = html + drawPhoneHtml(bname); var pi = document.getElementById('dg-phone'); if (pi && !pi.value) pi.focus(); return; }
     if (drawSt.stage === 'find'){ app.innerHTML = html + drawFindHtml(bname); return; }
-    if (drawSt.stage === 'result'){ app.innerHTML = html + drawGuestResultHtml(bname); drawGuestPoll(); return; }
+    if (drawSt.stage === 'result'){ app.innerHTML = html + drawGuestResultHtml(bname); drawGuestPoll(); drawCelebrate(drawSt.result); return; }
     var soldOut = drawSt.todayLeft != null && drawSt.todayLeft <= 0;
     html += '<div class="card" style="padding:16px;margin-top:10px;text-align:center"><div style="font:700 26px var(--font-serif);color:var(--accent)">🎁 리뷰 쓰고 빵 뽑기</div><div class="muted" style="margin-top:4px">' + esc(bname) + '</div>'
       + '<div style="margin-top:10px;display:inline-block;padding:8px 14px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:15px">✨ 100% 당첨 · 하루 ' + (drawSt.dailyLimit || 20) + '명 한정</div>'
@@ -9514,12 +9575,12 @@
         case 'draw-pop-print': window.print(); break;
         case 'draw-method': drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.hunt = null; drawSt.quiz = null; drawSt.stage = id === 'capsule' ? 'capsule' : id === 'claw' ? 'claw' : id === 'hunt' ? 'hunt' : id === 'quiz' ? 'quiz' : 'board'; render(); break;
         case 'draw-quiz-tap': {
-          var qz = drawSt.quiz; if (!qz || qz.done || drawSt.busy) break;
+          var qz = drawSt.quiz; if (!qz || qz.done || drawSt.busy || drawSt.countdown) break;
           if (qz.cells[+id] === qz.target) drawQuizFinish(true); else { el.classList.remove('miss'); void el.offsetWidth; el.classList.add('miss'); el.disabled = true; setTimeout(function(){ drawQuizMiss(false); }, 500); }
           break;
         }
         case 'draw-hunt-tap': {
-          var hh = drawSt.hunt; if (!hh || hh.done || drawSt.busy) break;
+          var hh = drawSt.hunt; if (!hh || hh.done || drawSt.busy || drawSt.countdown) break;
           if (+id === hh.target) drawHuntFinish(true); else { el.classList.remove('miss'); void el.offsetWidth; el.classList.add('miss'); }
           break;
         }
