@@ -8879,13 +8879,13 @@
     // 상태 + 할 일
     html += '<div class="card" style="padding:14px 16px"><div class="inline" style="justify-content:space-between"><b style="font-size:18px">' + won(shown.total) + '원</b>' + vdStatusBadge(st) + '</div>';
     if (!st){
-      html += '<div class="muted" style="margin-top:6px">① 아래 버튼으로 이미지나 PDF를 카톡으로 보내고 ② [보냈어요]를 누르면 금액이 고정돼요.</div>';
-      html += '<div class="inline" style="margin-top:10px"><button class="btn primary" data-act="vd-share" data-id="png">🖼 이미지로 보내기</button><button class="btn" data-act="vd-share" data-id="pdf">📄 PDF로 보내기</button></div>';
+      html += '<div class="muted" style="margin-top:6px">① [이미지 복사]를 누르고 카톡 대화창에 붙여넣기(Ctrl+V) ② [보냈어요]를 누르면 금액이 고정돼요.</div>';
+      html += '<div class="inline" style="margin-top:10px"><button class="btn primary" data-act="vd-copy">📋 이미지 복사 (카톡에 붙여넣기)</button><button class="btn" data-act="vd-share" data-id="png">🖼 이미지 저장</button><button class="btn" data-act="vd-share" data-id="pdf">📄 PDF</button></div>';
       html += '<div style="margin-top:8px"><button class="btn ok block" data-act="vd-sent">✓ 보냈어요 (금액 고정)</button></div>';
     } else {
       html += '<div class="muted" style="margin-top:6px">보낸 날 ' + esc(fmtDT(st.sent_at)) + ' · 이 금액으로 고정돼 있어요.</div>';
       if (Math.round(live.total) !== Math.round(num(st.total) || 0)) html += '<div class="note danger">보낸 뒤에 납품 기록·단가가 바뀌어서 지금 다시 계산하면 <b>' + won(live.total) + '원</b>이에요. 고치려면 [보냄 취소] → 다시 보내기.</div>';
-      html += '<div class="inline" style="margin-top:10px"><button class="btn sm" data-act="vd-share" data-id="png">🖼 이미지 다시 보내기</button><button class="btn sm" data-act="vd-share" data-id="pdf">📄 PDF</button></div>';
+      html += '<div class="inline" style="margin-top:10px"><button class="btn sm" data-act="vd-copy">📋 이미지 다시 복사</button><button class="btn sm" data-act="vd-share" data-id="png">🖼 이미지 저장</button><button class="btn sm" data-act="vd-share" data-id="pdf">📄 PDF</button></div>';
       if (st.status === 'paid'){
         var rest = (num(st.total) || 0) - (num(st.paid_amount) || 0);
         html += '<div class="note ok">입금 ' + esc(fmtDateK(st.paid_on)) + ' · ' + won(st.paid_amount) + '원' + (rest > 0 ? ' · 남은 ' + won(rest) + '원은 다음 달 명세서에 붙어요' : rest < 0 ? ' · 더 들어온 ' + won(-rest) + '원은 다음 달에서 빼요' : '') + '</div>';
@@ -9015,6 +9015,19 @@
             var blob = await vdPaperBlob(id);
             await shareBlob(blob, '본노엘_거래명세서_' + c.v.name + (c.calc.site ? '_' + c.calc.site : '') + '_' + c.ym + '.' + (id === 'pdf' ? 'pdf' : 'png'), c.v.name + (c.calc.site ? ' ' + c.calc.site : '') + ' ' + (+c.ym.slice(5, 7)) + '월 명세서');
           } finally { el.disabled = false; el.textContent = old; }
+          break;
+        }
+        case 'vd-copy': {   // PC 카톡: 클립보드에 그림으로 복사 → 대화창에 Ctrl+V. 복사가 안 되는 기기(일부 폰)는 공유·저장으로
+          var cc = vdCur, old2 = el.textContent; el.disabled = true; el.textContent = '만드는 중…';
+          try {
+            if (!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem)) throw new Error('no-clip');
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': vdPaperBlob('png') })]);   // 그림을 Promise로 넘겨야 사파리도 됨
+            toast('복사했어요! 카톡 대화창에서 Ctrl+V (폰은 길게 눌러 붙여넣기)');
+          } catch(ce){
+            console.warn('이미지 복사 안 됨', ce);
+            var b2 = await vdPaperBlob('png');
+            await shareBlob(b2, '본노엘_거래명세서_' + cc.v.name + (cc.calc.site ? '_' + cc.calc.site : '') + '_' + cc.ym + '.png', cc.v.name + ' 명세서');
+          } finally { el.disabled = false; el.textContent = old2; }
           break;
         }
         case 'vd-sent': await vdMarkSent(); break;
