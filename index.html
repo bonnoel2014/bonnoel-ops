@@ -766,7 +766,8 @@
     var out = {};
     branchIds.forEach(function(b){
       var latest = {};
-      checks.forEach(function(c){ if (c.branch_id === b && !latest[c.item_id]) latest[c.item_id] = c; });
+      var latestBase = {};
+      checks.forEach(function(c){ if (c.branch_id !== b) return; if (!latest[c.item_id]) latest[c.item_id] = c; if (!latestBase[c.item_id] && c.basement_qty != null) latestBase[c.item_id] = c; });
       var m = {};
       itemsForBranch(b).forEach(function(x){
         var it = x.item, last = latest[it.id] || null;
@@ -787,7 +788,7 @@
         });
         if (est != null && est < 0) est = 0;   // 보낸 게 종이 재고보다 많으면 0으로 봄
         var shortage = (est != null && x.target > 0 && !it.unlimited && !(last && last.unlimited)) ? Math.max(0, x.target - est - pending) : 0;
-        m[it.id] = { item: it, target: x.target, note: x.note, last: last, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
+        m[it.id] = { item: it, target: x.target, note: x.note, last: last, basement: latestBase[it.id] ? num(latestBase[it.id].basement_qty) : null, basementAt: latestBase[it.id] ? latestBase[it.id].checked_at : null, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
       });
       out[b] = m;
     });
@@ -1186,7 +1187,7 @@
     var list = itemsForBranch(b);
     var html = topbar('비품 체크 · ' + branchName(b), true) + branchTabs(b, false);
     html += '<div class="muted" style="margin:4px 4px 10px">지금 매장에 있는 수량을 넣어 주세요. 안 센 건 비워 두면 돼요. 소수점(0.5)도 돼요. 세기 너무 많으면 α(충분함)를 체크해요.</div>';
-    html += '<div style="margin:0 4px 10px"><a href="#/checkhist/' + esc(b) + '" style="text-decoration:underline">📅 지난 기록 보기</a></div>';
+    html += '<div style="margin:0 4px 10px;display:flex;gap:14px;flex-wrap:wrap"><a href="#/checkhist/' + esc(b) + '" style="text-decoration:underline">📅 지난 기록 보기</a><a href="#/sheet/' + esc(b) + '" style="text-decoration:underline">📄 주간 표(종이 양식) 보기</a></div>';
     html += actorPicker('chk-staff', '누가 세었어요?');
     var groups = groupByCategory(list);
     if (!groups.length) html += '<div class="empty">이 매장에 켜진 품목이 없어요. 비품 설정에서 켜 주세요.</div>';
@@ -1201,8 +1202,9 @@
         var todayChecked = s.last && isToday(s.last.checked_at);
         var todayUnlimited = !!(todayChecked && s.last.unlimited);
         var todayVal = (todayChecked && !s.last.unlimited) ? num(s.last.qty) : null;
+        var todayBase = (s.basement != null && s.basementAt && isToday(s.basementAt)) ? s.basement : null;
         if (todayVal != null || todayUnlimited) doneCount++;
-        var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + (s.last.unlimited ? '충분(α)' : fmtQ(num(s.last.qty))) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
+        var sub = (x.target > 0 ? '적정 ' + fmtQ(x.target) : '<span class="warn">적정 미설정</span>') + (s.last ? ' · 지난번 ' + (s.last.unlimited ? '충분(α)' : fmtQ(num(s.last.qty))) + ' (' + md(s.last.checked_at) + ')' : ' · 아직 기록 없음') + (s.basement != null ? ' · 지하 ' + fmtQ(s.basement) + ' (' + md(s.basementAt) + ')' : '') + (s.pending ? ' · 오는 중 +' + fmtQ(s.pending) : '');
         var hasAlt = x.item.count_unit && x.item.count_per_unit;
         html += '<div class="item" data-name="' + esc(x.item.name.toLowerCase()) + '"><div class="iname"><div class="t">' + (x.item.unlimited ? '<span class="badge muted" title="재고 넉넉함 · 부족 목록 제외">α</span> ' : '') + esc(x.item.name) + '</div><div class="s">' + sub + '</div>' + (x.note ? '<div class="s" style="margin-top:2px"><span class="badge danger">⚠️ ' + esc(x.note) + '</span></div>' : '') + (isManager() ? '<div class="s"><span data-act="item-hide-branch" data-branch="' + esc(b) + '" data-item="' + esc(x.item.id) + '" style="cursor:pointer"><u>여기선 안 씀</u></span></div>' : '') + '</div>' +
                 '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
@@ -1210,12 +1212,14 @@
                 '<input class="qty' + (todayVal != null ? ' filled' : '') + '" type="text" inputmode="decimal" data-item="' + esc(x.item.id) + '" data-orig="' + (todayVal != null ? todayVal : '') + '"' + (todayVal != null ? ' value="' + todayVal + '"' : '') + (todayUnlimited ? ' disabled' : '') + ' placeholder="-">' +
                 (todayUnlimited ? '' : '<button type="button" class="btn sm" data-act="qty-plus" data-item="' + esc(x.item.id) + '" title="여러 자리에 나뉜 걸 더하기: 10+10+10 처럼 이어서 넣기" style="padding:6px 10px">+</button>') +
                 '<span class="unit">' + esc(x.item.unit) + '</span>' +
+                '<input class="in bq" type="text" inputmode="decimal" data-item="' + esc(x.item.id) + '" data-orig="' + (todayBase != null ? todayBase : '') + '"' + (todayBase != null ? ' value="' + todayBase + '"' : '') + ' placeholder="지하" title="지하 재고 (10+10 처럼 더해서 넣어도 돼요)" style="width:58px;padding:8px 4px;text-align:center">' +
                 '<label class="muted" style="display:flex;align-items:center;gap:2px;font-size:12px;cursor:pointer" title="세기 어려울 만큼 충분함"><input type="checkbox" class="qty-unlimited" data-item="' + esc(x.item.id) + '" data-orig="' + (todayUnlimited ? '1' : '') + '"' + (todayUnlimited ? ' checked' : '') + '>α</label>' +
                 '</div></div>';
       });
       html += '</div>';
     });
     html += '</div>';
+    html += '<div class="card section" style="margin-top:10px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 2px"><input type="checkbox" id="chk-sheet"' + (sheetPref() ? ' checked' : '') + '><span><b>이번 주 표로도 남기기</b><span class="muted" style="display:block;font-size:12px">켜 두고 저장하면 종이 양식처럼 한 장으로 보관돼요 (위쪽 주간 표 보기에서 열어요)</span></span></label></div>';
     html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="save-check" data-branch="' + esc(b) + '">저장 <span id="cnt">(' + doneCount + '/' + list.length + ')</span></button></div></div>';
     app.innerHTML = html;
     app._checkTotal = list.length;
@@ -1225,30 +1229,96 @@
     var n = app.querySelectorAll('.qty.filled').length + app.querySelectorAll('.qty-unlimited:checked').length;
     c.textContent = '(' + n + '/' + (app._checkTotal || 0) + ')';
   }
+  var SHEET_PREF_KEY = 'ops_sheet_on';
+  function sheetPref(){ try { return localStorage.getItem(SHEET_PREF_KEY) !== '0'; } catch(e){ return true; } }
   async function saveCheck(b){
     var chkSel = document.getElementById('chk-staff');
     var staffId = (isManager() && chkSel && chkSel.value) || session.staffId;
-    var rows = [];
+    var rows = [], skippedBase = 0;
     app.querySelectorAll('.qty').forEach(function(inp){
       var itemId = inp.getAttribute('data-item');
       var cb = app.querySelector('.qty-unlimited[data-item="' + itemId + '"]');
+      var bi = app.querySelector('.bq[data-item="' + itemId + '"]');
       var unlimited = cb ? cb.checked : false;
       var origUnlimited = cb ? cb.getAttribute('data-orig') === '1' : false;
+      var bv = (bi && bi.value.trim() !== '') ? sumExpr(bi.value) : null;
+      var origB = (bi && bi.getAttribute('data-orig') !== '') ? num(bi.getAttribute('data-orig')) : null;
+      var baseChanged = bv != null && bv !== origB;
+      var row = { branch_id: b, item_id: itemId, qty: 0, unlimited: false, staff_id: staffId, checked_at: new Date().toISOString() };
+      if (bv != null) row.basement_qty = bv;
       if (unlimited){
-        if (origUnlimited) return;   // 오늘 이미 α(충분)로 기록됨
-        rows.push({ branch_id: b, item_id: itemId, qty: 0, unlimited: true, staff_id: staffId, checked_at: new Date().toISOString() });
-        return;
+        row.unlimited = true;
+        if (origUnlimited && !baseChanged) return;
+        rows.push(row); return;
       }
-      var v = sumExpr(inp.value); if (v == null || inp.value === '') return;
+      var v = (inp.value === '') ? null : sumExpr(inp.value);
       var orig = inp.getAttribute('data-orig'); var origNum = (orig && !origUnlimited) ? num(orig) : null;
-      if (origNum != null && v === origNum) return;   // 오늘 이미 이 값으로 기록됨 · 다시 안 넣어도 돼요
-      rows.push({ branch_id: b, item_id: itemId, qty: v, unlimited: false, staff_id: staffId, checked_at: new Date().toISOString() });
+      var storeChanged = v != null && v !== origNum;
+      if (storeChanged){ row.qty = v; rows.push(row); return; }
+      if (baseChanged){
+        if (origNum != null){ row.qty = origNum; rows.push(row); }
+        else skippedBase++;
+      }
     });
-    if (!rows.length){ toast('새로 넣거나 바뀐 수량이 없어요'); return; }
+    if (!rows.length){ toast(skippedBase ? '지하 재고만 넣으면 저장이 안 돼요. 매장 수량도 같이 넣어 주세요' : '새로 넣거나 바뀐 수량이 없어요'); return; }
     await db.insert('ops_stock_checks', rows);
-    toast(rows.length + '개 저장했어요. 부족분을 카톡으로 보내 주세요');
+    var sheetOn = false; var sw = document.getElementById('chk-sheet');
+    if (sw){ sheetOn = sw.checked; try { localStorage.setItem(SHEET_PREF_KEY, sheetOn ? '1' : '0'); } catch(e){} }
+    var sheetMsg = '';
+    if (sheetOn){
+      try { await saveSheet(b, staffId); sheetMsg = ' · 이번 주 표도 남겼어요'; }
+      catch(err){ sheetMsg = ' · (표는 아직 못 남겼어요. SQL을 한 번 실행해야 해요)'; }
+    }
+    toast(rows.length + '개 저장했어요' + sheetMsg + (skippedBase ? ' (지하만 넣은 ' + skippedBase + '개는 빠졌어요)' : ''));
     nav('#/short/' + b);
   }
+
+  // ===== 주간 표(종이 양식) =====
+  async function saveSheet(b, staffId){
+    var st = await loadStock([b]); var m = st.byBranch[b];
+    var rows = [];
+    groupByCategory(itemsForBranch(b)).forEach(function(g){
+      g.rows.forEach(function(x){
+        var s = m[x.item.id] || {};
+        rows.push({ c: g.cat.name, n: x.item.name, u: x.item.unit, q: (s.last && !s.last.unlimited) ? num(s.last.qty) : null, a: !!(x.item.unlimited || (s.last && s.last.unlimited)), b: s.basement, o: s.shortage || 0, p: s.pending || 0 });
+      });
+    });
+    await db.upsert('ops_weekly_sheets', [{ branch_id: b, week_start: weekStart(todayStr()), rows: rows, made_by: staffId, made_at: new Date().toISOString() }], 'branch_id,week_start');
+  }
+  function sheetCell(r, kind){
+    if (kind === 'q') return r.a ? 'α' : (r.q != null ? fmtQ(r.q) : '');
+    if (kind === 'b') return r.b != null ? fmtQ(r.b) : '';
+    return r.o > 0 ? '주문 ' + fmtQ(r.o) : (r.p > 0 ? '<span class="muted">주문함 ' + fmtQ(r.p) + '</span>' : '');
+  }
+  function sheetTable(groups){
+    var h = '<table class="sheet-t"><thead><tr><th>제품명</th><th>현재고<br>(매장)</th><th>지하<br>재고</th><th>주문<br>요청</th></tr></thead><tbody>';
+    groups.forEach(function(g){
+      h += '<tr class="cat"><td colspan="4">' + esc(g.name) + '</td></tr>';
+      g.rows.forEach(function(r){ h += '<tr><td class="nm">' + esc(r.n) + '</td><td>' + sheetCell(r, 'q') + (r.q != null && !r.a ? '<span class="u">' + esc(r.u) + '</span>' : '') + '</td><td>' + sheetCell(r, 'b') + '</td><td class="ord">' + sheetCell(r, 'o') + '</td></tr>'; });
+    });
+    return h + '</tbody></table>';
+  }
+  routes.sheet = async function(params){
+    await loadBase();
+    var b = pickBranch(params, false);
+    var sheets = null;
+    try { sheets = await db.select('ops_weekly_sheets', { eq: { branch_id: b }, order: { col: 'week_start', asc: false }, limit: 40 }); } catch(e){ sheets = null; }
+    var html = topbar('주간 표 · ' + branchName(b), true) + branchTabs(b, false);
+    if (sheets === null){ html += '<div class="card section"><div class="empty">표 보관함이 아직 준비되지 않았어요.<br>supabase-migration-weeklysheet.sql 을 Supabase SQL Editor에서 한 번 실행해 주세요.</div></div>'; app.innerHTML = html; return; }
+    if (!sheets.length){ html += '<div class="card section"><div class="empty">아직 남긴 표가 없어요.<br>비품 체크에서 "이번 주 표로도 남기기"를 켜고 저장하면 생겨요.</div></div><div style="margin:10px 4px"><a href="#/check/' + esc(b) + '" style="text-decoration:underline">비품 체크로 가기</a></div>'; app.innerHTML = html; return; }
+    var pick = sheets.filter(function(x){ return x.week_start === params.arg2; })[0] || sheets[0];
+    var rows = pick.rows || [];
+    var groups = [], idx = {};
+    rows.forEach(function(r){ if (idx[r.c] == null){ idx[r.c] = groups.length; groups.push({ name: r.c, rows: [] }); } groups[idx[r.c]].rows.push(r); });
+    var total = rows.length + groups.length, half = 0, cut = groups.length;
+    for (var i = 0; i < groups.length; i++){ half += groups[i].rows.length + 1; if (half >= total / 2){ cut = i + 1; break; } }
+    var left = groups.slice(0, cut), right = groups.slice(cut);
+    html += '<style>.sheet-wrap{background:#fff;border:2px solid #333;border-radius:6px;padding:10px;margin:0 4px 12px;color:#222}.sheet-head{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:8px;flex-wrap:wrap}.sheet-head h2{margin:0;font-size:20px}.sheet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:10px}.sheet-t{width:100%;border-collapse:collapse;font-size:13px}.sheet-t th,.sheet-t td{border:1px solid #444;padding:3px 5px;text-align:center}.sheet-t th{background:#e4ead6;font-size:12px}.sheet-t td.nm{text-align:left}.sheet-t tr.cat td{background:#bcd7e6;font-weight:700}.sheet-t .u{font-size:10px;color:#666;margin-left:2px}.sheet-t td.ord{color:#c0392b;font-weight:700}@media print{.no-print,.topbar,.tabs,.stickybar{display:none!important}.sheet-wrap{border:1px solid #000;margin:0}body{background:#fff}}</style>';
+    html += '<div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 4px 10px"><select class="in sheet-week-select" data-branch="' + esc(b) + '" style="width:auto">' + sheets.map(function(x){ return '<option value="' + esc(x.week_start) + '"' + (x.week_start === pick.week_start ? ' selected' : '') + '>' + md(x.week_start) + ' 주</option>'; }).join('') + '</select><button class="btn sm" data-act="sheet-print">🖨 인쇄</button>' + (pick.week_start === weekStart(todayStr()) ? '<button class="btn sm" data-act="sheet-remake" data-branch="' + esc(b) + '">지금 상태로 다시 만들기</button>' : '') + '</div>';
+    html += '<div class="sheet-wrap"><div class="sheet-head"><h2>비품리스트 - ' + esc(branchName(b)) + '</h2><div style="font-size:13px">' + md(pick.week_start) + ' 주 · 작성자: <b>' + esc(staffName(pick.made_by)) + '</b> · ' + md(pick.made_at) + '</div></div>';
+    html += '<div class="sheet-grid"><div>' + sheetTable(left) + '</div>' + (right.length ? '<div>' + sheetTable(right) + '</div>' : '') + '</div></div>';
+    app.innerHTML = html;
+  };
 
   // ===== 화면: 지난 기록 보기 =====
   var checkHistState = { date: null, ym: null, showAllDates: false };
@@ -6514,6 +6584,8 @@
         case 'pick-staff-reset': loginState.staffId = null; render(); break;
         case 'pin-go': await pinGo(); break;
         case 'tab-branch': nav('#/' + current.route + '/' + id); break;
+        case 'sheet-print': window.print(); break;
+        case 'sheet-remake': { var rb = el.getAttribute('data-branch'); el.disabled = true; try { await saveSheet(rb, session.staffId); toast('지금 상태로 다시 만들었어요'); render(); } catch(err){ toast('표를 만들지 못했어요'); } finally { el.disabled = false; } break; }
         case 'save-check': el.disabled = true; try { await saveCheck(el.getAttribute('data-branch')); } finally { el.disabled = false; } break;
         case 'qty-plus': {
           var qpInp = app.querySelector('.qty[data-item="' + el.getAttribute('data-item') + '"]'); if (!qpInp) break;
@@ -6844,6 +6916,7 @@
       if (daysInp) daysInp.value = e.target.value === '제작봉투' ? 7 : 2;
       return;
     }
+    if (e.target.classList.contains('sheet-week-select')){ nav('#/sheet/' + e.target.getAttribute('data-branch') + '/' + e.target.value); return; }
     if (e.target.classList.contains('unit-select')){
       var usId = e.target.getAttribute('data-item');
       if (e.target.value === '__custom__'){ await itemEditUnit(usId); return; }
