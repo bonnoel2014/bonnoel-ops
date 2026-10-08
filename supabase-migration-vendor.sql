@@ -173,3 +173,11 @@ create policy "receipts insert" on storage.objects for insert with check (bucket
 drop policy if exists "receipts delete" on storage.objects;
 create policy "receipts delete" on storage.objects for delete using (bucket_id = 'receipts');
 
+
+-- =========================================================
+-- 8. 납품처별 명세서 (10/8 추가 · supabase-migration-vendor-site.sql 과 같은 내용)
+-- =========================================================
+alter table ops_vendor_statements add column if not exists site_id uuid references ops_vendor_sites(id) on delete cascade;
+drop index if exists ops_vendor_statements_one_idx;
+create unique index if not exists ops_vendor_statements_one_site_idx
+  on ops_vendor_statements (vendor_id, ym, coalesce(site_id, '00000000-0000-0000-0000-000000000000'::uuid));

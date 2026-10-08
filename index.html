@@ -8653,28 +8653,38 @@
     toast('영수증 올렸어요'); render();
   }
 
-  // 한 거래처 한 달 계산 (명세서 한 장에 들어갈 내용 전부)
-  function vdCalc(v, ym, data, prevSt){
+  // 납품처가 여러 곳인 거래처(앤드밀)는 납품처마다 명세서를 따로 만듦 (사장님 10/8: "앤드밀은 항상 각각")
+  function vdUnits(v){
+    var sites = v.sites.filter(function(s){ return s.active !== false; });
+    if (sites.length <= 1) return [{ v: v, siteId: null, key: v.id, label: v.name }];
+    return v.sites.map(function(s){ return { v: v, siteId: s.id, key: v.id + '~' + s.id, label: v.name + ' ' + s.name, inactive: s.active === false }; });
+  }
+  function vdStOf(sts, vid, siteId, ym){ return sts.filter(function(x){ return x.vendor_id === vid && x.ym === ym && (x.site_id || null) === (siteId || null); })[0] || null; }
+
+  // 한 거래처 한 달 계산 (명세서 한 장에 들어갈 내용 전부). siteId가 있으면 그 납품처만
+  function vdCalc(v, ym, data, prevSt, siteId){
     var lines = [], cols = [], dayMap = {};
-    v.sites.forEach(function(s){
+    var sn = function(id){ return siteId ? '' : vdSiteName(v, id); };
+    v.sites.filter(function(s){ return !siteId || s.id === siteId; }).forEach(function(s){
       v.items.forEach(function(it){
         var rows = data.dels.filter(function(d){ return d.site_id === s.id && d.item_id === it.id && (num(d.qty) || 0) !== 0; });
         if (!rows.length) return;
         var qty = rows.reduce(function(a, d){ return a + (num(d.qty) || 0); }, 0), price = num(it.price) || 0;
         var key = s.id + '|' + it.id;
-        lines.push({ site: vdSiteName(v, s.id), item: it.name, qty: qty, price: price, amount: Math.round(qty * price) });
-        cols.push({ key: key, label: (vdSiteName(v, s.id) ? vdSiteName(v, s.id) + ' ' : '') + it.name });
+        lines.push({ site: sn(s.id), item: it.name, qty: qty, price: price, amount: Math.round(qty * price) });
+        cols.push({ key: key, label: (sn(s.id) ? sn(s.id) + ' ' : '') + it.name });
         rows.forEach(function(d){ dayMap[d.deliver_on] = dayMap[d.deliver_on] || {}; dayMap[d.deliver_on][key] = (dayMap[d.deliver_on][key] || 0) + (num(d.qty) || 0); });
       });
     });
-    var extras = data.extras.filter(function(e){ return e.vendor_id === v.id; })
+    var extras = data.extras.filter(function(e){ return e.vendor_id === v.id && (!siteId || e.site_id === siteId); })
       .sort(function(a, b){ return a.on_date < b.on_date ? -1 : a.on_date > b.on_date ? 1 : 0; })
-      .map(function(e){ return { id: e.id, date: e.on_date, name: (VD_KINDS[e.kind] || VD_KINDS.etc).name, site: vdSiteName(v, e.site_id), memo: e.memo || '', amount: Math.round(num(e.amount) || 0) }; });
+      .map(function(e){ return { id: e.id, date: e.on_date, name: (VD_KINDS[e.kind] || VD_KINDS.etc).name, site: sn(e.site_id), memo: e.memo || '', amount: Math.round(num(e.amount) || 0) }; });
     var subtotal = lines.reduce(function(a, l){ return a + l.amount; }, 0);
     var extrasTotal = extras.reduce(function(a, e){ return a + e.amount; }, 0);
     var carry = prevSt ? Math.round((num(prevSt.total) || 0) - (num(prevSt.paid_amount) || 0)) : 0;
     var days = Object.keys(dayMap).sort().map(function(d){ return { date: d, q: dayMap[d] }; });
-    return { ym: ym, vendor: v.name, pay_note: v.pay_note || '', lines: lines, extras: extras, cols: cols, days: days,
+    var siteObj = siteId ? v.sites.filter(function(x){ return x.id === siteId; })[0] : null;
+    return { ym: ym, vendor: v.name, site: siteObj ? siteObj.name : '', pay_note: v.pay_note || '', lines: lines, extras: extras, cols: cols, days: days,
       subtotal: subtotal, extras_total: extrasTotal, carry: carry, prev_ym: prevSt ? prevSt.ym : null, total: subtotal + extrasTotal + carry };
   }
 
@@ -8684,7 +8694,7 @@
     var multi = c.lines.some(function(l){ return l.site; });
     var h = '<div class="vpaper" id="vd-paper">';
     h += '<div class="vp-top"><div><div class="vp-brand">BONNOËL</div><h2>거래명세서</h2></div><div class="vp-period">' + y + '년 ' + m + '월분<br>' + esc(md(r.from)) + ' ~ ' + esc(md(r.to)) + '</div></div>';
-    h += '<table class="vp-parties"><tr><th>받는 곳</th><td><b style="font-size:15px">' + esc(c.vendor) + '</b> 귀하' + (c.pay_note ? '<div style="color:#6e5f5e;margin-top:2px">' + esc(c.pay_note) + '</div>' : '') + '</td>';
+    h += '<table class="vp-parties"><tr><th>받는 곳</th><td><b style="font-size:15px">' + esc(c.vendor) + '</b> 귀하' + (c.site ? ' <span style="color:#af4c60;font-weight:600">· ' + esc(c.site) + (/점$/.test(c.site) ? '' : '점') + '</span>' : '') + (c.pay_note ? '<div style="color:#6e5f5e;margin-top:2px">' + esc(c.pay_note) + '</div>' : '') + '</td>';
     h += '<th>보내는 곳</th><td><b>' + esc(cfg.supplier) + '</b>' + (cfg.ceo ? ' · 대표 ' + esc(cfg.ceo) : '') + (cfg.biz_no ? '<br>사업자번호 ' + esc(cfg.biz_no) : '') + (cfg.phone ? '<br>' + esc(cfg.phone) : '') + '</td></tr></table>';
     h += '<div class="vp-sum"><span>입금하실 금액</span><b>' + won(c.total) + '원</b></div>';
     h += '<table class="vp-t"><thead><tr>' + (multi ? '<th class="l">납품처</th>' : '') + '<th class="l">품목</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>';
@@ -8813,16 +8823,16 @@
     var sts = r[2];
     html += monthNav(ym, function(m){ return '#/vs/' + m; });
     var sumTotal = 0, sumPaid = 0, rowsHtml = '';
-    r[0].forEach(function(v){
-      var st = sts.filter(function(s){ return s.vendor_id === v.id && s.ym === ym; })[0];
-      var prev = sts.filter(function(s){ return s.vendor_id === v.id && s.ym === addMonths(ym, -1); })[0];
-      var c = vdCalc(v, ym, r[1], prev);
-      if (v.active === false && !st && !c.lines.length) return;
+    r[0].forEach(function(v){ vdUnits(v).forEach(function(u){
+      var st = vdStOf(sts, v.id, u.siteId, ym);
+      var prev = vdStOf(sts, v.id, u.siteId, addMonths(ym, -1));
+      var c = vdCalc(v, ym, r[1], prev, u.siteId);
+      if ((v.active === false || u.inactive) && !st && !c.lines.length) return;
       var total = st ? num(st.total) : c.total;
       sumTotal += total || 0; if (st && st.status === 'paid') sumPaid += num(st.paid_amount) || 0;
       var qty = c.lines.reduce(function(a, l){ return a + l.qty; }, 0);
-      rowsHtml += '<a class="row" href="#/vs-v/' + v.id + '/' + ym + '"><div class="tile" style="background:var(--tile-purple)">📑</div><div class="rt"><div class="rtitle">' + esc(v.name) + '</div><div class="rsub">' + won(total) + '원 · ' + won(qty) + '개' + (c.carry && !st ? ' · 전달 미입금 포함' : '') + '</div><div style="margin-top:3px">' + vdStatusBadge(st) + '</div></div><div class="chev">›</div></a>';
-    });
+      rowsHtml += '<a class="row" href="#/vs-v/' + u.key + '/' + ym + '"><div class="tile" style="background:var(--tile-purple)">📑</div><div class="rt"><div class="rtitle">' + esc(u.label) + '</div><div class="rsub">' + won(total) + '원 · ' + won(qty) + '개' + (c.carry && !st ? ' · 전달 미입금 포함' : '') + '</div><div style="margin-top:3px">' + vdStatusBadge(st) + '</div></div><div class="chev">›</div></a>';
+    }); });
     html += '<div class="summary" style="grid-template-columns:1fr 1fr"><a><div class="n" style="font-size:19px">' + won(sumTotal) + '</div><div class="l">받을 돈 합계 (원)</div></a><a><div class="n" style="font-size:19px">' + won(sumPaid) + '</div><div class="l">입금 확인 (원)</div></a></div>';
     html += '<div class="group-title">거래처를 누르면 명세서가 나와요</div><div class="card">' + (rowsHtml || '<div class="empty">거래처가 없어요 · [거래처 설정]에서 추가</div>') + '</div>';
     html += '<div class="inline" style="margin-top:16px"><button class="btn" data-act="go" data-href="#/vd-month/' + ym + '">📊 ' + (+ym.slice(5, 7)) + '월 납품 한눈에</button><button class="btn" data-act="go" data-href="#/vset">⚙️ 거래처 설정</button></div>';
@@ -8835,18 +8845,23 @@
     await loadBase();
     var html = topbar('명세서', true, whoChip());
     if (!isOwner()){ app.innerHTML = html + '<div class="note">사장님만 볼 수 있어요.</div>'; return; }
-    var ym = ymOf(params.arg2);
-    var r = await Promise.all([ vdMaster(), vdMonthData(ym), db.select('ops_vendor_statements', { eq: { vendor_id: params.arg } }), vdCfg(), db.select('ops_vendor_receipts', { eq: { vendor_id: params.arg } }).catch(function(){ return []; }) ]);
-    var v = r[0].filter(function(x){ return x.id === params.arg; })[0];
+    var ym = ymOf(params.arg2), ids = String(params.arg || '').split('~'), vid = ids[0], siteId = ids[1] || null;
+    var r = await Promise.all([ vdMaster(), vdMonthData(ym), db.select('ops_vendor_statements', { eq: { vendor_id: vid } }), vdCfg(), db.select('ops_vendor_receipts', { eq: { vendor_id: vid } }).catch(function(){ return []; }) ]);
+    var v = r[0].filter(function(x){ return x.id === vid; })[0];
     if (!v){ app.innerHTML = html + '<div class="note">거래처를 못 찾았어요.</div>'; return; }
-    var st = r[2].filter(function(s){ return s.ym === ym; })[0] || null;
-    var prev = r[2].filter(function(s){ return s.ym === addMonths(ym, -1); })[0] || null;
-    var live = vdCalc(v, ym, r[1], prev);
+    var units = vdUnits(v);
+    if (!siteId && units[0].siteId){ nav('#/vs-v/' + units[0].key + '/' + ym); return; }   // 앤드밀처럼 따로 만드는 거래처는 첫 납품처로
+    if (siteId){ v = Object.assign({}, v, { sites: v.sites.filter(function(x){ return x.id === siteId; }) }); r[4] = r[4].filter(function(x){ return x.site_id === siteId; }); }
+    var ukey = siteId ? vid + '~' + siteId : vid;
+    var st = vdStOf(r[2], vid, siteId, ym);
+    var prev = vdStOf(r[2], vid, siteId, addMonths(ym, -1));
+    var live = vdCalc(v, ym, r[1], prev, siteId);
     var shown = (st && st.snapshot && st.snapshot.calc) ? st.snapshot.calc : live;
     var cfg = (st && st.snapshot && st.snapshot.cfg) ? st.snapshot.cfg : r[3];
-    vdCur = { v: v, ym: ym, calc: live, cfg: r[3], st: st };
-    html = topbar(v.name + ' 명세서', true, whoChip());
-    html += monthNav(ym, function(m){ return '#/vs-v/' + v.id + '/' + m; });
+    vdCur = { v: v, siteId: siteId, ym: ym, calc: live, cfg: r[3], st: st };
+    html = topbar(v.name + (live.site ? ' ' + live.site : '') + ' 명세서', true, whoChip());
+    if (units.length > 1) html += '<div class="tabs">' + units.map(function(u){ return '<span class="tab' + (u.siteId === siteId ? ' on' : '') + '" data-act="go" data-href="#/vs-v/' + u.key + '/' + ym + '">' + esc(u.label.replace(v.name + ' ', '')) + '</span>'; }).join('') + '</div>';
+    html += monthNav(ym, function(m){ return '#/vs-v/' + ukey + '/' + m; });
     // 상태 + 할 일
     html += '<div class="card" style="padding:14px 16px"><div class="inline" style="justify-content:space-between"><b style="font-size:18px">' + won(shown.total) + '원</b>' + vdStatusBadge(st) + '</div>';
     if (!st){
@@ -8867,7 +8882,7 @@
       }
     }
     html += '</div>';
-    if (!st && live.carry) html += '<div class="note">' + (+live.prev_ym.slice(5, 7)) + '월분에서 ' + (live.carry > 0 ? '덜 들어온 ' + won(live.carry) + '원이 더해졌어요.' : '더 들어온 ' + won(-live.carry) + '원을 뺐어요.') + ' 이미 받았으면 <span data-act="go" data-href="#/vs-v/' + v.id + '/' + live.prev_ym + '" style="text-decoration:underline;cursor:pointer">' + (+live.prev_ym.slice(5, 7)) + '월 명세서</span>에서 입금 확인을 눌러 주세요.</div>';
+    if (!st && live.carry) html += '<div class="note">' + (+live.prev_ym.slice(5, 7)) + '월분에서 ' + (live.carry > 0 ? '덜 들어온 ' + won(live.carry) + '원이 더해졌어요.' : '더 들어온 ' + won(-live.carry) + '원을 뺐어요.') + ' 이미 받았으면 <span data-act="go" data-href="#/vs-v/' + ukey + '/' + live.prev_ym + '" style="text-decoration:underline;cursor:pointer">' + (+live.prev_ym.slice(5, 7)) + '월 명세서</span>에서 입금 확인을 눌러 주세요.</div>';
     // 반품·할인 등 (보내기 전만)
     if (!st){
       html += '<div class="group-title">더하고 빼는 금액 (택배비·택시비·반품·할인)</div>';
@@ -8949,8 +8964,11 @@
   }
   async function vdMarkSent(){
     var c = vdCur; if (!c) return;
-    if (!window.confirm(c.v.name + ' ' + (+c.ym.slice(5, 7)) + '월 명세서 ' + won(c.calc.total) + '원을 보냈다고 표시할까요?\n(이 금액으로 고정돼요)')) return;
-    await db.upsert('ops_vendor_statements', [{ vendor_id: c.v.id, ym: c.ym, status: 'sent', snapshot: { calc: c.calc, cfg: c.cfg }, total: c.calc.total, sent_at: nowIso(), paid_on: null, paid_amount: null, updated_at: nowIso() }], 'vendor_id,ym');
+    if (!window.confirm(c.v.name + (c.calc.site ? ' ' + c.calc.site : '') + ' ' + (+c.ym.slice(5, 7)) + '월 명세서 ' + won(c.calc.total) + '원을 보냈다고 표시할까요?\n(이 금액으로 고정돼요)')) return;
+    var row = { vendor_id: c.v.id, ym: c.ym, status: 'sent', snapshot: { calc: c.calc, cfg: c.cfg }, total: c.calc.total, sent_at: nowIso(), paid_on: null, paid_amount: null, updated_at: nowIso() };
+    if (c.siteId) row.site_id = c.siteId;
+    try { await db.insert('ops_vendor_statements', [row]); }
+    catch(e){ if (/site_id/.test(e.message || '')) throw new Error('납품처별 명세서 준비(SQL)가 아직 안 됐어요 — supabase-migration-vendor-site.sql 실행 필요'); throw e; }
     toast('보냄으로 표시했어요'); render();
   }
 
@@ -8981,7 +8999,7 @@
           var c = vdCur; el.disabled = true; var old = el.textContent; el.textContent = '만드는 중…';
           try {
             var blob = await vdPaperBlob(id);
-            await shareBlob(blob, '본노엘_거래명세서_' + c.v.name + '_' + c.ym + '.' + (id === 'pdf' ? 'pdf' : 'png'), c.v.name + ' ' + (+c.ym.slice(5, 7)) + '월 명세서');
+            await shareBlob(blob, '본노엘_거래명세서_' + c.v.name + (c.calc.site ? '_' + c.calc.site : '') + '_' + c.ym + '.' + (id === 'pdf' ? 'pdf' : 'png'), c.v.name + (c.calc.site ? ' ' + c.calc.site : '') + ' ' + (+c.ym.slice(5, 7)) + '월 명세서');
           } finally { el.disabled = false; el.textContent = old; }
           break;
         }
