@@ -296,6 +296,17 @@
   .pop-prizes.many{ grid-template-columns:repeat(3, 1fr); } .pop-prizes.many div{ min-height:56px; }
   .pop-foot{ font-size:11.5px; color:#6b4b4f; margin-top:8px; line-height:1.5; }
   @media print{ .pop{ page-break-after:always; break-after:page; max-width:none; margin:0; border-width:4px; min-height:95vh; padding:34px 30px; } .pop-title{ font-size:54px; } .pop-steps{ font-size:18px; } .pop-qr img{ width:220px; height:220px; } .pop-qr .cap{ font-size:24px; } .pop-prizes div{ font-size:15px; min-height:84px; } .pop-prizes div b{ font-size:18px; } .pop-foot{ font-size:14px; } .pop:last-child{ page-break-after:auto; break-after:auto; } }
+  /* 고객의 소리 (손님 폰 의견 페이지) */
+  .vchips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .vchip{ display:inline-flex; align-items:center; gap:6px; padding:10px 16px; border-radius:999px; border:1.5px solid var(--line-strong); background:var(--surface); color:var(--ink); font:600 15px var(--font-sans, inherit); cursor:pointer; }
+  .vchip.sm{ padding:7px 13px; font-size:14px; }
+  .vchip.on{ background:var(--accent-soft); color:var(--accent); border-color:var(--accent); font-weight:700; }
+  .vcard{ padding:16px; margin-top:10px; }
+  .vcard textarea.in{ min-height:130px; resize:vertical; line-height:1.55; margin-top:10px; }
+  .vlab{ font-weight:700; font-size:16px; }
+  .vhint{ color:var(--ink-soft); font-size:13px; margin-top:2px; }
+  .vcount{ text-align:right; font-size:12px; color:var(--ink-faint); margin-top:4px; }
+  .vprivacy{ font-size:12px; color:var(--ink-soft); background:var(--surface-sunken); border-radius:10px; padding:8px 10px; margin-top:8px; line-height:1.5; }
   .expand{ padding:10px 14px 14px 72px; background:var(--surface-sunken); border-bottom:1px solid var(--line); }
 
   .toast{ position:fixed; left:50%; bottom:90px; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--paper); padding:10px 16px; border-radius:999px; font-size:14px; opacity:0; transition:.2s; pointer-events:none; z-index:20; max-width:90vw; text-align:center; }
@@ -428,6 +439,7 @@
     hiring: 'https://hiring.bonnoel.com/', hiringAdmin: 'https://hiring.bonnoel.com/#admin', hiringWelcome: 'https://hiring.bonnoel.com/#welcome' };
   var DEMO = /[?&]demo=1/.test(location.search);
   (function(){ var gm = /[?&]g=([0-9a-fA-F-]{36})/.exec(location.search); if (gm){ try { history.replaceState(null, '', location.pathname + (DEMO ? '?demo=1' : '') + '#/g/' + gm[1]); } catch(e){ location.hash = '#/g/' + gm[1]; } } })();   // ?demo=1 : 창고 없이 가짜 데이터로 눌러보기
+  (function(){ var vm = /[?&]v=([0-9A-Za-z-]{1,40})/.exec(location.search); if (vm){ try { history.replaceState(null, '', location.pathname + (DEMO ? '?demo=1' : '') + '#/v/' + vm[1]); } catch(e){ location.hash = '#/v/' + vm[1]; } } })();   // 고객의 소리 QR: ?v=<매장 id> (스캐너가 # 뒤를 떼는 문제 피함)
 
   var app = document.getElementById('app');
   var toastEl = document.getElementById('toast');
@@ -490,7 +502,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw12.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^voice_/.test(fn) ? '고객의 소리 준비(SQL)가 아직 안 됐어요 — supabase-migration-voice.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw12.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -540,7 +552,7 @@
       update: async function(table, m, patch){ var out = []; (tables[table] || []).forEach(function(r){ if (match(r, { eq: m })) { Object.assign(r, patch); out.push(r); } }); return clone(out); },
       upsert: async function(table, rows, onConflict){ var keys = (onConflict || 'id').split(','); tables[table] = tables[table] || []; rows.forEach(function(r){ var hit = tables[table].filter(function(x){ return keys.every(function(k){ return x[k] === r[k]; }); })[0]; if (hit) Object.assign(hit, r); else tables[table].push(Object.assign({ id: uid() }, r)); }); return clone(rows); },
       remove: async function(table, m){ tables[table] = (tables[table] || []).filter(function(r){ return !match(r, { eq: m }); }); },
-      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : /^bread_/.test(fn) ? breadMemRpc(tables, fn, args || {}) : /^draw_/.test(fn) ? drawMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
+      rpc: async function(fn, args){ return clone(/^corp_/.test(fn) ? corpMemRpc(tables, fn, args || {}) : /^cash_/.test(fn) ? cashMemRpc(tables, fn, args || {}) : /^bread_/.test(fn) ? breadMemRpc(tables, fn, args || {}) : /^draw_/.test(fn) ? drawMemRpc(tables, fn, args || {}) : /^voice_/.test(fn) ? voiceMemRpc(tables, fn, args || {}) : ppMemRpc(tables, fn, args || {})); },
       upload: async function(bucket, path, blob, type){ tables.__files = tables.__files || {}; tables.__files[path] = blob; return path; },
       signedUrl: async function(bucket, path){ var f = (tables.__files || {})[path]; if (!f) throw new Error('시연 모드라 저장된 사진이 없어요'); return URL.createObjectURL(f); },
       removeFile: async function(){},
@@ -778,7 +790,7 @@
     var h = location.hash.replace(/^#\/?/, '') || 'home';
     var parts = h.split('/');
     var route = parts[0]; var params = { arg: parts[1], arg2: parts[2] };
-    if (!session && route !== 'login' && route !== 'clock' && route !== 'sign' && route !== 'verify' && route !== 'share' && route !== 'g'){
+    if (!session && route !== 'login' && route !== 'clock' && route !== 'sign' && route !== 'verify' && route !== 'share' && route !== 'g' && route !== 'v'){
       if (route === 'prepay' || route === 'prepay-c') loginReturnTo = '#/' + h;   // 매장폰 바로가기로 들어오면 로그인 뒤 홈 말고 여기로
       nav('#/login'); return;
     }
@@ -1065,6 +1077,7 @@
     if (isManager()) html += row('#/draw', 'tile-red', '🎰', '리뷰 뽑기판', '손님이 리뷰 보여 주면 매장폰 뽑기판에서 칸 뒤집기 → 등수·상품 지급 기록');
     if (isManager()) html += row('#/draw-prizes', 'tile-gray', '🎁', '뽑기 상품표', '우리 매장 1~5등 상품 문구 (매니저·사장님 비밀번호)');
     if (isManager()) html += row('#/draw-pop', 'tile-orange', '🖼️', '뽑기 POP (QR)', '손님이 QR 찍고 자기 폰에서 뽑는 포스터 인쇄 (매장별)');
+    if (isManager()) html += row('#/voice-pop', 'tile-blue', '💌', '고객의 소리 POP (QR)', '손님이 QR 찍고 의견 남기는 계산대 포스터 인쇄 · 의견은 사장님만 봐요');
     html += tge();
     html += grp('선결제');
     html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
@@ -9743,6 +9756,123 @@
         if (bd && bd.id === lg.board_id && !bd.closed){ bd.remaining[lg.rank - 1]++; bd.taken = bd.taken.filter(function(c){ return c !== lg.cell; }); back = true; }
         lg.status = 'cancelled'; return { ok: true, returned: back };
       }
+    }
+    return { ok: false, error: '시연 모드에 없는 기능: ' + fn };
+  }
+
+  // ===== 고객의 소리 ("의견 주세요") — supabase-migration-voice.sql, 기획/고객의소리 =====
+  // 손님 폰: 매장 QR(?v=<매장 id>) → 로그인 없이 의견 보내기. 읽기·처리는 사장님 앱에서만 (매장폰·매니저는 못 봄)
+  var VOICE_KINDS = [
+    ['complaint', '😣', '불편했어요', '언제, 어떤 일이 있었는지 알려 주세요. 사장님이 직접 읽고 바로잡을게요.', '예) 오후 3시쯤 계산 줄이 길었는데 안내가 없었어요'],
+    ['praise', '👏', '칭찬해요', '누가, 어떤 점이 좋았나요? 그 직원에게 꼭 전할게요.', '예) 계산해 주신 분이 빵 데우는 법을 친절하게 알려 주셨어요'],
+    ['idea', '💡', '아이디어', '이런 빵, 이런 서비스가 있으면 좋겠다! 편하게 적어 주세요.', '예) 소금빵 미니 사이즈가 있으면 아이 간식으로 좋겠어요'],
+    ['improve', '🛠️', '바라는 점', '이렇게 바뀌면 더 좋겠다 싶은 점을 알려 주세요.', '예) 포장 봉투에 빵 이름 스티커가 있으면 좋겠어요'],
+    ['etc', '💬', '기타', '하고 싶은 말을 자유롭게 남겨 주세요.', '']
+  ];
+  var VOICE_VISITS = [['morning', '오늘 아침'], ['lunch', '오늘 점심'], ['afternoon', '오늘 오후'], ['evening', '오늘 저녁'], ['other', '다른 날']];
+  var voiceSt = { b: null, kind: '', body: '', visit: '', name: '', phone: '', want: false, consent: false, sent: false, busy: false };
+  function voiceGrab(){
+    var g = function(id){ var el = document.getElementById(id); return el ? el : null; };
+    if (g('vc-body')) voiceSt.body = g('vc-body').value;
+    if (g('vc-name')) voiceSt.name = g('vc-name').value;
+    if (g('vc-phone')) voiceSt.phone = g('vc-phone').value;
+    if (g('vc-want')) voiceSt.want = g('vc-want').checked;
+    if (g('vc-consent')) voiceSt.consent = g('vc-consent').checked;
+  }
+  routes.v = async function(params){
+    var b = params.arg;
+    if (voiceSt.b !== b) voiceSt = { b: b, kind: '', body: '', visit: '', name: '', phone: '', want: false, consent: false, sent: false, busy: false };
+    var html = topbar('본노엘 · 의견 주세요', false);
+    var br = null; try { br = (await db.select('manual_branches', { eq: { id: b } }))[0]; } catch(e){}
+    if (!b || !br){ app.innerHTML = html + '<div class="note danger">매장을 찾을 수 없어요. 매장에 있는 QR을 다시 찍어 주세요.</div>'; return; }
+    var bname = br.name;
+    if (voiceSt.sent){
+      app.innerHTML = html + '<div class="card vcard" style="text-align:center;padding:28px 18px;margin-top:16px"><div style="font-size:46px">💌</div>'
+        + '<div style="font:700 24px var(--font-serif);color:var(--accent);margin-top:6px">소중한 의견 고마워요</div>'
+        + '<div style="margin-top:8px;font-size:15px">' + esc(bname) + ' 의견은 <b>사장님이 직접</b> 읽어요.</div>'
+        + (voiceSt.sentWant ? '<div class="badge" style="margin-top:12px;font-size:14px;padding:6px 12px">📱 남겨 주신 번호로 며칠 안에 답장 드릴게요</div>' : '')
+        + (voiceSt.sentKind === 'complaint' ? '<div class="vprivacy" style="margin-top:14px;text-align:left">위생·이물질·알레르기처럼 <b>급한 일</b>이면 지금 매장 직원에게 바로 말씀해 주세요. 바로 도와드릴게요.</div>' : '')
+        + '<button class="btn block" style="margin-top:16px" data-act="voice-again">의견 하나 더 남기기</button></div>';
+      return;
+    }
+    var k = VOICE_KINDS.filter(function(x){ return x[0] === voiceSt.kind; })[0];
+    html += '<div style="text-align:center;margin:14px 8px 4px"><div style="font:700 26px var(--font-serif);color:var(--accent)">의견 주세요 💌</div><div class="muted" style="margin-top:2px">' + esc(bname) + ' · 불편했던 점도, 좋았던 점도 사장님이 직접 읽어요</div></div>';
+    html += '<div class="card vcard"><div class="vlab">1. 어떤 이야기인가요?</div><div class="vchips">'
+      + VOICE_KINDS.map(function(x){ return '<button class="vchip' + (voiceSt.kind === x[0] ? ' on' : '') + '" data-act="voice-kind" data-id="' + x[0] + '">' + x[1] + ' ' + esc(x[2]) + '</button>'; }).join('') + '</div></div>';
+    html += '<div class="card vcard"><div class="vlab">2. 내용을 적어 주세요</div><div class="vhint">' + esc(k ? k[3] : '위에서 종류를 먼저 골라 주세요.') + '</div>'
+      + '<textarea class="in" id="vc-body" maxlength="1000" placeholder="' + esc(k && k[4] ? k[4] : '여기에 적어 주세요') + '">' + esc(voiceSt.body) + '</textarea><div class="vcount" id="vc-count">' + (voiceSt.body || '').length + ' / 1000</div>'
+      + '<div style="margin-top:8px;font-size:14px;font-weight:600">언제 오셨어요? <span class="muted" style="font-weight:400">(선택)</span></div><div class="vchips">'
+      + VOICE_VISITS.map(function(x){ return '<button class="vchip sm' + (voiceSt.visit === x[0] ? ' on' : '') + '" data-act="voice-visit" data-id="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div></div>';
+    html += '<div class="card vcard"><div class="vlab">3. 이름·번호 <span class="muted" style="font-weight:400;font-size:13px">(선택 · 비우면 익명으로 보내져요)</span></div>'
+      + '<input class="in" id="vc-name" maxlength="30" placeholder="이름 (선택)" value="' + esc(voiceSt.name) + '" style="margin-top:10px">'
+      + '<input class="in" id="vc-phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="휴대폰 번호 (선택) 010-1234-5678" value="' + esc(voiceSt.phone) + '" style="margin-top:8px">'
+      + '<label class="chk"><input type="checkbox" id="vc-want"' + (voiceSt.want ? ' checked' : '') + '><span><b>답장 받을래요</b> — 사장님이 이 번호로 연락드려요 (번호 필수)</span></label>'
+      + '<label class="chk" style="padding-top:0"><input type="checkbox" id="vc-consent"' + (voiceSt.consent ? ' checked' : '') + '><span>이름·번호를 남기면 아래 개인정보 수집·이용에 동의해요</span></label>'
+      + '<div class="vprivacy">수집 항목: 이름·휴대폰 번호(남긴 경우만) · 목적: 의견 확인과 답장 · 보관: 1년 뒤 지움 · 처리: 본노엘<br>동의하지 않아도 이름·번호를 비우면 익명으로 의견을 보낼 수 있어요.</div></div>';
+    html += '<div style="height:84px"></div><div class="stickybar"><div class="inner"><button class="btn primary block" style="padding:14px;font-size:17px" data-act="voice-send"' + (voiceSt.busy ? ' disabled' : '') + '>' + (voiceSt.busy ? '보내는 중…' : '💌 사장님께 보내기') + '</button></div></div>';
+    app.innerHTML = html;
+    var ta = document.getElementById('vc-body'), cnt = document.getElementById('vc-count');
+    if (ta) ta.addEventListener('input', function(){ cnt.textContent = ta.value.length + ' / 1000'; });
+  };
+
+  routes['voice-pop'] = async function(){
+    await loadBase();
+    var html = topbar('고객의 소리 POP', true, whoChip());
+    if (!isManager()){ app.innerHTML = html + '<div class="note">매장폰·매니저·사장님만 볼 수 있어요.</div>'; return; }
+    var list = isOwner() ? base.branches : base.branches.filter(function(b){ return b.id === session.branchId; });
+    html += '<div class="noprint"><div class="note">계산대에 세워 둘 매장별 A4 포스터예요. 손님이 QR을 찍으면 로그인 없이 의견 쓰기 화면이 열려요. <b>들어온 의견은 사장님 앱에서만</b> 보여요 (매장폰·매니저는 못 봐요).</div>'
+      + '<button class="btn primary block" data-act="voice-pop-print" style="margin:4px 8px 10px;width:auto">🖨 인쇄하기 (A4)</button></div>';
+    list.forEach(function(b){
+      var url = location.origin + location.pathname + '?v=' + b.id + (DEMO ? '&demo=1' : ''), qr = qrDataUrl(url);
+      html += '<div class="pop"><div class="pop-brand">BON NOËL · ' + esc(b.name) + '</div><div class="pop-title">의견 주세요 💌</div><div class="pop-sub">불편했던 점 · 칭찬 · 아이디어 — 사장님이 직접 읽어요</div>'
+        + '<div class="pop-steps"><div><b>1</b><span>QR을 찍어 주세요</span></div><div><b>2</b><span>😣 불편 · 👏 칭찬 · 💡 아이디어 · 🛠️ 바라는 점 중 하나 고르고 적기</span></div><div><b>3</b><span>이름·번호는 <b>선택</b> — 익명도 OK! 답장을 원하면 번호를 남겨 주세요</span></div></div>'
+        + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>의견 남기기<small>1분이면 충분해요<br>매장에 계시지 않아도, 집에서도 OK</small></div></div>'
+        + '<div class="pop-foot">남겨 주신 의견은 본노엘 사장님에게 바로 전달됩니다. 급한 일(위생·알레르기 등)은 매장 직원에게 바로 말씀해 주세요.<br><span style="color:#b9a0a3">' + esc(url) + '</span></div></div>';
+    });
+    app.innerHTML = html;
+  };
+
+  var VOICE_DEVICE_KEY = 'bonnoel_voice_device';
+  function voiceDevice(){ try { var d = localStorage.getItem(VOICE_DEVICE_KEY); if (!d){ d = 'v' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem(VOICE_DEVICE_KEY, d); } return d; } catch(e){ return 'v-nostorage-' + (navigator.userAgent || '').length; } }
+  app.addEventListener('click', async function(e){
+    var el = e.target.closest('[data-act]'); if (!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    if (!/^voice-/.test(act)) return;
+    try {
+      switch (act){
+        case 'voice-kind': voiceGrab(); voiceSt.kind = id; render(); break;
+        case 'voice-visit': voiceGrab(); voiceSt.visit = voiceSt.visit === id ? '' : id; render(); break;
+        case 'voice-again': voiceSt = { b: voiceSt.b, kind: '', body: '', visit: '', name: '', phone: '', want: false, consent: false, sent: false, busy: false }; render(); break;
+        case 'voice-pop-print': window.print(); break;
+        case 'voice-send': {
+          voiceGrab();
+          var body = String(voiceSt.body || '').trim(), ph = String(voiceSt.phone || '').replace(/\D/g, ''), nm = String(voiceSt.name || '').trim();
+          if (!voiceSt.kind){ toast('어떤 이야기인지 1번에서 하나 골라 주세요'); window.scrollTo(0, 0); break; }
+          if (body.length < 5){ toast('내용을 조금만 더 적어 주세요 (5자 이상)'); var t = document.getElementById('vc-body'); if (t) t.focus(); break; }
+          if (ph && !/^01[0-9]{8,9}$/.test(ph)){ toast('휴대폰 번호를 다시 확인해 주세요 (예: 010-1234-5678)'); break; }
+          if (voiceSt.want && !ph){ toast('답장을 받으려면 휴대폰 번호를 넣어 주세요'); var p = document.getElementById('vc-phone'); if (p) p.focus(); break; }
+          if ((ph || nm) && !voiceSt.consent){ toast('이름·번호를 남기려면 동의에 체크해 주세요 (익명이면 비워 두세요)'); break; }
+          voiceSt.busy = true; el.disabled = true; el.textContent = '보내는 중…';
+          try {
+            var r = await db.rpc('voice_submit', { p_branch: voiceSt.b, p_device: voiceDevice(), p_kind: voiceSt.kind, p_body: body, p_visit: voiceSt.visit || null, p_name: nm || null, p_phone: ph || null, p_want_reply: !!voiceSt.want, p_consent: !!voiceSt.consent });
+            if (r && r.ok === false) throw new Error(r.error || '보내지 못했어요');
+            voiceSt = { b: voiceSt.b, kind: '', body: '', visit: '', name: '', phone: '', want: false, consent: false, sent: true, busy: false, sentWant: !!(voiceSt.want && ph), sentKind: voiceSt.kind };
+            render();
+          } finally { voiceSt.busy = false; }
+          break;
+        }
+      }
+    } catch(err){ console.error(err); toast(err.message || String(err)); var sb2 = document.querySelector('[data-act="voice-send"]'); if (sb2){ sb2.disabled = false; sb2.textContent = '💌 사장님께 보내기'; } }
+  });
+  // 시연 모드(?demo=1)용 가짜 서버
+  function voiceMemRpc(T, fn, a){
+    T.voice_feedback = T.voice_feedback || [];
+    if (fn === 'voice_submit'){
+      var today = new Date().toDateString(), n = T.voice_feedback.filter(function(x){ return x.device_id === a.p_device && new Date(x.created_at).toDateString() === today; }).length;
+      if (n >= 3) return { ok: false, error: '오늘은 이 폰으로 의견을 충분히 받았어요. 고마워요! 내일 또 들려주세요' };
+      if (String(a.p_body || '').trim().length < 5) return { ok: false, error: '조금만 더 자세히 알려 주세요 (5자 이상)' };
+      T.voice_feedback.push({ id: uid(), branch_id: a.p_branch, kind: a.p_kind, body: String(a.p_body).trim(), visit: a.p_visit, name: a.p_name, phone: a.p_phone, want_reply: !!(a.p_want_reply && a.p_phone), status: 'new', device_id: a.p_device, created_at: new Date().toISOString() });
+      return { ok: true };
     }
     return { ok: false, error: '시연 모드에 없는 기능: ' + fn };
   }
