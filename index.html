@@ -3039,10 +3039,10 @@
     var recs = [];
     try { recs = (await db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: addDays(td, -30) }, order: { col: 'clock_in', asc: false } })).filter(function(r){ return r.clock_in && r.work_date >= '2026-10-08'; }); } catch(e){ console.warn('출근 기록 못 읽음', e); }
     var cnt = {};
-    recs.forEach(function(r){ var c = cnt[r.staff_id] = cnt[r.staff_id] || { miss: 0, flag: 0 }; if (r.dress_missing && r.dress_missing.length) c.miss++; if (r.dress_flag) c.flag++; });
+    recs.forEach(function(r){ var c = cnt[r.staff_id] = cnt[r.staff_id] || { miss: 0, flag: 0 }; if (r.dress_missing && r.dress_missing.length) c.miss++; if (mg && r.dress_flag) c.flag++; });
     var cntIds = Object.keys(cnt).filter(function(k){ return cnt[k].miss || cnt[k].flag; });
     html += '<div class="card section"><div class="sec-h">최근 30일 직원별</div>';
-    if (!cntIds.length) html += '<div class="empty">빠진 복장·지적이 없어요</div>';
+    if (!cntIds.length) html += '<div class="empty">' + (mg ? '빠진 복장·지적이 없어요' : '빠진 복장이 없어요') + '</div>';
     cntIds.forEach(function(k){ html += '<div class="hist"><span class="sp">' + esc(staffName(k)) + '</span><span>' + (cnt[k].miss ? '없어요 ' + cnt[k].miss + '번' : '') + (cnt[k].miss && cnt[k].flag ? ' · ' : '') + (cnt[k].flag ? '<span style="color:var(--danger)">지적 ' + cnt[k].flag + '번</span>' : '') + '</span></div>'; });
     html += '</div>';
     var week = recs.filter(function(r){ return r.work_date >= addDays(td, -6); });
@@ -3050,7 +3050,7 @@
     if (!week.length) html += '<div class="empty">기록이 없어요</div>';
     week.forEach(function(r){
       var st = r.dress_missing && r.dress_missing.length ? '<span style="color:var(--danger)">⚠ ' + esc(dressMissText(r)) + '</span>' : r.dress_check ? '<span style="color:var(--ok)">✓ 다 체크</span>' : '<span class="muted">복장 확인 없음</span>';
-      html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="flex:1 1 60%"><div class="t">' + esc(fmtDateK(r.work_date)) + ' · ' + esc(staffName(r.staff_id)) + ' ' + hm(r.clock_in) + '</div><div class="s">' + st + (r.dress_flag ? '<br><span style="color:var(--danger)">지적: ' + esc(r.dress_flag.memo || '') + ' · ' + esc(staffName(r.dress_flag.by)) + '</span>' : '') + '</div></div>' +
+      html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="flex:1 1 60%"><div class="t">' + esc(fmtDateK(r.work_date)) + ' · ' + esc(staffName(r.staff_id)) + ' ' + hm(r.clock_in) + '</div><div class="s">' + st + (mg && r.dress_flag ? '<br><span style="color:var(--danger)">지적: ' + esc(r.dress_flag.memo || '') + ' · ' + esc(staffName(r.dress_flag.by)) + '</span>' : '') + '</div></div>' +
         (!mg ? '' : r.dress_flag ? '<button class="btn sm" data-act="dress-flag-del" data-id="' + esc(r.id) + '">지적 취소</button>' : '<button class="btn sm" data-act="dress-flag" data-id="' + esc(r.id) + '">지적</button>') + '</div>';
     });
     html += '</div>';
