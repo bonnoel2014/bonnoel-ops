@@ -1285,6 +1285,16 @@
     });
     await db.upsert('ops_weekly_sheets', [{ branch_id: b, week_start: weekStart(todayStr()), rows: rows, made_by: staffId, made_at: new Date().toISOString() }], 'branch_id,week_start');
   }
+  async function showSheetImage(){
+    var el = document.getElementById('sheet-paper'); if (!el) return;
+    toast('사진을 만드는 중이에요...');
+    try {
+      var h2c = await loadHtml2Canvas();
+      var canvas = await h2c(el, { scale: 2, backgroundColor: '#ffffff', logging: false, scrollX: 0, scrollY: -window.scrollY, windowWidth: 900 });
+      var url = canvas.toDataURL('image/png');
+      showImageOverlay(url, (el.getAttribute('data-name') || '비품리스트') + '.png', '비품리스트 사진');
+    } catch(e){ toast('사진을 만들지 못했어요. 인쇄 버튼으로 PDF 저장도 돼요'); }
+  }
   function sheetCell(r, kind){
     if (kind === 'q') return r.a ? 'α' : (r.q != null ? fmtQ(r.q) : '');
     if (kind === 'b') return r.b != null ? fmtQ(r.b) : '';
@@ -1314,8 +1324,8 @@
     for (var i = 0; i < groups.length; i++){ half += groups[i].rows.length + 1; if (half >= total / 2){ cut = i + 1; break; } }
     var left = groups.slice(0, cut), right = groups.slice(cut);
     html += '<style>.sheet-wrap{background:#fff;border:2px solid #333;border-radius:6px;padding:10px;margin:0 4px 12px;color:#222}.sheet-head{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:8px;flex-wrap:wrap}.sheet-head h2{margin:0;font-size:20px}.sheet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:10px}.sheet-t{width:100%;border-collapse:collapse;font-size:13px}.sheet-t th,.sheet-t td{border:1px solid #444;padding:3px 5px;text-align:center}.sheet-t th{background:#e4ead6;font-size:12px}.sheet-t td.nm{text-align:left}.sheet-t tr.cat td{background:#bcd7e6;font-weight:700}.sheet-t .u{font-size:10px;color:#666;margin-left:2px}.sheet-t td.ord{color:#c0392b;font-weight:700}@media print{.no-print,.topbar,.tabs,.stickybar{display:none!important}.sheet-wrap{border:1px solid #000;margin:0}body{background:#fff}}</style>';
-    html += '<div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 4px 10px"><select class="in sheet-week-select" data-branch="' + esc(b) + '" style="width:auto">' + sheets.map(function(x){ return '<option value="' + esc(x.week_start) + '"' + (x.week_start === pick.week_start ? ' selected' : '') + '>' + md(x.made_at) + ' 작성</option>'; }).join('') + '</select><button class="btn sm" data-act="sheet-print">🖨 인쇄</button>' + (pick.week_start === weekStart(todayStr()) ? '<button class="btn sm" data-act="sheet-remake" data-branch="' + esc(b) + '">지금 상태로 다시 만들기</button>' : '') + '</div>';
-    html += '<div class="sheet-wrap"><div class="sheet-head"><h2>비품리스트 - ' + esc(branchName(b)) + '</h2><div style="font-size:13px">' + '작성일 <b>' + md(pick.made_at) + '</b> · 작성자: <b>' + esc(staffName(pick.made_by)) + '</b></div></div>';
+    html += '<div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 4px 10px"><select class="in sheet-week-select" data-branch="' + esc(b) + '" style="width:auto">' + sheets.map(function(x){ return '<option value="' + esc(x.week_start) + '"' + (x.week_start === pick.week_start ? ' selected' : '') + '>' + md(x.made_at) + ' 작성</option>'; }).join('') + '</select><button class="btn sm primary" data-act="sheet-img">📷 사진으로 만들기 (저장·카톡)</button><button class="btn sm" data-act="sheet-print">🖨 인쇄</button>' + (pick.week_start === weekStart(todayStr()) ? '<button class="btn sm" data-act="sheet-remake" data-branch="' + esc(b) + '">지금 상태로 다시 만들기</button>' : '') + '</div>';
+    html += '<div class="sheet-wrap" id="sheet-paper" data-name="' + esc('비품리스트_' + branchName(b) + '_' + md(pick.made_at).replace('/', '')) + '"><div class="sheet-head"><h2>비품리스트 - ' + esc(branchName(b)) + '</h2><div style="font-size:13px">' + '작성일 <b>' + md(pick.made_at) + '</b> · 작성자: <b>' + esc(staffName(pick.made_by)) + '</b></div></div>';
     html += '<div class="sheet-grid"><div>' + sheetTable(left) + '</div>' + (right.length ? '<div>' + sheetTable(right) + '</div>' : '') + '</div></div>';
     app.innerHTML = html;
   };
@@ -2565,8 +2575,11 @@
   function showSchedImage(){
     var o = app._schedImg; if (!o) return;
     var url = schedImageCanvas(o).toDataURL('image/png');
-    var bin = atob(url.split(',')[1]), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
     var name = '근무표_' + o.branch + '_' + o.days[0].slice(5).replace('-', '') + '-' + o.days[6].slice(5).replace('-', '') + '.png';
+    showImageOverlay(url, name, '근무표 사진');
+  }
+  function showImageOverlay(url, name, alt){
+    var bin = atob(url.split(',')[1]), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
     schedImgFile = null; try { schedImgFile = new File([arr], name, { type: 'image/png' }); } catch(e){}
     var canShare = !!(schedImgFile && navigator.canShare && navigator.canShare({ files: [schedImgFile] }));
     var canCopy = !!(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write);
@@ -2575,7 +2588,7 @@
     ov.innerHTML = '<div class="inline" style="gap:8px;flex-wrap:wrap;justify-content:center">' + (canCopy ? '<button class="btn primary" data-act="sched-img-copy">사진 복사 (카톡에 붙여넣기)</button>' : '') + (canShare ? '<button class="btn' + (canCopy ? '' : ' primary') + '" data-act="sched-img-share">카톡 등으로 공유</button>' : '') +
       '<a class="btn' + (canShare || canCopy ? '' : ' primary') + '" href="' + url + '" download="' + esc(name) + '">사진 저장</a><button class="btn" data-act="sched-img-close">닫기</button></div>' +
       '<div style="color:#fff;font-size:13px;text-align:center">' + (canCopy ? '"사진 복사"를 누른 뒤 카톡 대화창에서 Ctrl+V(휴대폰은 길게 눌러 붙여넣기) · ' : '') + '휴대폰은 사진을 길게 눌러도 저장돼요</div>' +
-      '<img src="' + url + '" alt="근무표 사진" style="max-width:100%;background:#fff;border-radius:8px">';
+      '<img src="' + url + '" alt="' + esc(alt) + '" style="max-width:100%;background:#fff;border-radius:8px">';
     app.appendChild(ov);
   }
   async function copySchedImage(){
@@ -6585,6 +6598,7 @@
         case 'pin-go': await pinGo(); break;
         case 'tab-branch': nav('#/' + current.route + '/' + id); break;
         case 'sheet-print': window.print(); break;
+        case 'sheet-img': showSheetImage(); break;
         case 'sheet-remake': { var rb = el.getAttribute('data-branch'); el.disabled = true; try { await saveSheet(rb, session.staffId); toast('지금 상태로 다시 만들었어요'); render(); } catch(err){ toast('표를 만들지 못했어요'); } finally { el.disabled = false; } break; }
         case 'save-check': el.disabled = true; try { await saveCheck(el.getAttribute('data-branch')); } finally { el.disabled = false; } break;
         case 'qty-plus': {
