@@ -136,6 +136,18 @@
   .pin:focus{ outline:2px solid var(--accent); }
   .name-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   .name-grid .btn{ padding:14px 8px; font-size:16px; }
+  /* 출근 복장 체크 */
+  .dress-card{ background:var(--surface); border:2px solid var(--line-strong); border-radius:var(--radius-m); padding:14px 16px; margin-top:10px; cursor:pointer; text-align:left; }
+  .dress-card.on{ border-color:var(--ok); background:var(--ok-soft); }
+  .dress-card.miss, .dress-card.bad{ border-color:var(--danger); background:var(--danger-soft); }
+  .dress-t{ display:flex; align-items:center; gap:10px; font-size:19px; font-weight:700; }
+  .dress-ic{ font-size:26px; }
+  .dress-ck{ margin-left:auto; font-size:20px; color:var(--ok); }
+  .dress-card.miss .dress-ck{ color:var(--danger); font-size:15px; }
+  .dress-sub{ margin-top:6px; font-size:13px; color:var(--ink-soft); }
+  .dress-sub [data-act]{ text-decoration:underline; cursor:pointer; }
+  .dress-warn{ margin-top:6px; font-size:14px; font-weight:700; color:var(--danger); }
+  .dress-hat{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
   /* 리뷰 뽑기판 */
   .dboard-head{ text-align:center; padding:12px 8px 8px; font-size:15px; }
   .dboard-title{ font:700 22px var(--font-serif); color:var(--accent); margin-bottom:4px; }
@@ -908,7 +920,7 @@
           var se = r.sched_end ? toMin(hm5(r.sched_end)) : null, ss = r.sched_start ? toMin(hm5(r.sched_start)) : null;
           if (se != null && ss != null && se <= ss) se += 1440;
           if (r.work_date === td && se != null && nm >= se + 30){ if (ownerIds.indexOf(r.staff_id) < 0) noOut.push(esc(staffName(r.staff_id)) + ' (' + hm5(r.sched_end) + ' 끝)'); }
-          else { working.push(esc(staffName(r.staff_id)) + ' ' + hm(r.clock_in)); workingIds.push(r.staff_id); }
+          else { working.push(esc(staffName(r.staff_id)) + ' ' + hm(r.clock_in) + dressMark(r)); workingIds.push(r.staff_id); }
         });
         shiftsOn(nr[1], b, td).forEach(function(s){
           if (s.kind === 'off' || s.kind === 'covering') return;
@@ -1030,6 +1042,7 @@
     html += grp('출퇴근 관리');
     html += row('#/clock', 'tile-green', '⏱', '출퇴근', '매장폰에서 이름·비밀번호로 출근·퇴근');
     if (isManager()) html += row('#/hours', 'tile-green', '🕒', '근무 조회', '사람별·월별 근무시간 (근무표 기준, 급여 근거)');
+    if (isManager() && !isKiosk()){ var hnPend = 0; try { var dcH = await loadDressCfg(true); hnPend = Object.keys(dcH.hairnet_req).filter(function(k){ if (dcH.hairnet_exempt[k]) return false; var sH = base.staff.filter(function(x){ return x.id === k; })[0]; return sH && (isOwner() || !sH.branch_id || sH.branch_id === session.branchId); }).length; } catch(e){} html += row('#/dress', 'tile-orange', '👕', '출근 복장 체크', hnPend ? '⚠ 머리망 예외 신청 ' + hnPend + '건' : '머리망 제외·예외 승인 · 빠진 복장·지적 기록'); }
     if (isOwner()) html += row('#/extra-approve', 'tile-green', '✅', '추가 근무 승인', extraPend ? '⚠ 승인 대기 ' + extraPend + '건' : '직원이 올린 조기 출근·연장·조기 퇴근 수락');
     html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '근무표보다 더 일했을 때 직접 올리기');
     html += row('#/extra-early', 'tile-orange', '🏃', '조퇴·조기 마감 올리기', '근무표보다 일찍 마쳤을 때 (수락되면 시간 줄어듦)');
@@ -2571,7 +2584,11 @@
     try { var sch = await loadSchedule([b], dateStr, dateStr); return myShift(sch, b, staffId, dateStr, refMin) || { sched_start: null, sched_end: null, sched_break_min: null, no_schedule: true }; }
     catch(e){ console.warn('근무표 못 읽음', e); return null; }
   }
-  async function insertAttendance(row, sf){
+  async function insertAttendance(row, sf, dress){
+    if (dress){   // 복장 체크 결과를 같이 저장. 열이 아직 없으면(SQL 전) 복장 없이 출근만 기록
+      try { return await insertAttendance(Object.assign({}, row, { dress_check: dress.check, dress_missing: dress.missing.length ? dress.missing : null }), sf); }
+      catch(e){ console.warn('복장 기록 저장 실패 — supabase-migration-dress.sql 실행 필요', e); }
+    }
     if (!sf) return db.insert('ops_attendance', row);
     try { return await db.insert('ops_attendance', Object.assign({}, row, sf)); }
     catch(e){ console.warn('근무표 칸 저장 실패 — supabase-migration-extras.sql 실행 필요', e); return db.insert('ops_attendance', row); }
@@ -2837,6 +2854,12 @@
         if (first) html += '<div class="muted" style="margin:12px 0 6px">한 번 더</div><input class="pin" id="pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">';
         html += '<div style="margin-top:18px"><button class="btn primary" data-act="clock-pin">확인</button></div><div style="margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">다른 이름</span></div></div>';
       } else {
+        if (st.dress){
+          html += '<div class="pin-wrap" style="padding-bottom:0"><div style="font-size:22px;font-weight:700">' + esc(s.name) + '</div><div class="muted" style="margin-top:4px">복장을 하나씩 눌러 체크해 주세요. 다 체크해야 출근이 찍혀요.</div></div>' +
+            (dressEnforced(st.dress.cfg) ? '' : '<div class="note" style="margin-top:8px">연습 기간이에요 (' + esc(fmtDateK(st.dress.cfg.enforce_from)) + '부터 본 시행). 지금은 빠뜨려도 출근은 되지만 기록이 남아요.</div>') +
+            '<div id="dress-box">' + dressBoxHtml() + '</div><div style="text-align:center;margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">취소</span></div>';
+          app.innerHTML = html; return;
+        }
         if (st.extra){
           html += '<div class="pin-wrap" style="padding-bottom:0"><div style="font-size:20px;font-weight:700">' + esc(s.name) + '</div></div>' + await extraFormHtml(s.id, st.extra === 'early', { branchId: b, pickNew: st.extra === 'new' }) +'<div style="text-align:center;margin-top:14px"><span class="muted" data-act="clock-back" style="cursor:pointer">닫기</span></div>';
           app.innerHTML = html; extraFill(); return;
@@ -2898,9 +2921,152 @@
       if (await fillShift([todayStr(), s, sf.sched_start, sf.sched_end, sf.sched_break_min || 0].join('|'), b, s, 'requested', true)) clockDone(); else render();
       return;
     }
+    if (!clockState.dressData){ await openDress(); return; }   // 복장 체크를 다 해야 출근 시각이 찍힘
+    var dd = clockState.dressData;
     var autoOut = sf && !sf.no_schedule ? schedIso({ work_date: todayStr(), sched_start: sf.sched_start }, sf.sched_end) : null;
-    await insertAttendance({ staff_id: s, branch_id: b, work_date: todayStr(), clock_in: nowIso(), clock_out: autoOut, out_by: null, in_by: s, edits: [] }, sf);
-    toast(staffName(s) + (!sf ? ' 출근 ' + hm(nowIso()) + ' 기록했어요' : ' 출근 처리했어요 · 오늘 근무 ' + sf.sched_start + '~' + sf.sched_end + ' · 퇴근은 자동이에요')); clockDone();
+    await insertAttendance({ staff_id: s, branch_id: b, work_date: todayStr(), clock_in: nowIso(), clock_out: autoOut, out_by: null, in_by: s, edits: [] }, sf, dd);
+    toast(staffName(s) + (!sf ? ' 출근 ' + hm(nowIso()) + ' 기록했어요' : ' 출근 처리했어요 · 오늘 근무 ' + sf.sched_start + '~' + sf.sched_end + ' · 퇴근은 자동이에요') + (dd.missing.length ? ' · 매니저님에게 즉시 연락해주세요' : '')); clockDone();
+  }
+
+  // ===== 출근 복장 체크 (기획/출근복장체크_설계.md, supabase-migration-dress.sql) =====
+  // 설정은 ops_settings key 'dress': { enforce_from, hairnet_exempt: { staffId: {by, at, note} }, hairnet_req: { staffId: {reason, at} } }
+  // 머리망은 전원 대상. 매니저·사장님이 제외하면 그날부터 계속 적용(매일 다시 안 누름).
+  var DRESS_ITEMS = [['uniform', '👕', '유니폼'], ['apron', '🥼', '앞치마'], ['hairnet', '🕸️', '머리망'], ['hat', '🧢', '모자'], ['mask', '😷', '마스크'], ['nametag', '📛', '이름표']];
+  var DRESS_HAT = [['none', '모자 안 씀'], ['company', '회사 모자'], ['personal', '개인 모자']];
+  var DRESS_ENFORCE_DEFAULT = '2026-10-16';   // 연습 1주 뒤 본 시행 (사장님이 #/dress에서 바꿀 수 있음)
+  var dressCfg = null;
+  function dressLabel(k){ var it = DRESS_ITEMS.filter(function(x){ return x[0] === k; })[0]; return it ? it[2] : k; }
+  async function loadDressCfg(force){
+    if (dressCfg && !force) return dressCfg;
+    var r = await db.select('ops_settings', { eq: { key: 'dress' } }).catch(function(){ return []; });
+    dressCfg = Object.assign({ enforce_from: DRESS_ENFORCE_DEFAULT, hairnet_exempt: {}, hairnet_req: {} }, r[0] ? r[0].value : {});
+    return dressCfg;
+  }
+  async function saveDressCfg(fn){ var c = await loadDressCfg(true); fn(c); await db.upsert('ops_settings', [{ key: 'dress', value: c, updated_at: nowIso() }], 'key'); dressCfg = c; }
+  function dressEnforced(cfg){ return todayStr() >= cfg.enforce_from; }
+  function dressItemsFor(cfg, staffId){ return DRESS_ITEMS.filter(function(it){ return it[0] !== 'hairnet' || !cfg.hairnet_exempt[staffId]; }); }
+  async function openDress(){ clockState.dress = { checks: {}, hat: null, missing: {}, cfg: await loadDressCfg(true) }; render(); }
+  function dressReady(d, items){ return items.every(function(it){ return it[0] === 'hat' ? (d.hat === 'none' || d.hat === 'company') : (d.checks[it[0]] || d.missing[it[0]]); }); }
+  function dressBoxHtml(){
+    var d = clockState.dress, sid = clockState.staffId, items = dressItemsFor(d.cfg, sid), h = '';
+    items.forEach(function(it){
+      var k = it[0];
+      if (k === 'hat'){
+        h += '<div class="dress-card' + (d.hat === 'none' || d.hat === 'company' ? ' on' : d.hat === 'personal' ? ' bad' : '') + '" style="cursor:default"><div class="dress-t"><span class="dress-ic">' + it[1] + '</span>' + it[2] + '<span class="dress-ck">' + (d.hat === 'none' || d.hat === 'company' ? '✓' : '') + '</span></div>' +
+          '<div class="dress-hat">' + DRESS_HAT.map(function(o){ return '<button class="btn sm' + (d.hat === o[0] ? ' primary' : '') + '" data-act="dress-hat" data-id="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>' +
+          (d.hat === 'personal' ? '<div class="dress-warn">개인 모자는 벗거나 회사 모자로 바꿔 주세요</div>' : '') + '</div>';
+        return;
+      }
+      var on = !!d.checks[k], miss = d.missing[k];
+      h += '<div class="dress-card' + (on ? ' on' : miss ? ' miss' : '') + '" data-act="dress-tog" data-id="' + k + '"><div class="dress-t"><span class="dress-ic">' + it[1] + '</span>' + it[2] + '<span class="dress-ck">' + (on ? '✓' : miss ? '없음' : '') + '</span></div>' +
+        (miss ? '<div class="dress-warn">없음: ' + esc(miss) + '<br>매니저님에게 즉시 연락해주세요.</div>' : '') +
+        (on ? '' : '<div class="dress-sub">' + (miss ? '<span data-act="dress-miss-undo" data-id="' + k + '">없음 취소</span>' : '<span data-act="dress-miss" data-id="' + k + '">없어요</span>') +
+          (k === 'hairnet' && !miss ? ' · ' + (d.cfg.hairnet_req[sid] ? '예외 신청함 (매니저 확인 전엔 착용)' : '<span data-act="dress-hn-req">머리망 예외 신청</span>') : '') + '</div>') + '</div>';
+    });
+    var ready = dressReady(d, items), enforce = dressEnforced(d.cfg);
+    h += '<div style="text-align:center;margin-top:18px"><button class="btn primary" data-act="dress-go" style="font-size:20px;padding:16px 30px;' + (ready ? 'background:var(--ok);border-color:var(--ok)' : enforce ? 'opacity:.45' : '') + '">' + (ready ? '복장 다 갖췄어요 · 출근' : enforce ? '복장을 다 체크해 주세요' : '연습 기간 · 이대로 출근') + '</button></div>';
+    return h;
+  }
+  function dressPaint(){ var box = document.getElementById('dress-box'); if (box) box.innerHTML = dressBoxHtml(); }
+  async function dressGo(){
+    var d = clockState.dress, items = dressItemsFor(d.cfg, clockState.staffId), enforce = dressEnforced(d.cfg);
+    if (enforce && d.hat === 'personal'){ toast('개인 모자는 벗거나 회사 모자로 바꿔 주세요'); return; }
+    if (enforce && !dressReady(d, items)){ toast('아직 체크 안 한 복장이 있어요'); return; }
+    var check = {}, missing = [];
+    items.forEach(function(it){
+      var k = it[0];
+      if (k === 'hat'){ check.hat = d.hat || null; if (d.hat !== 'none' && d.hat !== 'company') missing.push({ item: 'hat', reason: d.hat === 'personal' ? '개인 모자 (연습 기간)' : '체크 안 함 (연습 기간)' }); return; }
+      check[k] = !!d.checks[k];
+      if (!d.checks[k]) missing.push({ item: k, reason: d.missing[k] || '체크 안 함 (연습 기간)' });
+    });
+    if (!items.some(function(it){ return it[0] === 'hairnet'; })) check.hairnet = 'exempt';
+    clockState.dressData = { check: check, missing: missing };
+    await clockIn();
+  }
+  function dressMissText(r){ return (r.dress_missing || []).map(function(m){ return m.item === 'hat' ? '모자: ' + (m.reason || '') : dressLabel(m.item) + ' 없음' + (m.reason ? ': ' + m.reason : ''); }).join(', '); }
+  function dressMark(r){ return r.dress_missing && r.dress_missing.length ? ' <span style="color:var(--danger)">(⚠ ' + esc(dressMissText(r)) + ')</span>' : ''; }
+
+  // 복장 관리 (매니저·사장님): 시행일, 머리망 제외·예외 신청, 최근 복장 기록·지적
+  routes.dress = async function(params){
+    await loadBase();
+    if (!isManager() || isKiosk()){ toast('매니저·사장님만 볼 수 있어요'); nav('#/home'); return; }
+    var b = pickBranch(params, false), cfg = await loadDressCfg(true), td = todayStr();
+    var people = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && (s.branch_id === b || !s.branch_id); });
+    var html = topbar('출근 복장 체크', true) + branchTabs(b);
+    html += '<div class="card section"><div class="sec-h">시행</div><div>' + (dressEnforced(cfg) ? '<span class="badge ok">본 시행 중</span> ' + esc(fmtDateK(cfg.enforce_from)) + '부터 — 다 체크해야 출근돼요' : '<span class="badge warn">연습 기간</span> ' + esc(fmtDateK(cfg.enforce_from)) + '부터 본 시행 — 지금은 빠뜨려도 출근되고 기록만 남아요') + '</div>' +
+      (isOwner() ? '<div class="inline" style="gap:6px;margin-top:8px"><input class="in" type="date" id="dress-enforce" value="' + esc(cfg.enforce_from) + '" style="max-width:180px"><button class="btn sm" data-act="dress-enforce-save">본 시행일 저장</button></div>' : '') +
+      '<div class="muted" style="margin-top:6px;font-size:12px">항목: ' + DRESS_ITEMS.map(function(x){ return x[2]; }).join(' · ') + ' (모자는 개인 모자면 출근 안 됨)</div></div>';
+    var reqs = people.filter(function(s){ return cfg.hairnet_req[s.id] && !cfg.hairnet_exempt[s.id]; });
+    html += '<div class="card section"><div class="sec-h">머리망 예외 신청 ' + reqs.length + '건</div>';
+    if (!reqs.length) html += '<div class="empty">기다리는 신청이 없어요</div>';
+    reqs.forEach(function(s){ var q = cfg.hairnet_req[s.id]; html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="flex:1 1 100%"><div class="t">' + esc(s.name) + '</div><div class="s">' + esc(q.reason || '') + ' · ' + esc(fmtDateK(todayOf(q.at))) + '</div></div><div class="inline" style="gap:6px;margin-top:6px"><button class="btn sm primary" data-act="dress-hn-ok" data-id="' + esc(s.id) + '">승인 (제외 확정)</button><button class="btn sm" data-act="dress-hn-no" data-id="' + esc(s.id) + '">거절</button></div></div>'; });
+    html += '</div>';
+    html += '<div class="card section"><div class="sec-h">머리망 (전원 대상)</div><div class="muted" style="margin:0 0 6px">[제외]를 누르면 바로 확정되고 그 뒤로 매일 적용돼요. 매일 다시 누를 필요 없어요.</div>';
+    people.forEach(function(s){ var ex = cfg.hairnet_exempt[s.id];
+      html += '<div class="item"><div class="iname"><div class="t">' + esc(s.name) + '</div><div class="s">' + (ex ? '<span class="badge muted">제외</span> ' + esc(ex.note || '') + ' · ' + esc(staffName(ex.by)) + ' ' + esc(fmtDateK(todayOf(ex.at))) : '<span class="badge ok">대상</span>') + '</div></div>' +
+        (ex ? '<button class="btn sm" data-act="dress-hn-back" data-id="' + esc(s.id) + '">다시 대상으로</button>' : '<button class="btn sm" data-act="dress-hn-ex" data-id="' + esc(s.id) + '">제외</button>') + '</div>'; });
+    html += '</div>';
+    var recs = [];
+    try { recs = (await db.select('ops_attendance', { eq: { branch_id: b }, gte: { work_date: addDays(td, -30) }, order: { col: 'clock_in', asc: false } })).filter(function(r){ return r.clock_in && r.work_date >= '2026-10-08'; }); } catch(e){ console.warn('출근 기록 못 읽음', e); }
+    var cnt = {};
+    recs.forEach(function(r){ var c = cnt[r.staff_id] = cnt[r.staff_id] || { miss: 0, flag: 0 }; if (r.dress_missing && r.dress_missing.length) c.miss++; if (r.dress_flag) c.flag++; });
+    var cntIds = Object.keys(cnt).filter(function(k){ return cnt[k].miss || cnt[k].flag; });
+    html += '<div class="card section"><div class="sec-h">최근 30일 직원별</div>';
+    if (!cntIds.length) html += '<div class="empty">빠진 복장·지적이 없어요</div>';
+    cntIds.forEach(function(k){ html += '<div class="hist"><span class="sp">' + esc(staffName(k)) + '</span><span>' + (cnt[k].miss ? '없어요 ' + cnt[k].miss + '번' : '') + (cnt[k].miss && cnt[k].flag ? ' · ' : '') + (cnt[k].flag ? '<span style="color:var(--danger)">지적 ' + cnt[k].flag + '번</span>' : '') + '</span></div>'; });
+    html += '</div>';
+    var week = recs.filter(function(r){ return r.work_date >= addDays(td, -6); });
+    html += '<div class="card section"><div class="sec-h">최근 7일 출근 복장</div><div class="muted" style="margin:0 0 6px">체크는 했는데 실제로 안 지켰으면 [지적]을 눌러 남겨 주세요.</div>';
+    if (!week.length) html += '<div class="empty">기록이 없어요</div>';
+    week.forEach(function(r){
+      var st = r.dress_missing && r.dress_missing.length ? '<span style="color:var(--danger)">⚠ ' + esc(dressMissText(r)) + '</span>' : r.dress_check ? '<span style="color:var(--ok)">✓ 다 체크</span>' : '<span class="muted">복장 확인 없음</span>';
+      html += '<div class="item" style="flex-wrap:wrap"><div class="iname" style="flex:1 1 60%"><div class="t">' + esc(fmtDateK(r.work_date)) + ' · ' + esc(staffName(r.staff_id)) + ' ' + hm(r.clock_in) + '</div><div class="s">' + st + (r.dress_flag ? '<br><span style="color:var(--danger)">지적: ' + esc(r.dress_flag.memo || '') + ' · ' + esc(staffName(r.dress_flag.by)) + '</span>' : '') + '</div></div>' +
+        (r.dress_flag ? '<button class="btn sm" data-act="dress-flag-del" data-id="' + esc(r.id) + '">지적 취소</button>' : '<button class="btn sm" data-act="dress-flag" data-id="' + esc(r.id) + '">지적</button>') + '</div>';
+    });
+    html += '</div>';
+    app.innerHTML = html;
+  };
+  async function dressAction(act, id, el){
+    var d = clockState.dress;
+    switch (act){
+      case 'dress-tog': if (!d) return; if (d.checks[id]) delete d.checks[id]; else { d.checks[id] = true; delete d.missing[id]; } dressPaint(); return;
+      case 'dress-hat': if (!d) return; d.hat = id; dressPaint(); return;
+      case 'dress-miss': {
+        if (!d) return;
+        var why = window.prompt(dressLabel(id) + '이(가) 없는 이유를 적어 주세요 (예: 분실, 다 떨어짐)', ''); if (why === null) return;
+        if (!why.trim()){ toast('이유를 적어 주세요'); return; }
+        d.missing[id] = why.trim(); delete d.checks[id];
+        window.alert('매니저님에게 즉시 연락해주세요.');
+        dressPaint(); return;
+      }
+      case 'dress-miss-undo': if (!d) return; delete d.missing[id]; dressPaint(); return;
+      case 'dress-hn-req': {
+        var hr = window.prompt('머리망 예외 신청 이유 (예: 머리가 짧아요)', ''); if (hr === null) return;
+        if (!hr.trim()){ toast('이유를 적어 주세요'); return; }
+        var sid = clockState.staffId;
+        await saveDressCfg(function(c){ c.hairnet_req[sid] = { reason: hr.trim(), at: nowIso() }; });
+        if (d) d.cfg = dressCfg;
+        toast('신청했어요. 매니저가 확인하기 전까지는 머리망을 써 주세요'); dressPaint(); return;
+      }
+      case 'dress-go': el.disabled = true; try { await dressGo(); } finally { el.disabled = false; } return;
+      case 'dress-enforce-save': { var ev = document.getElementById('dress-enforce').value; if (!/^\d{4}-\d{2}-\d{2}$/.test(ev)){ toast('날짜를 골라 주세요'); return; } await saveDressCfg(function(c){ c.enforce_from = ev; }); toast('본 시행일 저장'); render(); return; }
+      case 'dress-hn-ex': {
+        var nt = window.prompt(staffName(id) + ' 머리망 제외 이유 (예: 짧은 머리 · 남성)\n누르면 바로 확정되고 매일 적용돼요.', ''); if (nt === null) return;
+        await saveDressCfg(function(c){ c.hairnet_exempt[id] = { by: session.staffId, at: nowIso(), note: nt.trim() }; delete c.hairnet_req[id]; });
+        toast(staffName(id) + ' 머리망 제외 확정'); render(); return;
+      }
+      case 'dress-hn-ok': await saveDressCfg(function(c){ var q = c.hairnet_req[id] || {}; c.hairnet_exempt[id] = { by: session.staffId, at: nowIso(), note: q.reason || '예외 신청 승인' }; delete c.hairnet_req[id]; }); toast(staffName(id) + ' 머리망 제외 확정'); render(); return;
+      case 'dress-hn-no': if (!window.confirm(staffName(id) + ' 머리망 예외 신청을 거절할까요? (계속 머리망 착용)')) return; await saveDressCfg(function(c){ delete c.hairnet_req[id]; }); toast('거절했어요'); render(); return;
+      case 'dress-hn-back': if (!window.confirm(staffName(id) + '을(를) 다시 머리망 대상으로 할까요?')) return; await saveDressCfg(function(c){ delete c.hairnet_exempt[id]; }); toast('다시 대상으로 바꿨어요'); render(); return;
+      case 'dress-flag': {
+        var fm = window.prompt('무엇이 안 지켜졌나요? (예: 이름표 안 함, 개인 모자)', ''); if (fm === null) return;
+        if (!fm.trim()){ toast('내용을 적어 주세요'); return; }
+        try { await db.update('ops_attendance', { id: id }, { dress_flag: { memo: fm.trim(), by: session.staffId, at: nowIso() } }); toast('지적을 남겼어요'); }
+        catch(e){ toast('저장이 안 됐어요 — supabase-migration-dress.sql 실행 필요'); }
+        render(); return;
+      }
+      case 'dress-flag-del': if (!window.confirm('지적을 취소할까요?')) return; await db.update('ops_attendance', { id: id }, { dress_flag: null }); render(); return;
+    }
   }
   async function clockOut(id){
     await db.update('ops_attendance', { id: id }, { clock_out: nowIso(), out_by: clockState.staffId });
@@ -2916,7 +3082,7 @@
     catch(e){ console.warn('조기 퇴근 기록 실패', e); }
     toast(staffName(clockState.staffId) + ' 퇴근 처리했어요 (' + min + '분 일찍). 수고했어요!'); clockDone();
   }
-  function clockDone(){ clockState.staffId = null; clockState.ok = false; clockState.extra = false; setTimeout(render, 1200); }
+  function clockDone(){ clockState.staffId = null; clockState.ok = false; clockState.extra = false; clockState.dress = null; clockState.dressData = null; setTimeout(render, 1200); }
 
   // ===== 근무 조회 (사장님·매니저) =====
   function monthOf(s){ return s.slice(0, 7); }
@@ -6454,7 +6620,10 @@
         case 'clock-branch': clockState.branchId = id; try { localStorage.setItem(KIOSK_KEY, id); } catch(err){} render(); break;
         case 'clock-branch-reset': clockState.branchId = null; try { localStorage.removeItem(KIOSK_KEY); } catch(err){} if (session && !isOwner()){ toast('내 매장으로만 찍을 수 있어요'); break; } render(); break;
         case 'clock-pick': clockState.staffId = id; clockState.ok = false; render(); break;
-        case 'clock-back': clockState.staffId = null; clockState.ok = false; clockState.extra = false; render(); break;
+        case 'clock-back': clockState.staffId = null; clockState.ok = false; clockState.extra = false; clockState.dress = null; clockState.dressData = null; render(); break;
+        case 'dress-tog': case 'dress-hat': case 'dress-miss': case 'dress-miss-undo': case 'dress-hn-req': case 'dress-go': case 'dress-enforce-save':
+        case 'dress-hn-ex': case 'dress-hn-ok': case 'dress-hn-no': case 'dress-hn-back': case 'dress-flag': case 'dress-flag-del':
+          await dressAction(act, id, el); break;
         case 'extra-open': clockState.extra = true; render(); break;
         case 'extra-open-early': clockState.extra = 'early'; render(); break;
         case 'extra-submit': el.disabled = true; try { if (await extraSubmit(el.getAttribute('data-staff'), el.getAttribute('data-branch'))){ if (current.route === 'clock') clockDone(); else render(); } } finally { el.disabled = false; } break;
