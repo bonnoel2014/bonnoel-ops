@@ -256,6 +256,7 @@
   .rain-item{ position:absolute; top:-80px; width:52px; height:52px; animation:rainfall linear forwards; }
   .rain-item > span{ display:block; width:100%; height:100%; animation:rainsway ease-in-out infinite alternate; font-size:40px; line-height:52px; text-align:center; }
   .rain-item img{ width:100%; height:100%; object-fit:cover; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,.18); background:#fff; }
+  .rain-item img[src$=".webp"]{ object-fit:contain; border-radius:0; box-shadow:none; background:transparent; filter:drop-shadow(0 3px 4px rgba(0,0,0,.25)); }
   @keyframes rainfall{ 0%{ transform:translateY(0) rotate(-8deg); opacity:0;} 6%{ opacity:1;} 100%{ transform:translateY(115vh) rotate(10deg); opacity:1;} }
   @keyframes rainsway{ from{ transform:translateX(-22px) rotate(-10deg);} to{ transform:translateX(22px) rotate(10deg);} }
   .confetti{ position:absolute; width:9px; height:14px; border-radius:2px; animation:confetti-fall linear forwards; top:-20px; }
@@ -272,7 +273,7 @@
   .wheel-bulb:nth-child(odd){ animation-delay:.5s; }
   @keyframes bulb{ 0%,100%{ opacity:1;} 50%{ opacity:.25;} }
   .wheel-wrap.spinning .wheel-bulb{ animation-duration:.25s; }
-  .wheel{ display:block; width:100%; border-radius:50%; background:#fff; transition:transform 5.2s cubic-bezier(.12,.75,.1,1); will-change:transform; }
+  .wheel{ display:block; width:100%; border-radius:50%; background:#fff; transition:transform 10.4s cubic-bezier(.1,.7,.08,1); will-change:transform; }
   .wheel-hub{ position:absolute; left:50%; top:50%; width:58px; height:58px; margin:-29px 0 0 -29px; border-radius:50%; background:var(--accent); border:5px solid #fff; box-shadow:0 2px 8px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; font-size:26px; z-index:2; }
   .wheel-btn{ display:block; width:calc(100% - 16px); margin:16px 8px 100px; padding:18px; font-size:19px; }
   .wheel-legend{ display:flex; flex-wrap:wrap; gap:6px 12px; justify-content:center; margin:10px 10px 0; font-size:12px; color:var(--ink-soft); }
@@ -9749,10 +9750,10 @@
       var n = ws.slices.length, idxs = []; ws.slices.forEach(function(r, i){ if (r === rr.rank) idxs.push(i); });
       var target = idxs.length ? idxs[Math.floor(Math.random() * idxs.length)] : 0;
       var sliceDeg = 360 / n, center = target * sliceDeg + sliceDeg / 2, jitter = (Math.random() - 0.5) * sliceDeg * 0.6;
-      var final = 360 * 6 + (360 - center - jitter);
+      var final = 360 * 12 + (360 - center - jitter);
       var svg = document.getElementById('wheel'); if (svg){ svg.style.transform = 'rotate(' + final + 'deg)'; }
       ws.deg = final;
-      await new Promise(function(res){ setTimeout(res, 5400); });
+      await new Promise(function(res){ setTimeout(res, 10800); });
       if (wrap) wrap.classList.remove('spinning');
       if (sub) sub.innerHTML = '🎉 <b>' + rr.rank + '등 · ' + esc(rr.prize || '') + '</b> 당첨!';
       drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'wheel', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test, kind: rr.kind || drawKind(rr.rank) };
@@ -9827,7 +9828,7 @@
     // 색종이
     for (var c = 0; c < 70; c++){ h += '<div class="confetti" style="left:' + (Math.random() * 100) + '%;background:' + CELEB_COLORS[c % CELEB_COLORS.length] + ';--dx:' + Math.round((Math.random() - .5) * 160) + 'px;animation-duration:' + (2.6 + Math.random() * 2.2) + 's;animation-delay:' + (Math.random() * 1.2) + 's;width:' + (6 + Math.random() * 6) + 'px"></div>'; }
     // 빵 비
-    for (var k = 0; k < 34; k++){ h += '<div class="rain-item" style="left:' + (2 + Math.random() * 90) + '%;animation-duration:' + (3 + Math.random() * 2.5) + 's;animation-delay:' + (Math.random() * 2.2) + 's;width:' + (40 + Math.random() * 28) + 'px;height:' + (40 + Math.random() * 28) + 'px"><span style="animation-duration:' + (.7 + Math.random() * .8) + 's">' + (img ? '<img src="' + img + '" alt="">' : emo) + '</span></div>'; }
+    for (var k = 0; k < 34; k++){ h += '<div class="rain-item" style="left:' + (2 + Math.random() * 90) + '%;animation-duration:' + (3 + Math.random() * 2.5) + 's;animation-delay:' + (Math.random() * 2.2) + 's;width:' + (52 + Math.random() * 34) + 'px;height:' + (52 + Math.random() * 34) + 'px"><span style="animation-duration:' + (.7 + Math.random() * .8) + 's">' + (img ? '<img src="' + img + '" alt="">' : emo) + '</span></div>'; }
     el.innerHTML = h; document.body.appendChild(el);
     setTimeout(function(){ if (el.parentNode) el.remove(); }, 6500);
   }
