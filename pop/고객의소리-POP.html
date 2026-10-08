@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>본노엘 고객의 소리 POP (A4)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">
+<style>
+  /* 매장별 A4 한 장씩. 파일 끝에 #성수점 처럼 붙이면 그 매장 한 장만 보임 (PNG 뽑을 때) */
+  @page{ size:A4; margin:0; }
+  :root{
+    --bg:#fffdfd; --blush:#fff1f2; --accent:#af4c60; --accent-soft:#ffe1e3; --accent-ink:#fffdfd;
+    --ink:#231717; --muted:#6e5f5e; --faint:#9b8b8a; --line:#eee1e0; --line-strong:#e1c6c7;
+    --serif:"Gowun Batang","Cormorant Garamond",serif; --latin:"Cormorant Garamond","Gowun Batang",serif;
+    --sans:"Noto Sans KR",sans-serif;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:794px; background:var(--bg); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:var(--sans); color:var(--ink); word-break:keep-all; }
+  .poster{ position:relative; width:794px; height:1123px; padding:34px 50px 0; background:var(--bg); display:flex; flex-direction:column; overflow:hidden; page-break-after:always; break-after:page; }
+  .poster:last-child{ page-break-after:auto; break-after:auto; }
+  .top{ display:flex; justify-content:space-between; align-items:baseline; padding:2px 2px 14px; border-bottom:1px solid var(--line); }
+  .brand{ font-family:var(--serif); font-weight:700; font-size:26px; }
+  .brand span{ font-family:var(--latin); font-weight:500; font-size:20px; color:var(--muted); }
+  .store{ font-family:var(--serif); font-weight:700; font-size:20px; color:var(--accent); }
+
+  .hero{ margin-top:30px; text-align:center; }
+  .eyebrow{ font-family:var(--latin); letter-spacing:.3em; text-transform:uppercase; color:var(--accent); font-size:16px; font-weight:600; }
+  .hero h1{ font-family:var(--serif); font-size:80px; line-height:1.1; font-weight:700; color:var(--accent); margin-top:10px; letter-spacing:-.01em; }
+  .hero .lead{ margin-top:14px; font-size:21px; color:var(--muted); font-weight:500; line-height:1.5; }
+  .hero .lead b{ color:var(--ink); }
+
+  .chips{ display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top:26px; }
+  .chip{ background:#fff; border:1.5px solid var(--line-strong); color:#432326; font-weight:700; font-size:19px; padding:9px 20px; border-radius:999px; }
+
+  .qrbox{ margin:30px auto 0; display:flex; align-items:center; gap:30px; background:var(--blush); border:2px dashed var(--line-strong); border-radius:34px; padding:26px 34px; width:640px; }
+  .qr{ width:270px; height:270px; flex:none; background:#fff; border-radius:18px; padding:12px; box-shadow:0 2px 0 var(--line); }
+  .qr img{ width:100%; height:100%; display:block; image-rendering:pixelated; }
+  .qrcap .big{ font-family:var(--serif); font-weight:700; font-size:38px; line-height:1.25; color:var(--accent); }
+  .qrcap .small{ margin-top:12px; font-size:17px; color:var(--muted); line-height:1.6; }
+
+  .steps{ margin:30px auto 0; width:640px; display:grid; gap:14px; }
+  .step{ display:flex; gap:16px; align-items:center; font-size:20px; font-weight:500; }
+  .step b.n{ flex:none; width:40px; height:40px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:inline-flex; align-items:center; justify-content:center; font-size:19px; font-weight:700; }
+  .step em{ font-style:normal; font-weight:700; color:var(--accent); }
+
+  .foot{ margin-top:auto; padding:18px 4px 26px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }
+  .foot .note{ font-size:14px; color:var(--muted); line-height:1.6; }
+  .foot .url{ font-size:11px; color:var(--faint); margin-top:4px; }
+  .foot .sig{ font-family:var(--latin); font-style:italic; font-size:22px; color:var(--accent); white-space:nowrap; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+  // 실제 매장 id (manual_branches) — QR 주소 = 운영 앱 고객의 소리 손님 페이지
+  var STORES = [
+    ['성수점', '2ac66e25-8aca-4498-b14b-60a096c86dd9'],
+    ['답십리점', '50834826-ebb4-4bbf-a2d3-9289c90b8634'],
+    ['중계점', '2c758126-efce-429d-a430-454c78634862'],
+    ['왕십리점', 'c61bddb3-344c-4bac-9f6a-b39978eaf812']
+  ];
+  var only = decodeURIComponent(location.hash.replace('#', ''));
+  function qr(url){ var q = qrcode(0, 'M'); q.addData(url); q.make(); return q.createDataURL(10, 0); }
+  document.getElementById('root').innerHTML = STORES.filter(function(s){ return !only || s[0] === only; }).map(function(s){
+    var url = 'https://ops.bonnoel.com/?v=' + s[1];
+    return '<section class="poster">'
+      + '<div class="top"><div class="brand">본노엘 <span>Bon Noël</span></div><div class="store">' + s[0] + '</div></div>'
+      + '<div class="hero"><div class="eyebrow">Voice of Customer</div><h1>의견 주세요 💌</h1>'
+      + '<div class="lead">불편했던 점도, 좋았던 점도<br><b>사장님이 직접 읽어요</b></div></div>'
+      + '<div class="chips"><span class="chip">😣 불편했어요</span><span class="chip">👏 칭찬해요</span><span class="chip">💡 아이디어</span><span class="chip">🛠️ 바라는 점</span><span class="chip">💬 기타</span></div>'
+      + '<div class="qrbox"><div class="qr"><img src="' + qr(url) + '" alt="QR"></div>'
+      + '<div class="qrcap"><div class="big">QR 찍고<br>1분이면 끝!</div><div class="small">로그인 없이 바로 써요<br>집에 가서 남겨도 좋아요</div></div></div>'
+      + '<div class="steps">'
+      + '<div class="step"><b class="n">1</b><span>휴대폰 카메라로 <em>QR을 찍어</em> 주세요</span></div>'
+      + '<div class="step"><b class="n">2</b><span>어떤 이야기인지 <em>하나 고르고</em> 편하게 적어 주세요</span></div>'
+      + '<div class="step"><b class="n">3</b><span>이름·번호는 <em>선택</em> — 익명도 OK! 답장을 원하면 번호를 남겨 주세요</span></div>'
+      + '</div>'
+      + '<div class="foot"><div><div class="note">위생·알레르기처럼 급한 일은 지금 매장 직원에게 바로 말씀해 주세요.</div><div class="url">' + url + '</div></div><div class="sig">merci beaucoup</div></div>'
+      + '</section>';
+  }).join('');
+</script>
+</body>
+</html>
