@@ -9669,7 +9669,7 @@
         + '<div class="pop-steps"><div><b>1</b><span>빵 구매 후 영수증을 받아 주세요</span></div><div><b>2</b><span>리뷰 쓰기 — 별점 ★5 · 사진 1장 이상 · 저장까지!</span></div><div><b>3</b><span>QR 찍고 번호 넣고 뽑기 → 결과 화면 보여 주고 <b>바로 받기!</b></span></div></div>'
         + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>바로 뽑기!<small>뽑기판 · 캡슐 · 집게 · 소금이 찾기 · 빵 퀴즈<br>100% 당첨 · 하루 20명 · 당첨은 그 자리에서!</small></div></div>'
         + '<div class="pop-prizes' + (drawRanks().length > 5 ? ' many' : '') + '">' + drawRanks().map(function(k){ return '<div><b>' + k + '등</b>' + esc(L[k] || '') + '</div>'; }).join('') + '</div>'
-        + '<div class="pop-foot">확률은 종이 뽑기판과 같아요 (520알 중 1등 1개). 참여 후 리뷰를 삭제하면 이후 리뷰 이벤트 참여가 불가합니다. 당첨 상품이 품절이면 다른 빵으로 드려요.<br><span style="color:#b9a0a3">' + esc(url) + '</span></div></div>';
+        + '<div class="pop-foot">확률은 종이 뽑기판과 같아요 (520알 중 1등 1개). 참여 후 리뷰를 삭제하면 이후 리뷰 이벤트 참여가 불가합니다. 당첨 상품이 품절이면 다른 빵으로 드려요.</div></div>';
     }
     app.innerHTML = html;
   };
