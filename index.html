@@ -264,6 +264,19 @@
   .burst i{ position:absolute; left:0; top:0; width:10px; height:10px; border-radius:50%; animation:burst .9s ease-out forwards; }
   @keyframes burst{ 0%{ transform:translate(0,0) scale(1); opacity:1;} 100%{ transform:translate(var(--bx), var(--by)) scale(.3); opacity:0;} }
   .celebrate-text{ position:absolute; left:0; right:0; top:22%; text-align:center; font:700 34px var(--font-serif); color:var(--accent); text-shadow:0 2px 0 #fff, 0 0 18px rgba(255,255,255,.9); animation:dpop .6s ease-out; }
+  /* 행운 룰렛 */
+  .wheel-wrap{ position:relative; width:min(320px, 88vw); margin:8px auto 0; }
+  .wheel-pointer{ position:absolute; left:50%; top:-6px; width:0; height:0; margin-left:-16px; border-left:16px solid transparent; border-right:16px solid transparent; border-top:34px solid var(--accent); z-index:3; filter:drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+  .wheel-ring{ position:relative; border-radius:50%; padding:10px; background:var(--accent); box-shadow:0 6px 18px rgba(175,76,96,.35); }
+  .wheel-bulb{ position:absolute; width:9px; height:9px; border-radius:50%; background:#ffd84d; box-shadow:0 0 6px #ffd84d; animation:bulb 1s ease-in-out infinite; }
+  .wheel-bulb:nth-child(odd){ animation-delay:.5s; }
+  @keyframes bulb{ 0%,100%{ opacity:1;} 50%{ opacity:.25;} }
+  .wheel-wrap.spinning .wheel-bulb{ animation-duration:.25s; }
+  .wheel{ display:block; width:100%; border-radius:50%; background:#fff; transition:transform 5.2s cubic-bezier(.12,.75,.1,1); will-change:transform; }
+  .wheel-hub{ position:absolute; left:50%; top:50%; width:58px; height:58px; margin:-29px 0 0 -29px; border-radius:50%; background:var(--accent); border:5px solid #fff; box-shadow:0 2px 8px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; font-size:26px; z-index:2; }
+  .wheel-btn{ display:block; width:calc(100% - 16px); margin:16px 8px 100px; padding:18px; font-size:19px; }
+  .wheel-legend{ display:flex; flex-wrap:wrap; gap:6px 12px; justify-content:center; margin:10px 10px 0; font-size:12px; color:var(--ink-soft); }
+  .wheel-legend i{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:-1px; }
   /* 시작 카운트다운 */
   .countdown{ position:fixed; inset:0; z-index:60; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(255,253,253,.82); backdrop-filter:blur(2px); }
   .countdown .num{ font:700 120px/1 var(--font-serif); color:var(--accent); animation:cdpop .9s ease-out; text-shadow:0 4px 0 #fff, 0 0 30px rgba(175,76,96,.25); }
@@ -514,7 +527,7 @@
       update: async function(table, match, patch){ var q = sb.from(table).update(patch); q = applyMatch(q, { eq: match }); var r = await q.select(); if (r.error) throw r.error; return r.data; },
       upsert: async function(table, rows, onConflict){ var r = await sb.from(table).upsert(rows, { onConflict: onConflict }).select(); if (r.error) throw r.error; return r.data; },
       remove: async function(table, match){ var q = sb.from(table).delete(); q = applyMatch(q, { eq: match }); var r = await q; if (r.error) throw r.error; },
-      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^voice_/.test(fn) ? '고객의 소리 준비(SQL)가 아직 안 됐어요 — supabase-migration-voice.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw12.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
+      rpc: async function(fn, args){ var r = await sb.rpc(fn, args || {}); if (r.error){ if (/Could not find the function|does not exist/i.test(r.error.message || '')) throw new Error(/^corp_/.test(fn) ? '법인 서류 준비(SQL)가 아직 안 됐어요 — supabase-migration-corp.sql 실행 필요' : /^bread_/.test(fn) ? '알레르기 체크 준비(SQL)가 아직 안 됐어요 — 사장님 앱 저장소의 supabase/owner-bread-allergy.sql 실행 필요' : /^cash_/.test(fn) ? '자금 흐름 준비(SQL)가 아직 안 됐어요 — supabase-migration-cash.sql 실행 필요' : /^voice_/.test(fn) ? '고객의 소리 준비(SQL)가 아직 안 됐어요 — supabase-migration-voice.sql 실행 필요' : /^draw_/.test(fn) ? '리뷰 뽑기판 준비(SQL)가 아직 안 됐어요 — supabase-migration-draw.sql · draw2 ~ draw13.sql 실행 필요' : '선결제 준비(SQL)가 아직 안 됐어요 — supabase-migration-prepay.sql 실행 필요'); throw r.error; } return r.data; },
       // 영수증 사진 저장소 + 자동 읽기 함수
       upload: async function(bucket, path, blob, type){ var r = await sb.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false }); if (r.error) throw r.error; return path; },
       signedUrl: async function(bucket, path){ var r = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (r.error) throw r.error; return r.data.signedUrl; },
@@ -9453,7 +9466,8 @@
       + '<button class="btn" data-act="draw-method" data-id="capsule"><span class="big">🎁</span>빵 캡슐 뽑기<small>손잡이 돌려서 캡슐 열기</small></button>'
       + '<button class="btn wide2" data-act="draw-method" data-id="claw"><span class="big">🤏</span>소금이 집게 뽑기<small>집게가 움직일 때 "잡기!" 누르기</small></button>'
       + '<button class="btn wide2" data-act="draw-method" data-id="hunt"><span class="big">🔍</span>소금이를 찾아라<small>빵 더미 속 소금이를 30초 안에 찾기 (못 찾아도 뽑기는 똑같이)</small></button>'
-      + '<button class="btn wide2" data-act="draw-method" data-id="quiz"><span class="big">🥐</span>빵 찾기 퀴즈<small>"앙버터를 찾아라!" 본노엘 빵 사진 12장 중 10초 안에 찾기 · 기회 2번 (못 찾아도 뽑기는 똑같이)</small></button></div>'
+      + '<button class="btn wide2" data-act="draw-method" data-id="quiz"><span class="big">🥐</span>빵 찾기 퀴즈<small>"앙버터를 찾아라!" 본노엘 빵 사진 12장 중 10초 안에 찾기 · 기회 2번 (못 찾아도 뽑기는 똑같이)</small></button>'
+      + '<button class="btn wide2" data-act="draw-method" data-id="wheel"><span class="big">🎡</span>행운 룰렛<small>룰렛을 돌려서 멈추는 칸이 당첨! 빵이 우르르 쏟아져요</small></button></div>'
       + '<div class="stickybar"><button class="btn block" data-act="draw-abort">‹ 돌아가기 (아직 안 뽑았어요)</button></div>';
   }
   var CLAW_ITEMS = [['🥐', 6], ['🍞', 24], ['🥖', 40], ['🧁', 56], ['🥨', 70], ['🥯', 84], ['🍪', 14], ['🥐', 48], ['🍰', 32], ['🥖', 64]];
@@ -9524,6 +9538,7 @@
     if (drawSt.stage === 'claw'){ app.innerHTML = html + drawClawHtml(bname); return; }
     if (drawSt.stage === 'hunt'){ app.innerHTML = html + drawHuntHtml(bname); drawCountdown(5, drawHuntStart, '변장한 소금이들 사이에서 진짜를!'); return; }
     if (drawSt.stage === 'quiz'){ app.innerHTML = html + drawQuizHtml(bname); drawCountdown(drawSt.quiz && drawSt.quiz.tries ? 3 : 5, drawQuizStart, '「' + drawSt.quiz.target.n + '」을(를) 찾을 준비!'); return; }
+    if (drawSt.stage === 'wheel'){ app.innerHTML = html + drawWheelHtml(bname); return; }
     if (drawSt.stage === 'result'){ app.innerHTML = html + drawResultHtml(bname); if (!drawSt.result.fromGuest) drawCelebrate(drawSt.result); return; }
 
     var allChecked = DRAW_CONDS.every(function(c){ return drawSt.cond[c[0]]; });
@@ -9681,6 +9696,72 @@
     } catch(err){ toast(err.message || err); drawSt.quiz = null; drawSt.stage = 'method'; render(); }
     finally { drawSt.busy = false; }
   }
+  // ---- 행운 룰렛: 24칸 휠, 등수는 서버가 정하고 룰렛이 그 칸에 멈춤 ----
+  var WHEEL_SLICES_BY_RANK = { 1: 1, 2: 1, 3: 2, 4: 3, 5: 5, 6: 3, 7: 3, 8: 3, 9: 3 };   // 24칸 (보이는 칸 수일 뿐, 확률은 서버 520알 기준)
+  var WHEEL_COLORS = ['#ffe1e3', '#fff3d6', '#fde2ea', '#ffd9c7', '#f8e4f3', '#fff0f1'];
+  var WHEEL_IMG = { '휘낭시에': 'financier-set.webp', '식빵': 'bread-loaf.webp', '마들렌': 'madeleine-hd.webp', '파운드': 'pound-cake.webp', '앙버터': 'angbutter.jpg', '소금빵': 'salt-bread.jpg', '러스크': null };
+  function wheelShort(label, kind){
+    var L = String(label || '');
+    if (kind === 'redraw') return '한 번\n더';
+    if (kind === 'coupon'){ var m = L.match(/([0-9,]+)원/); return (m ? m[1] + '원' : '할인') + '\n할인'; }
+    if (/충전금/.test(L)){ var m2 = L.match(/([0-9,]+)원/); return '충전금\n' + (m2 ? m2[1] : ''); }
+    L = L.replace(/\s*\([^)]*\)/g, '').replace(/\s*\d+\s*(개|봉|조각)/g, '').replace(/\+.*$/, '').trim();
+    if (L.length > 6) L = L.slice(0, 5) + '…';
+    return L;
+  }
+  function drawWheelSlices(){
+    var ranks = drawRanks(), slices = [];
+    ranks.forEach(function(r){ var n = WHEEL_SLICES_BY_RANK[r] || 2; for (var i = 0; i < n; i++) slices.push(r); });
+    // 같은 등수가 붙지 않게 섞기 (고정 순서: 항상 같은 배치)
+    var out = [], pools = {}; slices.forEach(function(r){ (pools[r] = pools[r] || []).push(r); });
+    var keys = Object.keys(pools).sort(function(a, b){ return pools[b].length - pools[a].length; });
+    while (out.length < slices.length){ for (var k = 0; k < keys.length; k++){ var p = pools[keys[k]]; if (p.length) out.push(p.pop()); } }
+    return out;
+  }
+  function drawWheelHtml(bname){
+    var ws = drawSt.wheel; if (!ws){ ws = drawSt.wheel = { slices: drawWheelSlices(), spun: false, deg: 0 }; }
+    var n = ws.slices.length, R = 150, cx = 160, cy = 160, svg = '';
+    for (var i = 0; i < n; i++){
+      var a0 = (i / n) * Math.PI * 2 - Math.PI / 2, a1 = ((i + 1) / n) * Math.PI * 2 - Math.PI / 2;
+      var x0 = cx + R * Math.cos(a0), y0 = cy + R * Math.sin(a0), x1 = cx + R * Math.cos(a1), y1 = cy + R * Math.sin(a1);
+      var r = ws.slices[i], kd = drawKind(r), fill = r === 1 ? 'var(--accent)' : WHEEL_COLORS[i % WHEEL_COLORS.length];
+      svg += '<path d="M' + cx + ',' + cy + ' L' + x0.toFixed(1) + ',' + y0.toFixed(1) + ' A' + R + ',' + R + ' 0 0,1 ' + x1.toFixed(1) + ',' + y1.toFixed(1) + ' Z" fill="' + fill + '" stroke="#fff" stroke-width="1.5"/>';
+      var am = (a0 + a1) / 2, tx = cx + R * 0.68 * Math.cos(am), ty = cy + R * 0.68 * Math.sin(am), rot = am * 180 / Math.PI + 90;
+      var lines = wheelShort(drawSt.labels[r], kd).split('\n');
+      svg += '<text transform="translate(' + tx.toFixed(1) + ',' + ty.toFixed(1) + ') rotate(' + rot.toFixed(1) + ')" text-anchor="middle" font-size="9.5" font-weight="700" fill="' + (r === 1 ? '#fff' : '#7a2d3d') + '" font-family="Noto Sans KR, sans-serif">' + lines.map(function(l, k){ return '<tspan x="0" dy="' + (k ? 10 : (lines.length > 1 ? -4 : 3)) + '">' + esc(l) + '</tspan>'; }).join('') + '</text>';
+    }
+    var bulbs = ''; for (var b = 0; b < 24; b++){ var ba = (b / 24) * Math.PI * 2; bulbs += '<i class="wheel-bulb" style="left:calc(50% + ' + (Math.cos(ba) * 50).toFixed(1) + '% - 4px);top:calc(50% + ' + (Math.sin(ba) * 50).toFixed(1) + '% - 4px)"></i>'; }
+    var legend = drawRanks().map(function(r){ return '<span><i style="background:' + (r === 1 ? 'var(--accent)' : WHEEL_COLORS[(ws.slices.indexOf(r)) % WHEEL_COLORS.length]) + '"></i>' + r + '등 ' + esc(String(drawSt.labels[r] || '')) + '</span>'; }).join('');
+    return '<div class="gacha-title">🎡 행운 룰렛</div><div class="gacha-sub" id="wheel-sub">' + (ws.spun ? '두근두근, 선물을 고르고 있어요…' : '버튼을 누르면 룰렛이 돌아요. 멈추는 칸이 당첨!') + '</div>'
+      + '<div class="wheel-wrap' + (ws.spun ? ' spinning' : '') + '" id="wheel-wrap"><div class="wheel-pointer"></div><div class="wheel-ring">' + bulbs + '<svg class="wheel" id="wheel" viewBox="0 0 320 320" style="transform:rotate(' + ws.deg + 'deg)">' + svg + '</svg><div class="wheel-hub">🥐</div></div></div>'
+      + '<div class="wheel-legend">' + legend + '</div>'
+      + '<button class="btn primary wheel-btn" data-act="draw-wheel-spin"' + (ws.spun ? ' disabled' : '') + '>🎡 룰렛 돌리기</button>'
+      + (ws.spun ? '' : '<div class="stickybar"><button class="btn block" data-act="draw-method-back">‹ 다른 방법으로</button></div>');
+  }
+  async function drawWheelSpin(el){
+    var ws = drawSt.wheel; if (!ws || ws.spun || drawSt.busy) return;
+    drawSt.busy = true; ws.spun = true; el.disabled = true;
+    var wrap = document.getElementById('wheel-wrap'), sub = document.getElementById('wheel-sub'); if (wrap) wrap.classList.add('spinning'); if (sub) sub.textContent = '두근두근, 선물을 고르고 있어요…';
+    try {
+      var call = drawSt.guest ? drawCall('draw_guest_pick', drawGuestArgs('wheel', null)) : drawCall('draw_pick', { p_branch: drawSt.b, p_staff: session.staffId, p_cell: null, p_method: 'wheel', p_redraw: drawSt.redraw || null });
+      var rr = await call;
+      // 서버가 정한 등수의 칸 중 하나로 멈추게 각도 계산 (포인터는 12시 방향)
+      var n = ws.slices.length, idxs = []; ws.slices.forEach(function(r, i){ if (r === rr.rank) idxs.push(i); });
+      var target = idxs.length ? idxs[Math.floor(Math.random() * idxs.length)] : 0;
+      var sliceDeg = 360 / n, center = target * sliceDeg + sliceDeg / 2, jitter = (Math.random() - 0.5) * sliceDeg * 0.6;
+      var final = 360 * 6 + (360 - center - jitter);
+      var svg = document.getElementById('wheel'); if (svg){ svg.style.transform = 'rotate(' + final + 'deg)'; }
+      ws.deg = final;
+      await new Promise(function(res){ setTimeout(res, 5400); });
+      if (wrap) wrap.classList.remove('spinning');
+      if (sub) sub.innerHTML = '🎉 <b>' + rr.rank + '등 · ' + esc(rr.prize || '') + '</b> 당첨!';
+      drawSt.result = { branch: drawSt.b, log_id: rr.log_id, rank: rr.rank, prize: rr.prize, cell: rr.cell, method: 'wheel', code: rr.code, drawn_at: rr.drawn_at, status: 'pending', at: Date.now(), expires_at: rr.expires_at, phone_masked: rr.phone_masked, branch_name: rr.branch, phone: drawSt.phone, is_test: !!rr.is_test, kind: rr.kind || drawKind(rr.rank) };
+      if (drawSt.guest) drawGuestSave(drawSt.result); else drawPendingSave(drawSt.result); drawSt.redraw = null;
+      await new Promise(function(res){ setTimeout(res, 900); });
+      drawSt.cond = {}; drawSt.stage = 'result'; render();
+    } catch(err){ toast(err.message || err); ws.spun = false; if (wrap) wrap.classList.remove('spinning'); el.disabled = false; render(); }
+    finally { drawSt.busy = false; }
+  }
   // 시작 전 긴장감: 5·4·3·2·1 → 시작! (두 번째 기회는 3부터)
   var cdTimer = null;
   function drawCountdown(n, cb, label){
@@ -9727,9 +9808,11 @@
   var CELEB_COLORS = ['#af4c60', '#ffe1e3', '#ffd84d', '#ff8fa3', '#fff', '#e1c6c7', '#f7b267'];
   function drawPrizeImage(label){
     var L = String(label || '');
+    var pri = [['휘낭시에', 'financier-set.webp'], ['식빵', 'bread-loaf.webp'], ['마들렌', 'madeleine-hd.webp'], ['파운드', 'pound-cake.webp']];
+    for (var p = 0; p < pri.length; p++) if (L.indexOf(pri[p][0]) >= 0) return 'assets/breads/' + pri[p][1];
     var hit = QUIZ_BREADS.filter(function(b){ var key = b.n.replace(/\s/g, ''); return L.replace(/\s/g, '').indexOf(key) >= 0; }).sort(function(a, b){ return b.n.length - a.n.length; })[0];
     if (hit) return 'assets/breads/' + hit.f;
-    var kw = [['마들렌', 'madeleine.jpg'], ['휘낭시에', 'choco-financier.jpg'], ['파운드', 'pound-slice.jpg'], ['소금빵', 'salt-bread.jpg'], ['앙버터', 'angbutter.jpg'], ['프레첼', 'pretzel.jpg'], ['카스테라', 'castella.jpg'], ['식빵', null], ['러스크', null]];
+    var kw = [['휘낭시에', 'financier-set.webp'], ['식빵', 'bread-loaf.webp'], ['마들렌', 'madeleine-hd.webp'], ['파운드', 'pound-cake.webp'], ['소금빵', 'salt-bread.jpg'], ['앙버터', 'angbutter.jpg'], ['프레첼', 'pretzel.jpg'], ['카스테라', 'castella.jpg'], ['러스크', null]];
     for (var i = 0; i < kw.length; i++) if (L.indexOf(kw[i][0]) >= 0) return kw[i][1] ? 'assets/breads/' + kw[i][1] : null;
     return null;
   }
@@ -9744,7 +9827,7 @@
     // 색종이
     for (var c = 0; c < 70; c++){ h += '<div class="confetti" style="left:' + (Math.random() * 100) + '%;background:' + CELEB_COLORS[c % CELEB_COLORS.length] + ';--dx:' + Math.round((Math.random() - .5) * 160) + 'px;animation-duration:' + (2.6 + Math.random() * 2.2) + 's;animation-delay:' + (Math.random() * 1.2) + 's;width:' + (6 + Math.random() * 6) + 'px"></div>'; }
     // 빵 비
-    for (var k = 0; k < 22; k++){ h += '<div class="rain-item" style="left:' + (2 + Math.random() * 90) + '%;animation-duration:' + (3 + Math.random() * 2.5) + 's;animation-delay:' + (Math.random() * 2.2) + 's;width:' + (40 + Math.random() * 28) + 'px;height:' + (40 + Math.random() * 28) + 'px"><span style="animation-duration:' + (.7 + Math.random() * .8) + 's">' + (img ? '<img src="' + img + '" alt="">' : emo) + '</span></div>'; }
+    for (var k = 0; k < 34; k++){ h += '<div class="rain-item" style="left:' + (2 + Math.random() * 90) + '%;animation-duration:' + (3 + Math.random() * 2.5) + 's;animation-delay:' + (Math.random() * 2.2) + 's;width:' + (40 + Math.random() * 28) + 'px;height:' + (40 + Math.random() * 28) + 'px"><span style="animation-duration:' + (.7 + Math.random() * .8) + 's">' + (img ? '<img src="' + img + '" alt="">' : emo) + '</span></div>'; }
     el.innerHTML = h; document.body.appendChild(el);
     setTimeout(function(){ if (el.parentNode) el.remove(); }, 6500);
   }
@@ -9804,6 +9887,7 @@
     if (drawSt.stage === 'claw'){ app.innerHTML = html + drawClawHtml(bname); return; }
     if (drawSt.stage === 'hunt'){ app.innerHTML = html + drawHuntHtml(bname); drawCountdown(5, drawHuntStart, '변장한 소금이들 사이에서 진짜를!'); return; }
     if (drawSt.stage === 'quiz'){ app.innerHTML = html + drawQuizHtml(bname); drawCountdown(drawSt.quiz && drawSt.quiz.tries ? 3 : 5, drawQuizStart, '「' + drawSt.quiz.target.n + '」을(를) 찾을 준비!'); return; }
+    if (drawSt.stage === 'wheel'){ app.innerHTML = html + drawWheelHtml(bname); return; }
     if (drawSt.stage === 'platform'){ app.innerHTML = html + drawPlatformHtml(bname); return; }
     if (drawSt.stage === 'phone'){ app.innerHTML = html + drawPhoneHtml(bname); var pi = document.getElementById('dg-phone'); if (pi && !pi.value) pi.focus(); return; }
     if (drawSt.stage === 'find'){ app.innerHTML = html + drawFindHtml(bname); return; }
@@ -9836,7 +9920,7 @@
       var url = location.origin + location.pathname + '?g=' + b.id + (DEMO ? '&demo=1' : ''), qr = qrDataUrl(url);
       html += '<div class="pop"><div class="pop-brand">BON NOËL · ' + esc(b.name) + '</div><div class="pop-title">리뷰 쓰고<br>빵 뽑기 🎁</div><div class="pop-sub">네이버 · 구글 · 카카오맵 · 티맵 리뷰</div><div class="pop-limit">✨ 100% 당첨 · 하루 20명 한정 · 선착순!</div>'
         + '<div class="pop-steps"><div><b>1</b><span>빵 구매 후 영수증을 받아 주세요</span></div><div><b>2</b><span>리뷰 쓰기 — 별점 ★5 · 사진 1장 이상 · 저장까지!</span></div><div><b>3</b><span>QR 찍고 번호 넣고 뽑기 → 결과 화면 보여 주고 <b>바로 받기!</b></span></div></div>'
-        + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>바로 뽑기!<small>뽑기판 · 캡슐 · 집게 · 소금이 찾기 · 빵 퀴즈<br>100% 당첨 · 하루 20명 · 당첨은 그 자리에서!</small></div></div>'
+        + '<div class="pop-qr">' + (qr ? '<img src="' + qr + '" alt="QR">' : '') + '<div class="cap">QR 찍고<br>바로 뽑기!<small>룰렛 · 뽑기판 · 캡슐 · 집게 · 소금이 찾기 · 빵 퀴즈<br>100% 당첨 · 하루 20명 · 당첨은 그 자리에서!</small></div></div>'
         + '<div class="pop-prizes' + (drawRanks().length > 5 ? ' many' : '') + '">' + drawRanks().map(function(k){ return '<div><b>' + k + '등</b>' + esc(L[k] || '') + '</div>'; }).join('') + '</div>'
         + '<div class="pop-foot">참여 후 리뷰를 삭제하면 이후 리뷰 이벤트 참여가 불가합니다. 당첨 상품이 품절이면 다른 빵으로 드려요.</div></div>';
     }
@@ -9910,7 +9994,7 @@
           if (!drawSt.result) break;
           drawSt.redraw = drawSt.result.log_id; drawSt.result = null;
           if (drawSt.guest) drawGuestSave(null); else drawPendingSave(null);
-          drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.hunt = null; drawSt.quiz = null; drawSt.stage = 'method'; render(); break;
+          drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.hunt = null; drawSt.quiz = null; drawSt.wheel = null; drawSt.stage = 'method'; render(); break;
         }
         case 'draw-guest-done': {
           if (!drawSt.result || drawSt.result.status !== 'pending') break;
@@ -9927,7 +10011,8 @@
           drawSt.stage = 'result'; render(); break;
         }
         case 'draw-pop-print': window.print(); break;
-        case 'draw-method': drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.hunt = null; drawSt.quiz = null; drawSt.stage = id === 'capsule' ? 'capsule' : id === 'claw' ? 'claw' : id === 'hunt' ? 'hunt' : id === 'quiz' ? 'quiz' : 'board'; render(); break;
+        case 'draw-method': drawSt.cap = 'ready'; drawSt.claw = 'ready'; drawSt.hunt = null; drawSt.quiz = null; drawSt.wheel = null; drawSt.stage = id === 'capsule' ? 'capsule' : id === 'claw' ? 'claw' : id === 'hunt' ? 'hunt' : id === 'quiz' ? 'quiz' : id === 'wheel' ? 'wheel' : 'board'; render(); break;
+        case 'draw-wheel-spin': drawWheelSpin(el); break;
         case 'draw-quiz-tap': {
           var qz = drawSt.quiz; if (!qz || qz.done || drawSt.busy || drawSt.countdown) break;
           if (qz.cells[+id] === qz.target) drawQuizFinish(true); else { el.classList.remove('miss'); void el.offsetWidth; el.classList.add('miss'); el.disabled = true; setTimeout(function(){ drawQuizMiss(false); }, 500); }
