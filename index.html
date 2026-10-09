@@ -8681,6 +8681,31 @@
     toast('영수증 올렸어요'); render();
   }
 
+  // ----- 입금 캡처 (사장님이 거래처 입금 내역 화면을 찍어 붙여 둠 → 나중에 빠르게 확인) -----
+  function vdProofs(st){ return (st && st.snapshot && st.snapshot.proofs) || []; }
+  async function vdProofBox(st){
+    var list = vdProofs(st), urls = {};
+    await Promise.all(list.map(function(p){ return db.signedUrl('receipts', p.path).then(function(u){ urls[p.path] = u; }).catch(function(){}); }));
+    var h = '<div class="group-title" style="margin-left:0">입금 캡처 ' + (list.length ? list.length + '장' : '') + ' <span class="muted">· 통장·이체 내역 화면</span></div><div class="vrc-ph">';
+    list.forEach(function(p){ h += '<span class="vrc-t">' + (urls[p.path] ? '<img src="' + esc(urls[p.path]) + '" alt="입금 캡처" data-act="vd-rc-open" style="width:84px;height:84px">' : '<span class="vrc-add">?</span>') + '<button class="vrc-x" data-act="vd-pp-del" data-path="' + esc(p.path) + '" aria-label="캡처 지우기">×</button></span>'; });
+    h += '<label class="vrc-add" style="width:84px;height:84px">📎<span>캡처 붙이기</span><input type="file" accept="image/*" class="hidden vd-pp-file"></label></div>';
+    return h;
+  }
+  async function vdProofUpload(input){
+    var f = input.files && input.files[0], st = vdCur && vdCur.st; if (!f || !st) return;
+    var lab = input.closest('label'); if (lab) lab.style.opacity = '.5';
+    toast('캡처 올리는 중…');
+    try {
+      var img = await resizeImage(f, 1800);
+      var path = 'vendor-pay/' + st.ym + '/' + uid() + '.jpg';
+      await db.upload('receipts', path, img.blob, 'image/jpeg');
+      var fresh = (await db.select('ops_vendor_statements', { eq: { id: st.id } }))[0] || st;   // 다른 화면에서 붙인 것도 안 지워지게 최신 걸 읽고 더함
+      var snap = Object.assign({}, fresh.snapshot || {}); snap.proofs = vdProofs(fresh).concat([{ path: path, at: nowIso() }]);
+      await db.update('ops_vendor_statements', { id: st.id }, { snapshot: snap, updated_at: nowIso() });
+    } finally { if (lab) lab.style.opacity = ''; }
+    toast('입금 캡처를 붙였어요'); render();
+  }
+
   // 납품처가 여러 곳인 거래처(앤드밀)는 납품처마다 명세서를 따로 만듦 (사장님 10/8: "앤드밀은 항상 각각")
   function vdUnits(v){
     var sites = v.sites.filter(function(s){ return s.active !== false; });
@@ -8880,7 +8905,7 @@
       var total = st ? num(st.total) : c.total;
       sumTotal += total || 0; if (st && st.status === 'paid') sumPaid += num(st.paid_amount) || 0;
       var qty = c.lines.reduce(function(a, l){ return a + l.qty; }, 0);
-      rowsHtml += '<a class="row" href="#/vs-v/' + u.key + '/' + ym + '"><div class="tile" style="background:var(--tile-purple)">📑</div><div class="rt"><div class="rtitle">' + esc(u.label) + '</div><div class="rsub">' + won(total) + '원 · ' + won(qty) + '개' + (c.carry && !st ? ' · 전달 미입금 포함' : '') + '</div><div style="margin-top:3px">' + vdStatusBadge(st) + '</div></div><div class="chev">›</div></a>';
+      rowsHtml += '<a class="row" href="#/vs-v/' + u.key + '/' + ym + '"><div class="tile" style="background:var(--tile-purple)">📑</div><div class="rt"><div class="rtitle">' + esc(u.label) + '</div><div class="rsub">' + won(total) + '원 · ' + won(qty) + '개' + (c.carry && !st ? ' · 전달 미입금 포함' : '') + '</div><div style="margin-top:3px">' + vdStatusBadge(st) + (vdProofs(st).length ? ' <span class="badge muted">📎 입금 캡처 ' + vdProofs(st).length + '</span>' : '') + '</div></div><div class="chev">›</div></a>';
     }); });
     html += '<div class="summary" style="grid-template-columns:1fr 1fr"><a><div class="n" style="font-size:19px">' + won(sumTotal) + '</div><div class="l">받을 돈 합계 (원)</div></a><a><div class="n" style="font-size:19px">' + won(sumPaid) + '</div><div class="l">입금 확인 (원)</div></a></div>';
     html += '<div class="group-title">거래처를 누르면 명세서가 나와요</div><div class="card">' + (rowsHtml || '<div class="empty">거래처가 없어요 · [거래처 설정]에서 추가</div>') + '</div>';
@@ -8917,6 +8942,7 @@
       html += '<div class="muted" style="margin-top:6px">① [이미지 복사]를 누르고 카톡 대화창에 붙여넣기(Ctrl+V) ② [보냈어요]를 누르면 금액이 고정돼요.</div>';
       html += '<div class="inline" style="margin-top:10px"><button class="btn primary" data-act="vd-copy">📋 이미지 복사 (카톡에 붙여넣기)</button><button class="btn" data-act="vd-share" data-id="png">🖼 이미지 저장</button><button class="btn" data-act="vd-share" data-id="pdf">📄 PDF</button></div>';
       html += '<div style="margin-top:8px"><button class="btn ok block" data-act="vd-sent">✓ 보냈어요 (금액 고정)</button></div>';
+      html += '<div class="muted" style="margin-top:6px">입금 캡처는 [보냈어요]를 누른 뒤에 붙일 수 있어요.</div>';
     } else {
       html += '<div class="muted" style="margin-top:6px">보낸 날 ' + esc(fmtDT(st.sent_at)) + ' · 이 금액으로 고정돼 있어요.</div>';
       if (Math.round(live.total) !== Math.round(num(st.total) || 0)) html += '<div class="note danger">보낸 뒤에 납품 기록·단가가 바뀌어서 지금 다시 계산하면 <b>' + won(live.total) + '원</b>이에요. 고치려면 [보냄 취소] → 다시 보내기.</div>';
@@ -8924,9 +8950,11 @@
       if (st.status === 'paid'){
         var rest = (num(st.total) || 0) - (num(st.paid_amount) || 0);
         html += '<div class="note ok">입금 ' + esc(fmtDateK(st.paid_on)) + ' · ' + won(st.paid_amount) + '원' + (rest > 0 ? ' · 남은 ' + won(rest) + '원은 다음 달 명세서에 붙어요' : rest < 0 ? ' · 더 들어온 ' + won(-rest) + '원은 다음 달에서 빼요' : '') + '</div>';
+        html += await vdProofBox(st);
         html += '<div style="margin-top:8px"><button class="btn sm" data-act="vd-unpaid">입금 기록 지우기</button></div>';
       } else {
         html += '<div class="group-title" style="margin-left:0">입금 확인</div><div class="grid2"><div><label class="muted">입금일</label><input type="date" class="in" id="vd-paid-on" value="' + todayStr() + '"></div><div><label class="muted">들어온 금액</label><input class="in" id="vd-paid-amt" type="number" inputmode="numeric" value="' + Math.round(num(st.total) || 0) + '"></div></div>';
+        html += await vdProofBox(st);
         html += '<div class="inline" style="margin-top:8px"><button class="btn primary" data-act="vd-paid">💰 입금 확인</button><button class="btn sm danger" data-act="vd-unsent">보냄 취소</button></div>';
       }
     }
@@ -9025,6 +9053,7 @@
     var t = e.target;
     if (t.matches && t.matches('input[data-vdq]')) vdSaveQty(t).catch(vdErr);
     else if (t.classList && t.classList.contains('vd-rc-file')) vdRcUpload(t).catch(vdErr);
+    else if (t.classList && t.classList.contains('vd-pp-file')) vdProofUpload(t).catch(vdErr);
     else if (t.id === 'vd-date' && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) nav('#/vd/' + t.value);
   });
   app.addEventListener('click', async function(e){
@@ -9064,6 +9093,7 @@
         }
         case 'vd-sent': await vdMarkSent(); break;
         case 'vd-unsent':
+          if (vdProofs(vdCur.st).length){ toast('입금 캡처가 붙어 있어서 보냄 취소가 안 돼요. 캡처를 먼저 지워 주세요'); break; }
           if (!window.confirm('보냄을 취소할까요? 금액 고정이 풀리고 지금 기록으로 다시 계산돼요.')) break;
           await db.remove('ops_vendor_statements', { id: vdCur.st.id }); toast('보냄 취소'); render(); break;
         case 'vd-paid': {
@@ -9071,6 +9101,14 @@
           if (!/^\d{4}-\d{2}-\d{2}$/.test(on) || amt == null){ toast('입금일과 금액을 넣어 주세요'); break; }
           await db.update('ops_vendor_statements', { id: vdCur.st.id }, { status: 'paid', paid_on: on, paid_amount: amt, updated_at: nowIso() });
           toast('입금 확인했어요'); render(); break;
+        }
+        case 'vd-pp-del': {
+          if (!window.confirm('이 입금 캡처를 지울까요?')) break;
+          var pth = el.getAttribute('data-path'), fr = (await db.select('ops_vendor_statements', { eq: { id: vdCur.st.id } }))[0];
+          var sn = Object.assign({}, fr.snapshot || {}); sn.proofs = vdProofs(fr).filter(function(p){ return p.path !== pth; });
+          await db.update('ops_vendor_statements', { id: fr.id }, { snapshot: sn, updated_at: nowIso() });
+          db.removeFile('receipts', pth).catch(function(){});
+          toast('지웠어요'); render(); break;
         }
         case 'vd-unpaid': await db.update('ops_vendor_statements', { id: vdCur.st.id }, { status: 'sent', paid_on: null, paid_amount: null, updated_at: nowIso() }); toast('입금 기록을 지웠어요'); render(); break;
         case 'vd-cfg-save': {
