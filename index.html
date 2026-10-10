@@ -1430,6 +1430,12 @@
   };
 
   // ===== 화면: 부족·주문 =====
+  function pendingLines(s){
+    return s.pendingList.map(function(p){
+      var t = p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.memo ? ' · ' + p.memo : '') + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중';
+      return '<div class="s">└ ' + esc(t) + (isManager() ? ' · <span data-act="pend-edit" data-kind="' + p.kind + '" data-id="' + esc(p.id) + '" data-qty="' + esc(p.qty) + '" style="cursor:pointer"><u>수량 고치기</u></span> · <span data-act="pend-del" data-kind="' + p.kind + '" data-id="' + esc(p.id) + '" data-memo="' + esc(p.memo || '') + '" style="cursor:pointer;color:var(--danger)"><u>취소</u></span>' : '') + '</div>';
+    }).join('');
+  }
   routes.short = async function(params){
     await loadBase();
     var sel = pickBranch(params, true);
@@ -1464,13 +1470,11 @@
                 '<div class="expand hidden" id="tx-' + esc(b) + '-' + esc(s.item.id) + '"><div class="inline" style="flex-wrap:wrap"><select class="in" id="tb-' + esc(b) + '-' + esc(s.item.id) + '" style="width:auto">' + otherBranches.map(function(ob){ return '<option value="' + esc(ob.id) + '">' + esc(ob.name) + '</option>'; }).join('') + '</select><span class="muted">에서 ' + esc(branchName(b)) + '이(가) 받는 수량</span><input class="qty" type="number" step="0.5" min="0" value="' + s.shortage + '" id="tq-' + esc(b) + '-' + esc(s.item.id) + '"><button class="btn sm primary" data-act="tf-quick-save" data-to="' + esc(b) + '" data-item="' + esc(s.item.id) + '">받기</button></div></div>';
       });
       pendingRows.forEach(function(s){
-        var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.memo ? ' · ' + p.memo : '') + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + (s.item.vendor ? ' · ' + esc(s.item.vendor) : '') + '</div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>+ 메모(대체품·품절 등)</u></span> · <span data-act="item-note-quick" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>일시 품절</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · 오는 중 +' + fmtQ(s.pending) + (s.item.vendor ? ' · ' + esc(s.item.vendor) : '') + '</div>' + pendingLines(s) + (isManager() ? '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>+ 메모(대체품·품절 등)</u></span> · <span data-act="item-note-quick" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>일시 품절</u></span></div>' : '') + '</div><span class="badge warn">오는 중</span></div>';
       });
       if (noteRows.length) html += '<div class="sec-h" style="background:var(--surface-sunken);font-size:12px">기타 (메모 있음)</div>';
       noteRows.forEach(function(s){
-        var d = s.pendingList.map(function(p){ return p.kind === 'order' ? fmtQ(p.qty) + ' 주문됨' + (p.memo ? ' · ' + p.memo : '') + (p.eta ? ' · ' + md(p.eta) + ' 도착 예정' : '') : fmtQ(p.qty) + ' ' + branchName(p.from) + '에서 오는 중'; }).join(', ');
-        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · ' + esc(d) + '</div><div class="s"><span class="badge danger">⚠️ ' + esc(s.note) + '</span></div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>메모 고치기</u></span></div>' : '') + '</div><span class="badge muted">확인 필요</span></div>';
+        html += '<div class="item"><div class="iname"><div class="t">' + esc(s.item.name) + '</div><div class="s">현재 ' + fmtQ(s.est) + ' · 적정 ' + fmtQ(s.target) + ' · 오는 중 +' + fmtQ(s.pending) + '</div>' + pendingLines(s) + '<div class="s"><span class="badge danger">⚠️ ' + esc(s.note) + '</span></div>' + (isManager() ? '<div class="s"><span data-act="item-note" data-branch="' + esc(b) + '" data-id="' + esc(s.item.id) + '" style="cursor:pointer"><u>메모 고치기</u></span></div>' : '') + '</div><span class="badge muted">확인 필요</span></div>';
       });
       html += '</div>';
     });
@@ -6696,6 +6700,18 @@
         case 'recv-bad': { var q = num(document.getElementById('rq-' + id).value); if (q == null){ toast('실제 수량을 넣어 주세요'); break; } await receive(el.getAttribute('data-kind'), id, q, true); break; }
         case 'tf-save': await transferSave(); break;
         case 'tf-retake': tfState.photo = null; render(); break;
+        case 'pend-edit': {
+          var pk = el.getAttribute('data-kind'), pq = window.prompt('수량을 고쳐 주세요', el.getAttribute('data-qty') || ''); if (pq === null) break;
+          var pv = sumExpr(pq); if (pv == null || pv <= 0){ toast('0보다 큰 숫자를 넣어 주세요'); break; }
+          await db.update(pk === 'transfer' ? 'ops_transfers' : 'ops_orders', { id: id }, { qty: pv }); toast('고쳤어요'); render(); break;
+        }
+        case 'pend-del': {
+          var dk = el.getAttribute('data-kind');
+          if (dk === 'transfer'){ if (window.confirm('이 이동 기록을 취소할까요? (잘못 쓴 거면 지워져요)')){ await db.remove('ops_transfers', { id: id }); toast('취소했어요'); render(); } break; }
+          var dr = window.prompt('주문 취소 사유 (잘못 입력·품절·대체 등, 없으면 비워 두기)', ''); if (dr === null) break;
+          var dbm = el.getAttribute('data-memo') || ''; var dnm = dr ? (dbm ? dbm + ' · ' + dr : dr) : dbm;
+          await db.update('ops_orders', { id: id }, { status: 'cancelled', memo: dnm || null }); toast('취소했어요'); render(); break;
+        }
         case 'tf-del': if (window.confirm('이 이동 기록을 취소할까요?')){ await db.remove('ops_transfers', { id: id }); toast('취소했어요'); render(); } break;
         case 'tf-sort': tfState.sort = id; render(); break;
         case 'tf-item-add': await tfItemAdd(); break;
