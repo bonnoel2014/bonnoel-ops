@@ -1136,9 +1136,7 @@
     html += tge();
     var certPend = 0;
     if (isOwner()){ try { certPend = (await db.select('ops_cert_requests', { eq: { status: 'requested' } })).length; } catch(e){ console.warn('증명서 신청 표 없음', e); } }
-    html += grp('매출·자금');   // 사장님만 — 2026-09-30 사장님 앱(owner.bonnoel.com)으로 옮김
-    if (isOwner()) html += row('https://owner.bonnoel.com', 'tile-purple', '🔐', '사장님 앱 (옮겼어요)', '일일 매출·월 정산·손익 설정·자금 흐름 → owner.bonnoel.com');
-    html += tge();
+    // (매출·자금 메뉴는 2026-09-30 사장님 앱(owner.bonnoel.com)으로 옮겨서 홈에서 뺌 — #/sales 등 옛 주소는 이전 안내 화면으로 남아 있음)
     html += grp('법인');
     if (isOwner()) html += row('#/corp', 'tile-purple', '🏛️', '법인 서류', certPend ? '⚠ 증명서 신청 ' + certPend + '건 · 재직·경력증명서 · 주주명부 · 서류함' : '재직·경력증명서 · 주주명부 · 서류함 · 발급 대장 (사장님만)');
     html += tge();
