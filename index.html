@@ -2261,6 +2261,32 @@
     toast('신청했어요. 사장님·매니저가 보면 알려드려요'); nav('#/leave/' + date + (actingId !== session.staffId ? '/' + actingId : ''));
   }
 
+  // 지원자가 적은 가능 시간(요청 시간보다 짧을 때만)·특이사항을 한 줄로
+  function offerExtra(o, q){
+    var parts = [];
+    if (o.avail_start && o.avail_end && (o.avail_start.slice(0, 5) !== q.start_time.slice(0, 5) || o.avail_end.slice(0, 5) !== q.end_time.slice(0, 5))) parts.push('가능 ' + o.avail_start.slice(0, 5) + '~' + o.avail_end.slice(0, 5));
+    if (o.note) parts.push(o.note);
+    return parts.join(' · ');
+  }
+  async function offerApply(requestId, staffId){
+    var q = (await db.select('ops_leave_requests', { eq: { id: requestId } }))[0];
+    var s = document.getElementById('of-s-' + requestId), e = document.getElementById('of-e-' + requestId), n = document.getElementById('of-n-' + requestId);
+    var note = n ? n.value.trim() : '', as = s ? s.value : '', ae = e ? e.value : '';
+    if (q && as && ae && toMin(as) >= toMin(ae)){ toast('가능한 시간의 끝이 시작보다 늦어야 해요'); return; }
+    var row = { request_id: requestId, staff_id: staffId, status: 'offered', created_at: new Date().toISOString() };
+    var partial = q && as && ae && (as !== q.start_time.slice(0, 5) || ae !== q.end_time.slice(0, 5));
+    if (note) row.note = note;
+    if (partial){ row.avail_start = as; row.avail_end = ae; }
+    try { await db.insert('ops_sub_offers', row); }
+    catch (err){
+      if (!note && !partial) throw err;
+      delete row.note; delete row.avail_start; delete row.avail_end;
+      await db.insert('ops_sub_offers', row);
+      toast('지원은 됐지만 특이사항·가능 시간 칸이 아직 준비 안 돼서 저장 못 했어요. 사장님께 알려 주세요'); render(); return;
+    }
+    toast('지원했어요. 사장님·매니저 컨펌을 기다려 주세요'); render();
+  }
+
   // --- 대타 지원 (근무자) ---
   routes.subs = async function(params){
     await loadBase();
@@ -2281,6 +2307,8 @@
       var own = q.staff_id === actingId;
       var btn = own ? '<span class="badge muted">내 신청</span>' : mine ? '<button class="btn sm" data-act="offer-cancel" data-id="' + esc(mine.id) + '">지원 취소</button>' : '<button class="btn sm primary" data-act="offer" data-id="' + esc(q.id) + '" data-staff="' + esc(actingId) + '">대타 지원</button>';
       html += '<div class="item"><div class="iname"><div class="t">' + reqLine(q) + '</div><div class="s">' + (q.reason ? esc(q.reason) + ' · ' : '') + '지원 ' + offers.length + '명' + (clash && !own ? ' · 내 근무와 겹쳐도 지원 가능(혼자 2인분)' : '') + (q.solo_ok_by ? ' · ' + esc(staffName(q.solo_ok_by)) + ' 혼자 가능' : '') + '</div></div>' + btn + '</div>';
+      if (mine && (mine.note || mine.avail_start)) html += '<div class="expand"><span class="muted">내가 적은 것: </span>' + esc(offerExtra(mine, q)) + '</div>';
+      if (!own && !mine) html += '<div class="expand"><div class="inline" style="flex-wrap:wrap;gap:6px"><span class="muted">가능한 시간</span><input class="in" type="time" step="1800" id="of-s-' + esc(q.id) + '" value="' + esc(q.start_time.slice(0, 5)) + '" style="width:auto"><span>~</span><input class="in" type="time" step="1800" id="of-e-' + esc(q.id) + '" value="' + esc(q.end_time.slice(0, 5)) + '" style="width:auto"><input class="in" id="of-n-' + esc(q.id) + '" placeholder="특이사항 (예: 16시까지만 가능해요)" style="flex:1;min-width:170px"></div><div class="muted" style="margin-top:4px">일부 시간만 가능하면 시간을 줄이거나 특이사항에 적고 [대타 지원]을 눌러 주세요</div></div>';
       if (partner && !own && !q.solo_ok_by) html += '<div class="expand"><span class="muted">이 시간에 같이 일하는 분이면: </span><button class="btn sm" data-act="solo-ok" data-id="' + esc(q.id) + '" data-staff="' + esc(actingId) + '">그날 혼자 가능해요</button></div>';
     });
     html += '</div>';
@@ -2320,6 +2348,7 @@
       if (!passed){
         var branchPeople = base.staff.filter(function(s){ return s.active !== false && s.id !== q.staff_id; }).sort(function(x, y){ return (x.branch_id === q.branch_id ? 0 : 1) - (y.branch_id === q.branch_id ? 0 : 1); });
         html += '<div class="expand"><div class="inline">';
+        offers.forEach(function(o){ var ex = offerExtra(o, q); if (ex) html += '<div class="muted" style="flex-basis:100%">' + esc(staffName(o.staff_id)) + ': <b>' + esc(ex) + '</b></div>'; });
         offers.forEach(function(o){ html += '<button class="btn sm primary" data-act="req-confirm" data-id="' + esc(q.id) + '" data-staff="' + esc(o.staff_id) + '">' + esc(staffName(o.staff_id)) + '(으)로 확정</button>'; });
         html += (q.staff_id ? '<button class="btn sm" data-act="req-confirm" data-id="' + esc(q.id) + '" data-staff="">1인 근무로 휴무 확정</button>' : '') + '<button class="btn sm" data-act="req-reject" data-id="' + esc(q.id) + '" data-adhoc="' + (q.staff_id ? '' : '1') + '">' + (q.staff_id ? '취소(출근)' : '자리 취소') + '</button></div>' +
           '<div class="inline" style="margin-top:6px"><select class="in" id="mc-' + esc(q.id) + '" style="flex:1"><option value="">대타 직접 지정 (알바랑 얘기해서 정했으면)</option>' + branchPeople.map(function(s){ return '<option value="' + esc(s.id) + '">' + esc(s.name) + (s.branch_id !== q.branch_id ? ' (' + esc(s.branch_id ? branchName(s.branch_id) : '전체') + ')' : '') + '</option>'; }).join('') + '</select><button class="btn sm primary" data-act="req-confirm-pick" data-id="' + esc(q.id) + '">확정</button></div>' +
@@ -6752,7 +6781,7 @@
         case 'chip-cancel': document.getElementById('chip-panel').classList.add('hidden'); break;
         case 'leave-submit': await leaveSubmit(); break;
         case 'leave-cancel': if (window.confirm('신청을 취소할까요?')){ await db.update('ops_leave_requests', { id: id }, { status: 'cancelled' }); await passOtherOffers(id, null); toast('취소했어요'); render(); } break;
-        case 'offer': await db.insert('ops_sub_offers', { request_id: id, staff_id: (isManager() && el.getAttribute('data-staff')) || session.staffId, status: 'offered', created_at: new Date().toISOString() }); toast('지원했어요. 사장님·매니저 컨펌을 기다려 주세요'); render(); break;
+        case 'offer': await offerApply(id, (isManager() && el.getAttribute('data-staff')) || session.staffId); break;
         case 'offer-cancel': await db.remove('ops_sub_offers', { id: id }); toast('지원을 취소했어요'); render(); break;
         case 'solo-ok': await db.update('ops_leave_requests', { id: id }, { solo_ok_by: (isManager() && el.getAttribute('data-staff')) || session.staffId }); toast('"혼자 가능"으로 표시했어요'); render(); break;
         case 'req-accept': await db.update('ops_leave_requests', { id: id }, { status: 'covering', decided_by: session.staffId, decided_at: new Date().toISOString() }); toast('수락. 같은 매장에 "대타 구하는 중"으로 떠요'); render(); break;
