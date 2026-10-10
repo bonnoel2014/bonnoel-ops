@@ -8466,14 +8466,14 @@
   // 베이커가 빵마다 들어간 성분을 누르고 본인 비밀번호 4자리로 서명 → DB 함수 bread_allergy_check 가 비밀번호를 확인하고 저장 + 기록을 남겨요.
   // 성분 이름은 사장님 앱·손님 페이지와 똑같이 써야 해요 (원본: bonnoel-owner/tools/bread-tags-2026-10.mjs).
   var ALG_GROUPS = [
-    ['손님이 제일 많이 묻는 것', ['밀가루(글루텐)', '달걀 흰자', '달걀 노른자', '우유(버터·생크림·치즈)', '대두(콩)']],
+    ['손님이 제일 많이 묻는 것', ['밀가루(글루텐)', '달걀 흰자', '달걀 노른자', '우유', '버터', '생크림', '치즈', '대두(콩)']],
     ['견과류 (따로따로)', ['호두', '아몬드', '땅콩', '피스타치오', '잣']],
     ['고기·해산물', ['돼지고기(햄·베이컨·소시지)', '쇠고기', '닭고기', '생선(명란 등)', '새우·게·조개류', '오징어(먹물)']],
     ['그 밖의 표시 대상', ['토마토', '복숭아', '메밀', '와인', '건과일']],
     ['알레르기는 아니지만 자주 묻는 것', ['설탕', '꿀']]
   ];
   var ALG_KINDS = ['식빵', '소금빵·앙버터', '바게트', '치아바타', '깜빠뉴', '베이글', '조리빵', '단과자빵', '구움과자', '쿠키', '러스크', '슈·타르트', '케이크', '샌드위치', '기타'];
-  var ALG_SHORT = { '밀가루(글루텐)': '밀가루', '우유(버터·생크림·치즈)': '우유', '대두(콩)': '대두', '돼지고기(햄·베이컨·소시지)': '돼지고기', '생선(명란 등)': '생선', '오징어(먹물)': '오징어' };
+  var ALG_SHORT = { '밀가루(글루텐)': '밀가루', '대두(콩)': '대두', '돼지고기(햄·베이컨·소시지)': '돼지고기', '생선(명란 등)': '생선', '오징어(먹물)': '오징어' };
   var algSt = { rows: null, q: '', tab: 'all', id: null, sel: null, note: '' };
   function algShort(a){ return ALG_SHORT[a] || a; }
   function algChecked(b){ return b.allergy_status === 'checked'; }
@@ -8540,7 +8540,7 @@
       + (b.tag_note ? '<div class="muted" style="font-size:13px;margin-top:6px">가격표 문구: ' + esc(b.tag_note) + '</div>' : '')
       + (b.ingredients ? '<div class="muted" style="font-size:13px;margin-top:6px">재료: ' + esc(b.ingredients) + '</div>' : '')
       + '</div>';
-    html += '<div class="note" style="background:var(--accent-soft);color:var(--ink)">들어간 성분을 <b>전부</b> 눌러 주세요. 가격표 기준으로 미리 눌러 뒀으니 틀린 건 빼고 빠진 건 더해 주세요. <b>버터·생크림·치즈가 들어가면 "우유"</b>, 휘낭시에·다쿠아즈처럼 아몬드 가루가 들어가면 "아몬드"도 눌러 주세요.</div>';
+    html += '<div class="note" style="background:var(--accent-soft);color:var(--ink)">들어간 성분을 <b>전부</b> 눌러 주세요. 가격표 기준으로 미리 눌러 뒀으니 틀린 건 빼고 빠진 건 더해 주세요. <b>우유·버터·생크림·치즈는 따로따로</b>, 휘낭시에·다쿠아즈처럼 아몬드 가루가 들어가면 "아몬드"도 눌러 주세요.</div>';
     ALG_GROUPS.forEach(function(g){
       html += '<div class="group-title">' + esc(g[0]) + '</div><div class="pillrow" style="margin-top:0">' + g[1].map(function(a){ return '<button class="tab' + (algSt.sel.indexOf(a) >= 0 ? ' on' : '') + '" data-act="alg-chip" data-id="' + esc(a) + '">' + esc(a) + '</button>'; }).join('') + '</div>';
     });
@@ -8589,14 +8589,14 @@
   function breadDemoRows(){
     var mk = function(id, name, kind, price, al, tag, checked){ return { id: id, name: name, kind: kind, category: 'bread', price: price, price_note: '', description: '', tag_note: tag || '', ingredients: '', allergens: al, allergy_status: checked ? 'checked' : 'unchecked', allergy_checked_by: checked ? '김베이커' : null, allergy_checked_at: checked ? daysAgo(1) : null, allergy_note: '', active: true, sort_order: 0 }; };
     return [
-      mk('salt-bread', '소금빵', '소금빵·앙버터', 3800, ['밀가루(글루텐)', '설탕', '우유(버터·생크림·치즈)'], '설탕, 버터, 우유 함유', true),
-      mk('angbutter', '앙버터', '소금빵·앙버터', 5800, ['밀가루(글루텐)', '설탕', '우유(버터·생크림·치즈)'], 'NO계란 / 설탕, 버터, 우유'),
-      mk('chestnut-bread', '밤식빵', '식빵', 7500, ['밀가루(글루텐)', '아몬드', '달걀 흰자', '달걀 노른자', '설탕', '우유(버터·생크림·치즈)'], 'NO우유 / 아몬드, 계란, 설탕, 버터 함유'),
-      mk('rice-loaf', '쌀식빵', '식빵', 8000, ['밀가루(글루텐)', '설탕', '우유(버터·생크림·치즈)'], '설탕, 버터, 제빵용 글루텐 1% 함유'),
+      mk('salt-bread', '소금빵', '소금빵·앙버터', 3800, ['밀가루(글루텐)', '설탕', '버터'], '설탕, 버터, 우유 함유', true),
+      mk('angbutter', '앙버터', '소금빵·앙버터', 5800, ['밀가루(글루텐)', '설탕', '버터'], 'NO계란 / 설탕, 버터, 우유'),
+      mk('chestnut-bread', '밤식빵', '식빵', 7500, ['밀가루(글루텐)', '아몬드', '달걀 흰자', '달걀 노른자', '설탕', '버터'], 'NO우유 / 아몬드, 계란, 설탕, 버터 함유'),
+      mk('rice-loaf', '쌀식빵', '식빵', 8000, ['밀가루(글루텐)', '설탕', '버터'], '설탕, 버터, 제빵용 글루텐 1% 함유'),
       mk('baguette', '전통 바게트', '바게트', 4800, ['밀가루(글루텐)'], 'NO계란, 설탕, 버터, 우유', true),
       mk('fig-campagne', '무화과 깜빠뉴', '깜빠뉴', 6500, ['밀가루(글루텐)', '호두', '와인', '건과일'], 'NO계란, 버터, 우유'),
-      mk('sausage-bread', '소세지빵', '조리빵', 3300, ['밀가루(글루텐)', '돼지고기(햄·베이컨·소시지)', '달걀 흰자', '달걀 노른자', '설탕', '우유(버터·생크림·치즈)'], '계란, 설탕, 버터, 우유 함유'),
-      mk('financier', '휘낭시에', '구움과자', 2300, ['밀가루(글루텐)', '아몬드', '달걀 흰자', '설탕', '우유(버터·생크림·치즈)'], '흰자, 설탕, 버터 함유')
+      mk('sausage-bread', '소세지빵', '조리빵', 3300, ['밀가루(글루텐)', '돼지고기(햄·베이컨·소시지)', '달걀 흰자', '달걀 노른자', '설탕', '버터'], '계란, 설탕, 버터, 우유 함유'),
+      mk('financier', '휘낭시에', '구움과자', 2300, ['밀가루(글루텐)', '아몬드', '달걀 흰자', '설탕', '버터'], '흰자, 설탕, 버터 함유')
     ];
   }
   function breadMemRpc(T, fn, a){
