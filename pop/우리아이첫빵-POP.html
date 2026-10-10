@@ -103,5 +103,9 @@
     <div class="sig">Bon Noël</div>
   </div>
 </section>
+<script>
+  // ?print=1 이면 글꼴 다 뜬 뒤 바로 인쇄 창 (운영 앱 "매장 QR·POP"의 [인쇄] 버튼)
+  if (/[?&]print=1/.test(location.search)) window.addEventListener('load', function(){ (document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){ setTimeout(function(){ window.print(); }, 300); }); });
+</script>
 </body>
 </html>
