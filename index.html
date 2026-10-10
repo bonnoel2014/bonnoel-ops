@@ -8521,7 +8521,7 @@
       html += '<div class="group-title">' + esc(k) + ' <span class="muted">' + items.length + '</span></div><div class="card">';
       items.forEach(function(b){
         var al = b.allergens.map(algShort);
-        html += '<div class="item" data-act="alg-open" data-id="' + esc(b.id) + '" style="cursor:pointer"><div style="flex:1;min-width:0"><div style="font-weight:600">' + esc(b.name) + (b.price != null ? ' <span class="muted" style="font-weight:400;font-size:12px">' + won(b.price) + '원</span>' : '') + '</div>'
+        html += '<div class="item" data-act="alg-open" data-id="' + esc(b.id) + '" style="cursor:pointer"><div style="flex:1;min-width:0"><div style="font-weight:600">' + esc(b.name) + '</div>'
           + '<div class="muted" style="font-size:12px;margin-top:2px">' + (al.length ? esc(al.join(' · ')) : (algChecked(b) ? '표시 대상 없음' : '성분 없음')) + '</div></div>' + algBadge(b) + '<span class="chev">›</span></div>';
       });
       html += '</div>';
@@ -8535,7 +8535,7 @@
     if (algSt.id !== id){ algSt.id = id; algSt.sel = b.allergens.slice(); algSt.note = b.allergy_note || ''; }
     var html = topbar(b.name, true, whoChip());
     html += '<div class="card" style="margin-top:12px;padding:14px">'
-      + '<div class="inline" style="justify-content:space-between"><span class="muted">' + esc(b.kind || '') + (b.price != null ? ' · ' + won(b.price) + '원' : '') + (b.price_note ? ' · ' + esc(b.price_note) : '') + '</span>' + algBadge(b) + '</div>'
+      + '<div class="inline" style="justify-content:space-between"><span class="muted">' + esc(b.kind || '') + '</span>' + algBadge(b) + '</div>'
       + (b.description ? '<div style="margin-top:8px">' + esc(b.description) + '</div>' : '')
       + (b.tag_note ? '<div class="muted" style="font-size:13px;margin-top:6px">가격표 문구: ' + esc(b.tag_note) + '</div>' : '')
       + (b.ingredients ? '<div class="muted" style="font-size:13px;margin-top:6px">재료: ' + esc(b.ingredients) + '</div>' : '')
