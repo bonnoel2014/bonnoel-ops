@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>본노엘 QR POP (A5)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;700;800&family=Noto+Sans+JP:wght@500;700&family=Noto+Sans+SC:wght@500;700&family=Noto+Sans+TC:wght@500&display=swap">
+<style>
+  /* QR 하나당 A5 한 장. 끝에 #review(종류) · #성수점(매장) · #review/성수점(한 장) 붙이면 골라서 보임 */
+  @page{ size:148mm 210mm; margin:0; }
+  :root{
+    --bg:#fffdfd; --blush:#fff1f2; --accent:#af4c60; --accent-soft:#ffe1e3; --accent-ink:#fffdfd;
+    --ink:#231717; --muted:#6e5f5e; --faint:#9b8b8a; --line:#eee1e0; --line-strong:#e1c6c7;
+    --serif:"Gowun Batang","Cormorant Garamond",serif; --latin:"Cormorant Garamond","Gowun Batang",serif;
+    --sans:"Noto Sans KR","Noto Sans JP","Noto Sans SC","Noto Sans TC",sans-serif;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ background:var(--bg); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:var(--sans); color:var(--ink); word-break:keep-all; }
+  .poster{ position:relative; width:148mm; height:210mm; padding:22px 30px 0; background:var(--bg); display:flex; flex-direction:column; overflow:hidden; page-break-after:always; break-after:page; }
+  .poster:last-child{ page-break-after:auto; break-after:auto; }
+  .poster::before{ content:""; position:absolute; inset:9px; border:1.5px solid var(--line-strong); border-radius:22px; pointer-events:none; }
+  .top{ display:flex; justify-content:space-between; align-items:baseline; padding:6px 4px 10px; border-bottom:1px solid var(--line); }
+  .brand{ font-family:var(--serif); font-weight:700; font-size:18px; }
+  .brand span{ font-family:var(--latin); font-weight:500; font-size:15px; color:var(--muted); }
+  .store{ font-family:var(--serif); font-weight:700; font-size:15px; color:var(--accent); }
+
+  .hero{ margin-top:18px; text-align:center; }
+  .eyebrow{ font-family:var(--latin); letter-spacing:.3em; text-transform:uppercase; color:var(--accent); font-size:12.5px; font-weight:700; }
+  .hero h1{ font-family:var(--serif); font-size:42px; line-height:1.15; font-weight:700; color:var(--accent); margin-top:6px; letter-spacing:-.01em; }
+  .hero h1.multi{ font-family:var(--sans); font-size:34px; font-weight:800; }
+  .hero .lead{ margin-top:9px; font-size:14.5px; color:var(--muted); font-weight:500; line-height:1.55; }
+  .hero .lead b{ color:var(--ink); }
+  .badge{ display:inline-block; margin-top:10px; background:var(--accent); color:var(--accent-ink); font-weight:800; font-size:14px; padding:6px 16px; border-radius:999px; }
+
+  .chips{ display:flex; justify-content:center; flex-wrap:wrap; gap:6px; margin-top:14px; }
+  .chip{ background:#fff; border:1.3px solid var(--line-strong); color:#432326; font-weight:700; font-size:12.5px; padding:5px 12px; border-radius:999px; }
+
+  .qrbox{ margin:16px auto 0; display:flex; align-items:center; gap:18px; background:var(--blush); border:2px dashed var(--line-strong); border-radius:24px; padding:16px 20px; width:100%; }
+  .qr{ width:196px; height:196px; flex:none; background:#fff; border-radius:14px; padding:9px; box-shadow:0 2px 0 var(--line); }
+  .qr img{ width:100%; height:100%; display:block; image-rendering:pixelated; }
+  .qrcap .big{ font-family:var(--serif); font-weight:700; font-size:25px; line-height:1.28; color:var(--accent); }
+  .qrcap .small{ margin-top:8px; font-size:12.5px; color:var(--muted); line-height:1.6; }
+
+  .steps{ margin:18px auto 0; width:100%; display:grid; gap:9px; padding:0 4px; }
+  .step{ display:flex; gap:11px; align-items:center; font-size:14px; font-weight:500; line-height:1.45; }
+  .step b.n{ flex:none; width:26px; height:26px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; }
+  .step em{ font-style:normal; font-weight:700; color:var(--accent); }
+
+  .foot{ margin-top:auto; padding:11px 4px 22px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-end; gap:14px; }
+  .foot .note{ font-size:10.5px; color:var(--muted); line-height:1.6; }
+  .foot .sig{ font-family:var(--latin); font-style:italic; font-size:17px; color:var(--accent); white-space:nowrap; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="qr-data.js"></script>
+<script>
+  // 각 POP 문구. 선결제 숫자(10% / 5%)는 앱 설정을 바꾸면 여기도 고쳐서 다시 뽑아야 함.
+  var KINDS = {
+    review: {
+      eyebrow: 'Review Event', title: '리뷰 쓰고<br>빵 뽑기 🎁',
+      lead: '꽝 없이 <b>100% 당첨</b>, 당첨 빵은 <b>그 자리에서 바로!</b>',
+      badge: '✨ 하루 20명 선착순',
+      chips: ['네이버', '구글', '카카오맵', '티맵'],
+      big: 'QR 찍고<br>바로 뽑기!', small: '룰렛 · 캡슐 · 집게 · 빵 퀴즈…<br>좋아하는 게임으로 골라요',
+      steps: [
+        '빵을 사고 <em>영수증</em>을 받아 주세요',
+        '리뷰 쓰기 — <em>사진 1장 이상</em>, 별점은 <em>★5</em>로!',
+        'QR 찍고 번호 넣고 뽑기 → 화면 보여 주고 <em>바로 받기</em>'
+      ],
+      note: '리뷰를 지우면 다음 이벤트 참여가 어려워요.<br>당첨 빵이 품절이면 다른 빵으로 드려요.'
+    },
+    voice: {
+      eyebrow: 'Voice of Customer', title: '의견 주세요 💌',
+      lead: '불편했던 점도, 좋았던 점도<br><b>사장님이 직접 읽어요</b>',
+      chips: ['😣 불편했어요', '👏 칭찬해요', '💡 아이디어', '🛠️ 바라는 점', '💬 기타'],
+      big: 'QR 찍고<br>1분이면 끝!', small: '로그인 없이 바로 써요<br>집에 가서 남겨도 좋아요',
+      steps: [
+        '휴대폰 카메라로 <em>QR을 찍어</em> 주세요',
+        '어떤 이야기인지 <em>하나 고르고</em> 편하게 적어 주세요',
+        '이름·번호는 <em>선택</em> — 답장을 원하면 번호를 남겨 주세요'
+      ],
+      note: '위생·알레르기처럼 급한 일은<br>지금 매장 직원에게 바로 말씀해 주세요.'
+    },
+    allergy: {
+      eyebrow: 'Allergy Info', title: '알레르기 정보,<br>QR로 확인하세요',
+      lead: '빵마다 들어간 성분을<br><b>베이커가 직접 확인</b>했어요',
+      chips: ['🥚 계란 없는', '🥛 우유 없는', '🥜 견과류 없는', '🌾 밀가루 없는'],
+      big: 'QR 찍고<br>빵 이름 검색', small: '"계란 없는"처럼 눌러서<br>먹을 수 있는 빵만 골라 봐요',
+      steps: [
+        '휴대폰 카메라로 <em>QR을 찍어</em> 주세요',
+        '<em>빵 이름</em>을 검색하거나 <em>"○○ 없는"</em>을 눌러 주세요',
+        '<em>✓ 표시</em>가 있는 빵은 베이커 확인이 끝난 빵이에요'
+      ],
+      note: '같은 주방에서 여러 빵을 만들어 다른 재료가 아주 조금 섞일 수 있어요.<br>심한 알레르기가 있으면 구매 전 직원에게 한 번 더 물어봐 주세요.'
+    },
+    prepay: {
+      eyebrow: 'Prepay', title: '미리 채우면<br>10% 더 💳',
+      lead: '<b>10만원 이상</b> 충전하면 <b>10% 더</b><br>10만원 미만도 <b>5% 더</b> 넣어 드려요',
+      badge: '예) 100,000원 충전 → 110,000원 사용',
+      chips: ['성수', '답십리', '중계', '왕십리', '네 곳 어디서나'],
+      big: 'QR 찍고<br>남은 돈 확인', small: '앱 설치 없이 휴대폰 번호로<br>잔액·내역을 바로 봐요',
+      steps: [
+        '계산대에서 <em>"선결제 충전할게요"</em> 말씀해 주세요',
+        '카드나 현금으로 결제하면 <em>바로 충전</em>돼요',
+        '다음부터 <em>"선결제로 할게요"</em> + 번호 뒷자리면 끝!'
+      ],
+      note: '남은 돈은 돌려드려요(더 받은 적립분은 빼고).<br>조회 비밀번호를 잊으면 매장에서 새로 정해 드려요.'
+    },
+    menu: {
+      eyebrow: 'Menu · Carte', title: 'Menu<br>メニュー · 菜单', multi: true,
+      lead: 'Scan to see our menu <b>in your language</b><br>휴대폰 언어에 맞는 메뉴판이 열려요',
+      chips: ['English', '日本語', '简体中文', '繁體中文', 'Français', '한국어'],
+      big: 'Scan me!', small: 'Scannez pour voir la carte<br>スキャンしてメニューを見る<br>扫码查看菜单',
+      steps: [
+        '<span><em>Open your camera</em> · カメラを開く · 打开相机</span>',
+        '<span><em>Scan the QR</em> · QRを読み取る · 扫描二维码</span>',
+        '<span><em>Show the menu to our staff</em> · 店員に見せる · 给店员看</span>'
+      ],
+      note: 'Need help? Please ask our staff.<br>ご不明な点はスタッフへ · 如需帮助请联系店员'
+    }
+  };
+  var ORDER = ['review', 'voice', 'allergy', 'prepay', 'menu'];
+
+  // #review · #성수점 · #review/성수점
+  var h = decodeURIComponent(location.hash.replace('#', '')).split('/');
+  var onlyKind = KINDS[h[0]] ? h[0] : (h[1] && KINDS[h[1]] ? h[1] : '');
+  var onlyStore = h.filter(function (x) { return x && !KINDS[x]; })[0] || '';
+
+  var out = [];
+  ORDER.forEach(function (k) {
+    if (onlyKind && k !== onlyKind) return;
+    var P = KINDS[k];
+    BN_STORES.forEach(function (s) {
+      if (onlyStore && s.name !== onlyStore) return;
+      out.push('<section class="poster" data-kind="' + k + '" data-store="' + s.name + '">'
+        + '<div class="top"><div class="brand">본노엘 <span>Bon Noël</span></div><div class="store">' + (k === 'menu' ? s.en + ' · ' : '') + s.name + '</div></div>'
+        + '<div class="hero"><div class="eyebrow">' + P.eyebrow + '</div><h1' + (P.multi ? ' class="multi"' : '') + '>' + P.title + '</h1>'
+        + '<div class="lead">' + P.lead + '</div>' + (P.badge ? '<div class="badge">' + P.badge + '</div>' : '') + '</div>'
+        + '<div class="chips">' + P.chips.map(function (c) { return '<span class="chip">' + c + '</span>'; }).join('') + '</div>'
+        + '<div class="qrbox"><div class="qr">' + bnQrImg(BN_QR[k](s)) + '</div>'
+        + '<div class="qrcap"><div class="big">' + P.big + '</div><div class="small">' + P.small + '</div></div></div>'
+        + '<div class="steps">' + P.steps.map(function (t, i) { return '<div class="step"><b class="n">' + (i + 1) + '</b><span>' + t + '</span></div>'; }).join('') + '</div>'
+        + '<div class="foot"><div class="note">' + P.note + '</div><div class="sig">merci beaucoup</div></div>'
+        + '</section>');
+    });
+  });
+  document.getElementById('root').innerHTML = out.join('');
+</script>
+</body>
+</html>

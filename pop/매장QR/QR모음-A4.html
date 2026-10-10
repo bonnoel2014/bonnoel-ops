@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>본노엘 QR 모음 (A4)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;700;800&family=Noto+Sans+JP:wght@500&family=Noto+Sans+SC:wght@500&display=swap">
+<style>
+  /* 매장별 종합 QR 한 장 (A4). 끝에 #성수점 처럼 붙이면 그 매장 한 장만 보임 */
+  @page{ size:A4; margin:0; }
+  :root{
+    --bg:#fffdfd; --blush:#fff1f2; --accent:#af4c60; --accent-deep:#8f3a4d; --accent-soft:#ffe1e3; --accent-ink:#fffdfd;
+    --ink:#231717; --muted:#6e5f5e; --faint:#9b8b8a; --line:#eee1e0; --line-strong:#e1c6c7; --cream:#fff8f1;
+    --serif:"Gowun Batang","Cormorant Garamond",serif; --latin:"Cormorant Garamond","Gowun Batang",serif;
+    --sans:"Noto Sans KR","Noto Sans JP","Noto Sans SC",sans-serif;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:794px; background:var(--bg); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:var(--sans); color:var(--ink); word-break:keep-all; }
+  .sheet{ position:relative; width:794px; height:1123px; padding:30px 44px 0; background:var(--bg); display:flex; flex-direction:column; overflow:hidden; page-break-after:always; break-after:page; }
+  .sheet:last-child{ page-break-after:auto; break-after:auto; }
+  .sheet::before{ content:""; position:absolute; inset:13px; border:1.5px solid var(--line-strong); border-radius:30px; pointer-events:none; }
+
+  .top{ display:flex; justify-content:space-between; align-items:baseline; padding:8px 4px 12px; border-bottom:1px solid var(--line); }
+  .brand{ font-family:var(--serif); font-weight:700; font-size:24px; }
+  .brand span{ font-family:var(--latin); font-weight:500; font-size:19px; color:var(--muted); }
+  .store{ font-family:var(--serif); font-weight:700; font-size:19px; color:var(--accent); }
+
+  .hero{ margin-top:24px; text-align:center; }
+  .eyebrow{ font-family:var(--latin); letter-spacing:.32em; text-transform:uppercase; color:var(--accent); font-size:14px; font-weight:700; }
+  .hero h1{ font-family:var(--serif); font-size:50px; line-height:1.15; font-weight:700; color:var(--accent); margin-top:6px; }
+  .hero .lead{ margin-top:8px; font-size:17px; color:var(--muted); font-weight:500; }
+  .hero .lead b{ color:var(--ink); }
+
+  /* 리뷰 이벤트 — 크게 */
+  .feature{ margin-top:24px; display:flex; align-items:center; gap:26px; background:var(--accent); color:var(--accent-ink); border-radius:28px; padding:22px 26px; }
+  .feature .qr{ width:214px; height:214px; flex:none; background:#fff; border-radius:18px; padding:11px; }
+  .feature .tag{ display:inline-block; background:var(--accent-ink); color:var(--accent); font-weight:800; font-size:13px; padding:4px 12px; border-radius:999px; }
+  .feature h2{ font-family:var(--serif); font-size:38px; line-height:1.2; font-weight:700; margin-top:8px; }
+  .feature .desc{ margin-top:8px; font-size:15.5px; line-height:1.6; opacity:.95; }
+  .feature .desc b{ font-weight:800; }
+  .feature .mini{ margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
+  .feature .mini span{ border:1.3px solid rgba(255,253,253,.6); border-radius:999px; padding:3px 10px; font-size:12.5px; font-weight:700; }
+
+  .grid{ margin-top:20px; display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .card{ display:flex; gap:14px; align-items:center; background:var(--blush); border:1.5px solid var(--line-strong); border-radius:24px; padding:18px 16px; }
+  .card:nth-child(2), .card:nth-child(3){ background:var(--cream); }
+  .card .qr{ width:156px; height:156px; flex:none; background:#fff; border-radius:14px; padding:8px; box-shadow:0 2px 0 var(--line); }
+  .card .ico{ font-size:24px; line-height:1; }
+  .card h3{ font-family:var(--serif); font-size:24px; line-height:1.25; font-weight:700; color:var(--accent); margin-top:6px; }
+  .card h3.multi{ font-family:var(--sans); font-size:18px; font-weight:800; }
+  .card .desc{ margin-top:7px; font-size:13.5px; line-height:1.55; color:var(--muted); }
+  .card .desc b{ color:var(--ink); }
+  .qr img{ width:100%; height:100%; display:block; image-rendering:pixelated; }
+
+  .how{ margin-top:20px; display:flex; justify-content:center; gap:10px; font-size:16px; font-weight:500; color:var(--muted); }
+  .how b{ color:var(--accent); }
+
+  .foot{ margin-top:auto; padding:12px 4px 30px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }
+  .foot .note{ font-size:12px; color:var(--muted); line-height:1.6; }
+  .foot .sig{ font-family:var(--latin); font-style:italic; font-size:21px; color:var(--accent); white-space:nowrap; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="qr-data.js"></script>
+<script>
+  // 선결제 숫자(10% / 5%)는 앱 설정을 바꾸면 여기도 고쳐서 다시 뽑아야 함.
+  var CARDS = [
+    { k: 'voice', ico: '💌', title: '의견 주세요', desc: '불편한 점도, 좋았던 점도<br><b>사장님이 직접 읽어요</b>' },
+    { k: 'allergy', ico: '🥚', title: '알레르기 정보', desc: '<b>베이커가 확인</b>한 성분<br>"계란 없는 빵"<br>골라 보기' },
+    { k: 'prepay', ico: '💳', title: '선결제', desc: '10만원 이상 <b>10% 더</b><br>미만도 5% 더<br>남은 돈 확인' },
+    { k: 'menu', ico: '🌏', title: 'Menu · メニュー<br>菜单 · Carte', multi: true, desc: 'Menu in your language<br><b>외국인 손님용<br>메뉴판</b>' }
+  ];
+  var only = decodeURIComponent(location.hash.replace('#', ''));
+
+  document.getElementById('root').innerHTML = BN_STORES.filter(function (s) { return !only || s.name === only; }).map(function (s) {
+    return '<section class="sheet">'
+      + '<div class="top"><div class="brand">본노엘 <span>Bon Noël</span></div><div class="store">' + s.name + '</div></div>'
+      + '<div class="hero"><div class="eyebrow">QR Guide</div><h1>찍으면 바로 열려요</h1>'
+      + '<div class="lead">휴대폰 카메라를 QR에 대 보세요 · <b>앱 설치·로그인 없이</b></div></div>'
+
+      + '<div class="feature"><div class="qr">' + bnQrImg(BN_QR.review(s)) + '</div><div>'
+      + '<span class="tag">🎁 리뷰 이벤트 · 하루 20명 선착순</span>'
+      + '<h2>리뷰 쓰고 빵 뽑기</h2>'
+      + '<div class="desc">리뷰 쓰기(<b>사진 1장 이상 · 별점 ★5</b>) → QR 찍고 뽑기<br><b>꽝 없이 100% 당첨</b>, 당첨 빵은 그 자리에서 바로!</div>'
+      + '<div class="mini"><span>네이버</span><span>구글</span><span>카카오맵</span><span>티맵</span></div>'
+      + '</div></div>'
+
+      + '<div class="grid">' + CARDS.map(function (c) {
+        return '<div class="card"><div class="qr">' + bnQrImg(BN_QR[c.k](s), 8) + '</div><div>'
+          + '<div class="ico">' + c.ico + '</div><h3' + (c.multi ? ' class="multi"' : '') + '>' + c.title + '</h3>'
+          + '<div class="desc">' + c.desc + '</div></div></div>';
+      }).join('') + '</div>'
+
+      + '<div class="how"><span><b>①</b> 카메라 켜기</span><span>→</span><span><b>②</b> 원하는 QR 하나만 화면에</span><span>→</span><span><b>③</b> 뜨는 주소 누르기</span></div>'
+      + '<div class="foot"><div class="note">QR이 잘 안 찍히면 휴대폰을 조금 떨어뜨려 하나만 비춰 주세요.<br>위생·알레르기처럼 급한 일은 지금 매장 직원에게 바로 말씀해 주세요.</div><div class="sig">merci beaucoup</div></div>'
+      + '</section>';
+  }).join('');
+</script>
+</body>
+</html>
