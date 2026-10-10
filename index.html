@@ -918,9 +918,10 @@
     await loadBase();
     var html = topbar('본노엘 운영', false, whoChip());
     // 매장폰·매니저 첫 화면: 출퇴근·근무표·선결제를 맨 위에 큰 칸으로 (아이콘·색은 아래 메뉴와 같음).
-    // 매니저는 선결제 옆에 로그북(매니저)까지 4칸 — 단, 매니저 일지를 숨기는 매장(왕십리)은 3칸. 사장님·알바 개인 계정은 해당 없음.
+    // 매니저는 선결제 옆에 로그북(매니저)까지 4칸 — 단, 매니저 일지를 숨기는 매장(왕십리)은 3칸이고, 거긴 알바가 일지를 쓰니 선결제 자리에 알바 일지. 사장님·알바 개인 계정은 해당 없음.
     if (isKiosk() || (session && session.role === 'manager')){
       var qItems = [['#/clock', 'tile-green', '⏱', '출퇴근'], ['#/schedule', 'tile-blue', '📅', '근무표'], ['#/prepay', 'tile-green', '🎟️', '선결제']];
+      if (noMlogBranch()) qItems[2] = ['#/alog', 'tile-yellow', '✍️', '알바 일지'];
       if (session.role === 'manager' && !noMlogBranch()) qItems.push([LINKS.logbook, 'tile-blue', '👔', '로그북<br>(매니저)']);
       html += '<div class="quick3' + (qItems.length > 3 ? ' q4' : '') + '">' + qItems.map(function(q){ return '<a class="quick" href="' + q[0] + '"' + (q[0].indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + q[1] + ')">' + q[2] + '</div><div class="ql">' + q[3] + '</div></a>'; }).join('') + '</div>';
     }
@@ -1125,9 +1126,9 @@
     html += grp('매장 QR·POP');   // 손님용 QR 5종(리뷰 이벤트·고객의 소리·알레르기·선결제·외국어 메뉴) — 종합 한 장 + 종류별 POP. 뽑기·고객의 소리 POP 화면은 이 안에서 엶
     if (isManager()) html += row('#/qr-pop', 'tile-orange', '🖼️', '매장 QR·POP', '손님용 QR 5종 한 장 모음 · 종류별 POP 인쇄 (리뷰 이벤트 · 고객의 소리 · 알레르기 · 선결제 · 외국어 메뉴) · 우리 아이 첫 빵 포스터');
     html += tge();
-    html += grp('선결제');
-    html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
-    html += row('#/prepay-poster', 'tile-orange', '🖼️', '선결제 포스터', '손님께 보여 주는 안내 포스터 (혜택 · QR · 이용 방법)');
+    html += grp('선결제');   // 알바 개인 계정에는 안 보임 (매장폰·매니저·사장님만). 보이는 줄이 없으면 묶음 자체가 안 나옴
+    if (isManager()) html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
+    if (isManager()) html += row('#/prepay-poster', 'tile-orange', '🖼️', '선결제 포스터', '손님께 보여 주는 안내 포스터 (혜택 · QR · 이용 방법)');
     if (isManager()) html += row('#/prepay-admin', 'tile-gray', '📊', '선결제 관리', '매장별 충전·사용 합계 · 손님 잔액 · 옮기기 · 코드');
     html += tge();
     html += grp('근로계약서·유니폼·보건증');
@@ -5797,6 +5798,7 @@
   }
 
   routes.prepay = async function(){
+    if (!isManager()){ nav('#/home'); return; }   // 알바 개인 계정은 선결제를 안 씀 (매장폰·매니저·사장님만)
     await loadBase();
     prepaySt.status = await db.rpc('prepay_status', {});
     var html = topbar('선결제', true, whoChip());
@@ -5883,6 +5885,7 @@
 
   // 선결제 포스터 — 직원 누구나 열람(손님께 혜택·QR 설명할 때). 원본은 pop/ 폴더
   routes['prepay-poster'] = async function(){
+    if (!isManager()){ nav('#/home'); return; }   // 알바 개인 계정에는 안 보임
     await loadBase();
     var html = topbar('선결제 포스터', true, whoChip());
     html += '<a href="pop/prepay-pop-tier10-5-A4.png" target="_blank" rel="noopener" style="display:block"><img src="pop/prepay-pop-web.jpg" alt="본노엘 선결제 포스터" style="width:100%;display:block;border-radius:var(--radius-l);border:1px solid var(--line);box-shadow:var(--shadow);background:var(--surface)"></a>';
