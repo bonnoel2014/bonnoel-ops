@@ -1215,6 +1215,7 @@
     await loadBase();
     var b = pickBranch(params, false);
     var st = await loadStock([b]);
+    app._stock = st;
     var m = st.byBranch[b];
     var list = itemsForBranch(b);
     var html = topbar('비품 체크 · ' + branchName(b), true) + branchTabs(b, false);
@@ -1252,7 +1253,7 @@
     });
     html += '</div>';
     html += '<div class="card section" style="margin-top:10px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 2px"><input type="checkbox" id="chk-sheet"' + (sheetPref() ? ' checked' : '') + '><span><b>이번 주 표로도 남기기</b><span class="muted" style="display:block;font-size:12px">켜 두고 저장하면 종이 양식처럼 한 장으로 보관돼요 (위쪽 주간 표 보기에서 열어요)</span></span></label></div>';
-    html += '<div class="stickybar"><div class="inner"><button class="btn primary block" data-act="save-check" data-branch="' + esc(b) + '">저장 <span id="cnt">(' + doneCount + '/' + list.length + ')</span></button></div></div>';
+    html += '<div class="stickybar"><div class="inner" style="display:flex;gap:8px"><button class="btn" data-act="copy" data-branch="' + esc(b) + '" style="white-space:nowrap">📋 카톡 복사</button><button class="btn primary block" style="flex:1;width:auto" data-act="save-check" data-branch="' + esc(b) + '">저장 <span id="cnt">(' + doneCount + '/' + list.length + ')</span></button></div></div>';
     app.innerHTML = html;
     app._checkTotal = list.length;
   };
@@ -1505,6 +1506,7 @@
     var st = app._stock; if (!st) return;
     var m = st.byBranch[b]; var lines = [];
     for (var k in m){ var s = m[k]; if (s.shortage > 0) lines.push(s.item.name + ' ' + fmtQ(s.shortage) + s.item.unit + ' (재고 ' + fmtQ(s.est) + ')'); }
+    if (!lines.length){ toast('지금 부족한 품목이 없어요'); return; }
     var text = '<' + branchName(b) + ' 비품요청>\n\n' + lines.join('\n\n');
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function(){ toast('복사했어요. 카톡에 붙여넣으세요'); }, function(){ window.prompt('복사해서 쓰세요', text); });
     else window.prompt('복사해서 쓰세요', text);
