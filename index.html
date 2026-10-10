@@ -2276,8 +2276,8 @@
       var clash = myDay.some(function(p){ return overlaps(p.start_time, p.end_time, q.start_time, q.end_time); });
       var partner = clash; // 같은 시간에 일하는 사람 = 파트너
       var own = q.staff_id === actingId;
-      var btn = own ? '<span class="badge muted">내 신청</span>' : mine ? '<button class="btn sm" data-act="offer-cancel" data-id="' + esc(mine.id) + '">지원 취소</button>' : clash ? '<span class="badge muted">겹쳐요</span>' : '<button class="btn sm primary" data-act="offer" data-id="' + esc(q.id) + '" data-staff="' + esc(actingId) + '">대타 지원</button>';
-      html += '<div class="item"><div class="iname"><div class="t">' + reqLine(q) + '</div><div class="s">' + (q.reason ? esc(q.reason) + ' · ' : '') + '지원 ' + offers.length + '명' + (q.solo_ok_by ? ' · ' + esc(staffName(q.solo_ok_by)) + ' 혼자 가능' : '') + '</div></div>' + btn + '</div>';
+      var btn = own ? '<span class="badge muted">내 신청</span>' : mine ? '<button class="btn sm" data-act="offer-cancel" data-id="' + esc(mine.id) + '">지원 취소</button>' : '<button class="btn sm primary" data-act="offer" data-id="' + esc(q.id) + '" data-staff="' + esc(actingId) + '">대타 지원</button>';
+      html += '<div class="item"><div class="iname"><div class="t">' + reqLine(q) + '</div><div class="s">' + (q.reason ? esc(q.reason) + ' · ' : '') + '지원 ' + offers.length + '명' + (clash && !own ? ' · 내 근무와 겹쳐도 지원 가능(혼자 2인분)' : '') + (q.solo_ok_by ? ' · ' + esc(staffName(q.solo_ok_by)) + ' 혼자 가능' : '') + '</div></div>' + btn + '</div>';
       if (partner && !own && !q.solo_ok_by) html += '<div class="expand"><span class="muted">이 시간에 같이 일하는 분이면: </span><button class="btn sm" data-act="solo-ok" data-id="' + esc(q.id) + '" data-staff="' + esc(actingId) + '">그날 혼자 가능해요</button></div>';
     });
     html += '</div>';
