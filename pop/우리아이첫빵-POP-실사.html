@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>본노엘 우리 아이 첫 빵 POP 실사 버전 (A4)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;700;800&display=swap">
+<style>
+  /* 실사 버전: B안 + 빵 사진(첫빵-바게트.png·첫빵-쌀식빵.png). 성분은 가격표(bread-tags-2026-10) 기준 */
+  @page{ size:A4; margin:0; }
+  :root{ --bg:#fffdfd; --blush:#fff1f2; --accent:#af4c60; --ink:#231717; --muted:#6e5f5e; --line:#eee1e0; --line-strong:#e1c6c7;
+    --serif:"Gowun Batang",serif; --latin:"Cormorant Garamond",serif; --sans:"Noto Sans KR",sans-serif; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:794px; background:var(--bg); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:var(--sans); color:var(--ink); word-break:keep-all; }
+  .poster{ width:794px; height:1123px; padding:60px 56px 0; display:flex; flex-direction:column; text-align:center; }
+  .eyebrow{ font-family:var(--latin); letter-spacing:.32em; text-transform:uppercase; color:var(--accent); font-size:17px; font-weight:600; }
+  h1{ font-family:var(--serif); font-size:96px; line-height:1.1; color:var(--accent); margin-top:14px; }
+  .lead{ margin-top:18px; font-size:24px; color:var(--muted); font-weight:500; }
+  .cols{ margin:auto 0; display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .col{ border-radius:36px; padding:18px 18px 40px; background:var(--blush); }
+  .col.dark{ background:var(--accent); color:#fffdfd; }
+  .photo{ background:#fff; border-radius:26px; overflow:hidden; aspect-ratio:853/634; }
+  .photo img{ width:100%; height:100%; object-fit:cover; display:block; transform:scale(1.18); }
+  .name{ font-family:var(--serif); font-weight:700; font-size:62px; margin-top:20px; }
+  .big{ margin-top:20px; font-size:27px; font-weight:800; line-height:1.45; }
+  .col:not(.dark) .big{ color:var(--accent); }
+  .small{ margin-top:16px; font-size:16px; line-height:1.55; opacity:.85; }
+  .foot{ margin-top:auto; padding:22px 0 30px; border-top:1px solid var(--line); font-size:14px; color:var(--muted); line-height:1.6; }
+  .sig{ font-family:var(--latin); font-style:italic; font-size:24px; color:var(--accent); margin-bottom:6px; }
+</style>
+</head>
+<body>
+<section class="poster">
+  <div class="eyebrow">My Baby's First Bread</div>
+  <h1>우리 아이<br>첫 빵</h1>
+  <div class="lead">재료가 단순한 빵부터 시작해요</div>
+  <div class="cols">
+    <div class="col">
+      <div class="photo"><img src="첫빵-바게트.png" alt="바게트"></div>
+      <div class="name">바게트</div>
+      <div class="big">계란·우유·설탕·버터<br>안 넣었어요</div>
+      <div class="small">작은 쁘띠 바게트도 있어요<br>(치즈·초코·마늘 바게트 제외)</div>
+    </div>
+    <div class="col dark">
+      <div class="photo"><img src="첫빵-쌀식빵.png" alt="쌀식빵"></div>
+      <div class="name">쌀식빵</div>
+      <div class="big">밀가루 대신<br>쌀가루 99%</div>
+      <div class="small">계란 안 넣었어요<br>설탕·버터·글루텐 1% 들어가요</div>
+    </div>
+  </div>
+  <div class="foot">
+    <div class="sig">Bon Noël</div>
+    겉껍질은 떼고 부드러운 속살만, 작게 찢어 조금씩 주세요.<br>알레르기가 걱정되면 소아과 선생님과 먼저 상의해 주세요. 성분은 직원에게 물어봐 주세요.
+  </div>
+</section>
+<script>
+  if (/[?&]print=1/.test(location.search)) window.addEventListener('load', function(){ (document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){ setTimeout(function(){ window.print(); }, 300); }); });
+</script>
+</body>
+</html>

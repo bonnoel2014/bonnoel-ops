@@ -1062,6 +1062,13 @@
     html += row('#/extra', 'tile-gray', '➕', '추가 근무 올리기', '근무표보다 더 일했을 때 직접 올리기');
     html += row('#/extra-early', 'tile-orange', '🏃', '조퇴·조기 마감 올리기', '근무표보다 일찍 마쳤을 때 (수락되면 시간 줄어듦)');
     html += tge();
+    html += grp('근무표·휴무·대타');
+    html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
+    html += row('#/leave', 'tile-yellow', '🌴', '휴무 신청', '쉬고 싶은 날 신청·내 신청 상태');
+    html += row('#/subs', 'tile-red', '🙋', '대타 지원', '우리 매장 대타 구하는 근무');
+    if (isManager()) html += row('#/leave-admin', 'tile-yellow', '✅', '대타 관리', '휴무 수락·대타 컨펌');
+    if (isManager()) html += row('#/patterns', 'tile-gray', '🕒', '근무 패턴', '사람별 고정 요일·시간');
+    html += tge();
     html += grp('급여');   // 사장님만 보이는 줄뿐이라 매니저·알바 화면엔 묶음 자체가 안 나옴
     if (isOwner()) html += row('#/pay', 'tile-yellow', '💰', '급여 초안', '월별 급여 계산·명세서 (사장님만)');
     if (isOwner()) html += row('#/pay-setup', 'tile-gray', '💵', '급여 설정', '시급·고용형태·요율 (사장님만)');
@@ -1074,13 +1081,6 @@
     html += tge();
     html += grp('빵 정보');   // 누구나 — 베이커가 빵마다 들어간 성분을 확인(서명)하면 손님 QR 페이지(www.bonnoel.com/b/)에 바로 반영
     html += row('#/allergy', 'tile-yellow', '🥜', '알레르기 체크 (베이커)', '빵마다 들어간 성분 확인 · 비밀번호로 서명 · 손님 QR 페이지에 바로 반영');
-    html += tge();
-    html += grp('근무표·휴무·대타');
-    html += row('#/schedule', 'tile-blue', '📅', '근무표', '매장별 주간 근무표 (대타 반영)');
-    html += row('#/leave', 'tile-yellow', '🌴', '휴무 신청', '쉬고 싶은 날 신청·내 신청 상태');
-    html += row('#/subs', 'tile-red', '🙋', '대타 지원', '우리 매장 대타 구하는 근무');
-    if (isManager()) html += row('#/leave-admin', 'tile-yellow', '✅', '대타 관리', '휴무 수락·대타 컨펌');
-    if (isManager()) html += row('#/patterns', 'tile-gray', '🕒', '근무 패턴', '사람별 고정 요일·시간');
     html += tge();
     html += grp('비품 관리');
     html += row('#/check', 'tile-blue', '📦', '비품 체크', '주 1회 현재고 넣기');
@@ -10305,11 +10305,14 @@
           + '<div style="margin:6px 2px 2px;font-weight:700">' + k[2] + '</div><div class="muted" style="margin:0 2px 6px;font-size:13px">' + k[3] + '</div>'
           + '<div class="inline" style="flex-wrap:wrap"><a class="btn sm primary" href="' + dir + 'QR-POP-A5.html?print=1#' + k[0] + '/' + h + '" target="_blank" rel="noopener">🖨 인쇄</a><a class="btn sm" href="' + dir + 'pdf/QR-POP-' + k[1] + '-A5.pdf" target="_blank" rel="noopener">📄 PDF</a></div></div>';
       }).join('') + '</div>';
-    var baby = 'pop/' + encodeURIComponent('우리아이첫빵-POP-B');
-    html += '<div class="group-title" style="margin-top:18px">매장 안내 포스터 (A4 · 4매장 공통)</div>'
-      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px"><div><a href="' + baby + '-A4.png" target="_blank" rel="noopener"><img loading="lazy" src="' + baby + '-A4.png" alt="우리 아이 첫 빵" style="' + img + '"></a>'
-      + '<div style="margin:6px 2px 2px;font-weight:700">🍞 우리 아이 첫 빵</div><div class="muted" style="margin:0 2px 6px;font-size:13px">아기 엄마 손님용 · 바게트·쌀식빵 안내</div>'
-      + '<div class="inline" style="flex-wrap:wrap"><a class="btn sm primary" href="' + baby + '.html?print=1" target="_blank" rel="noopener">🖨 인쇄</a><a class="btn sm" href="' + baby + '-A4.pdf" target="_blank" rel="noopener">📄 PDF</a></div></div></div>';
+    var BABY_POPS = [['우리아이첫빵-POP-실사', '🍞 우리 아이 첫 빵 (사진)', '아기 엄마 손님용 · 실제 빵 사진'], ['우리아이첫빵-POP-B', '🍞 우리 아이 첫 빵 (그림)', '아기 엄마 손님용 · 큰 글씨 두 칸']];
+    html += '<div class="group-title" style="margin-top:18px">매장 안내 포스터 (A4 · 4매장 공통)</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">'
+      + BABY_POPS.map(function(p){
+        var f = 'pop/' + encodeURIComponent(p[0]);
+        return '<div><a href="' + f + '-A4.png" target="_blank" rel="noopener"><img loading="lazy" src="' + f + '-A4.png" alt="' + esc(p[1]) + '" style="' + img + '"></a>'
+          + '<div style="margin:6px 2px 2px;font-weight:700">' + p[1] + '</div><div class="muted" style="margin:0 2px 6px;font-size:13px">' + p[2] + '</div>'
+          + '<div class="inline" style="flex-wrap:wrap"><a class="btn sm primary" href="' + f + '.html?print=1" target="_blank" rel="noopener">🖨 인쇄</a><a class="btn sm" href="' + f + '-A4.pdf" target="_blank" rel="noopener">📄 PDF</a></div></div>';
+      }).join('') + '</div>';
     html += '<div class="group-title" style="margin-top:18px">앱에서 바로 만드는 A4 포스터</div>'
       + '<a class="row" href="#/draw-pop"><div class="tile" style="background:var(--tile-orange)">🎰</div><div class="rt"><div class="rtitle">뽑기 POP (상품표 포함)</div><div class="rsub">지금 상품표 문구가 같이 찍히는 A4</div></div><div class="chev">›</div></a>'
       + '<a class="row" href="#/voice-pop"><div class="tile" style="background:var(--tile-blue)">💌</div><div class="rt"><div class="rtitle">고객의 소리 POP (A4)</div><div class="rsub">계산대에 세우는 큰 포스터</div></div><div class="chev">›</div></a>'
