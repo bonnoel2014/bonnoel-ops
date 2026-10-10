@@ -1327,7 +1327,11 @@
     toast('사진을 만드는 중이에요...');
     try {
       var h2c = await loadHtml2Canvas();
-      var canvas = await h2c(el, { scale: 2, backgroundColor: '#ffffff', logging: false, scrollX: 0, scrollY: -window.scrollY, windowWidth: 900 });
+      var box = document.createElement('div'); box.style.cssText = 'position:fixed;left:-10000px;top:0;width:900px;background:#fff';
+      var cl = el.cloneNode(true); cl.removeAttribute('id'); cl.style.cssText = 'width:900px;margin:0;box-sizing:border-box';
+      var gr = cl.querySelector('.sheet-grid'); if (gr) gr.style.gridTemplateColumns = '1fr 1fr';
+      box.appendChild(cl); document.body.appendChild(box);
+      var canvas; try { canvas = await h2c(cl, { scale: 2, backgroundColor: '#ffffff', logging: false, scrollX: 0, scrollY: 0, width: 900, windowWidth: 900 }); } finally { box.remove(); }
       var url = canvas.toDataURL('image/png');
       showImageOverlay(url, (el.getAttribute('data-name') || '비품리스트') + '.png', '비품리스트 사진');
     } catch(e){ toast('사진을 만들지 못했어요. 인쇄 버튼으로 PDF 저장도 돼요'); }
