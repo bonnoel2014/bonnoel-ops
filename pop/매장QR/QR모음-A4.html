@@ -76,7 +76,7 @@
   ];
   var only = decodeURIComponent(location.hash.replace('#', ''));
 
-  document.getElementById('root').innerHTML = BN_STORES.filter(function (s) { return !only || s.name === only; }).map(function (s) {
+  document.getElementById('root').innerHTML = BN_STORES.filter(function (s) { return bnStoreMatch(s, only); }).map(function (s) {
     return '<section class="sheet">'
       + '<div class="top"><div class="brand">본노엘 <span>Bon Noël</span></div><div class="store">' + s.name + '</div></div>'
       + '<div class="hero"><div class="eyebrow">QR Guide</div><h1>찍으면 바로 열려요</h1>'

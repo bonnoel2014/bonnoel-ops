@@ -20,3 +20,13 @@ function bnQrImg(url, cell) {
   var q = qrcode(0, 'M'); q.addData(url); q.make();
   return '<img src="' + q.createDataURL(cell || 10, 0) + '" alt="QR" data-url="' + url + '">';
 }
+
+// 주소 끝 #매장 이름 또는 매장 id 둘 다 받음
+function bnStoreMatch(s, key) { return !key || s.name === key || s.id === key; }
+
+// ?print=1 이면 글꼴·QR 다 뜬 뒤 바로 인쇄 창 (운영 앱 "매장 QR·POP"의 [인쇄] 버튼)
+if (/[?&]print=1/.test(location.search)) {
+  window.addEventListener('load', function () {
+    (document.fonts ? document.fonts.ready : Promise.resolve()).then(function () { setTimeout(function () { window.print(); }, 300); });
+  });
+}

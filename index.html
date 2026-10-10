@@ -1104,8 +1104,9 @@
     html += grp('리뷰 이벤트');   // 매장폰·매니저·사장님 — 손님이 리뷰 보여 주면 화면 뽑기판에서 뽑기. 집계는 사장님 앱에서만
     if (isManager()) html += row('#/draw', 'tile-red', '🎰', '리뷰 뽑기판', '손님이 리뷰 보여 주면 매장폰 뽑기판에서 칸 뒤집기 → 등수·상품 지급 기록');
     if (isManager()) html += row('#/draw-prizes', 'tile-gray', '🎁', '뽑기 상품표', '우리 매장 1~5등 상품 문구 (매니저·사장님 비밀번호)');
-    if (isManager()) html += row('#/draw-pop', 'tile-orange', '🖼️', '뽑기 POP (QR)', '손님이 QR 찍고 자기 폰에서 뽑는 포스터 인쇄 (매장별)');
-    if (isManager()) html += row('#/voice-pop', 'tile-blue', '💌', '고객의 소리 POP (QR)', '손님이 QR 찍고 의견 남기는 계산대 포스터 인쇄 · 의견은 사장님만 봐요');
+    html += tge();
+    html += grp('매장 QR·POP');   // 손님용 QR 5종(리뷰 이벤트·고객의 소리·알레르기·선결제·외국어 메뉴) — 종합 한 장 + 종류별 POP. 뽑기·고객의 소리 POP 화면은 이 안에서 엶
+    if (isManager()) html += row('#/qr-pop', 'tile-orange', '🖼️', '매장 QR·POP', '손님용 QR 5종 한 장 모음 · 종류별 POP 인쇄 (리뷰 이벤트 · 고객의 소리 · 알레르기 · 선결제 · 외국어 메뉴)');
     html += tge();
     html += grp('선결제');
     html += row('#/prepay', 'tile-green', '🎟️', '선결제', '손님 미리 충전 · 번호로 빼기 (4매장 공용 잔액)');
@@ -10276,6 +10277,44 @@
     var ta = document.getElementById('vc-body'), cnt = document.getElementById('vc-count');
     if (ta) ta.addEventListener('input', function(){ cnt.textContent = ta.value.length + ' / 1000'; });
   };
+
+  // ---- 매장 QR·POP 모음 (파일은 pop/매장QR, 다시 뽑기는 그 폴더 README) ----
+  var QRPOP_STORES = ['성수점', '답십리점', '중계점', '왕십리점'];
+  var QRPOP_KINDS = [['review', '리뷰이벤트', '🎁 리뷰 이벤트', '리뷰 쓰고 빵 뽑기'], ['voice', '고객의소리', '💌 고객의 소리', '의견 남기기'], ['allergy', '알레르기', '🥚 알레르기 정보', '빵 성분 검색'], ['prepay', '선결제', '💳 선결제', '혜택·잔액 확인'], ['menu', '외국어메뉴', '🌏 외국어 메뉴', 'English · 日本語 · 中文']];
+  var qrPopPick = null;
+  function qrPopKey(name){ return QRPOP_STORES.filter(function(k){ return String(name || '').indexOf(k.replace('점', '')) >= 0; })[0] || null; }
+  routes['qr-pop'] = async function(){
+    await loadBase();
+    var html = topbar('매장 QR·POP', true, whoChip());
+    if (!isManager()){ app.innerHTML = html + '<div class="note">매장폰·매니저·사장님만 볼 수 있어요.</div>'; return; }
+    var list = isOwner() ? base.branches : base.branches.filter(function(b){ return b.id === session.branchId; });
+    if (!qrPopPick || !list.some(function(b){ return b.id === qrPopPick; })) qrPopPick = (list[0] || {}).id;
+    var b = list.filter(function(x){ return x.id === qrPopPick; })[0], key = b && qrPopKey(b.name);
+    if (list.length > 1) html += '<div class="inline" style="margin:0 4px 10px;flex-wrap:wrap">' + list.map(function(x){ return '<button class="btn sm' + (x.id === qrPopPick ? ' primary' : '') + '" data-act="qrpop-store" data-id="' + esc(x.id) + '">' + esc(x.name) + '</button>'; }).join('') + '</div>';
+    if (!key){ app.innerHTML = html + '<div class="note">이 매장 POP는 아직 없어요. 새 매장이면 POP를 다시 뽑아야 해요.</div>'; return; }
+    var dir = 'pop/매장QR/', h = encodeURIComponent(key);
+    var img = 'width:100%;display:block;border-radius:var(--radius-l);border:1px solid var(--line);box-shadow:var(--shadow);background:var(--surface)';
+    html += '<div class="note">매장이 좁으면 <b>종합 한 장</b>만 붙여도 돼요. 손님이 원하는 QR 하나만 찍으면 바로 열려요(앱 설치·로그인 없음).</div>';
+    html += '<div class="group-title">종합 한 장 (A4 · QR 5개)</div>'
+      + '<a href="' + dir + 'png/QR모음-' + h + '.png" target="_blank" rel="noopener" style="display:block;max-width:420px;margin:0 auto"><img loading="lazy" src="' + dir + 'png/QR모음-' + h + '.png" alt="' + esc(key) + ' QR 모음" style="' + img + '"></a>'
+      + '<div class="inline" style="margin:8px 0 14px;justify-content:center"><a class="btn primary" href="' + dir + 'QR모음-A4.html?print=1#' + h + '" target="_blank" rel="noopener">🖨 ' + esc(key) + ' 인쇄 (A4)</a><a class="btn" href="' + dir + 'pdf/QR모음-A4.pdf" target="_blank" rel="noopener">📄 4매장 PDF</a></div>';
+    html += '<div class="group-title">종류별 POP (A5 · 계산대 꽂이 크기)</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">'
+      + QRPOP_KINDS.map(function(k){
+        var png = dir + 'png/QR-POP-' + k[1] + '-' + h + '.png';
+        return '<div><a href="' + png + '" target="_blank" rel="noopener"><img loading="lazy" src="' + png + '" alt="' + esc(k[2]) + '" style="' + img + '"></a>'
+          + '<div style="margin:6px 2px 2px;font-weight:700">' + k[2] + '</div><div class="muted" style="margin:0 2px 6px;font-size:13px">' + k[3] + '</div>'
+          + '<div class="inline" style="flex-wrap:wrap"><a class="btn sm primary" href="' + dir + 'QR-POP-A5.html?print=1#' + k[0] + '/' + h + '" target="_blank" rel="noopener">🖨 인쇄</a><a class="btn sm" href="' + dir + 'pdf/QR-POP-' + k[1] + '-A5.pdf" target="_blank" rel="noopener">📄 PDF</a></div></div>';
+      }).join('') + '</div>';
+    html += '<div class="group-title" style="margin-top:18px">앱에서 바로 만드는 A4 포스터</div>'
+      + '<a class="row" href="#/draw-pop"><div class="tile" style="background:var(--tile-orange)">🎰</div><div class="rt"><div class="rtitle">뽑기 POP (상품표 포함)</div><div class="rsub">지금 상품표 문구가 같이 찍히는 A4</div></div><div class="chev">›</div></a>'
+      + '<a class="row" href="#/voice-pop"><div class="tile" style="background:var(--tile-blue)">💌</div><div class="rt"><div class="rtitle">고객의 소리 POP (A4)</div><div class="rsub">계산대에 세우는 큰 포스터</div></div><div class="chev">›</div></a>'
+      + '<a class="row" href="#/prepay-poster"><div class="tile" style="background:var(--tile-orange)">🖼️</div><div class="rt"><div class="rtitle">선결제 포스터 (A4)</div><div class="rsub">혜택 · QR · 이용 방법</div></div><div class="chev">›</div></a>';
+    app.innerHTML = html;
+  };
+  app.addEventListener('click', function(e){
+    var el = e.target.closest('[data-act="qrpop-store"]'); if (!el) return;
+    qrPopPick = el.getAttribute('data-id'); routes['qr-pop']();
+  });
 
   routes['voice-pop'] = async function(){
     await loadBase();

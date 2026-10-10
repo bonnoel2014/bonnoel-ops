@@ -135,7 +135,7 @@
     if (onlyKind && k !== onlyKind) return;
     var P = KINDS[k];
     BN_STORES.forEach(function (s) {
-      if (onlyStore && s.name !== onlyStore) return;
+      if (!bnStoreMatch(s, onlyStore)) return;
       out.push('<section class="poster" data-kind="' + k + '" data-store="' + s.name + '">'
         + '<div class="top"><div class="brand">본노엘 <span>Bon Noël</span></div><div class="store">' + (k === 'menu' ? s.en + ' · ' : '') + s.name + '</div></div>'
         + '<div class="hero"><div class="eyebrow">' + P.eyebrow + '</div><h1' + (P.multi ? ' class="multi"' : '') + '>' + P.title + '</h1>'
