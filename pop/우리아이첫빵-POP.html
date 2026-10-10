@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>본노엘 우리 아이 첫 빵 POP (A4)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">
+<style>
+  /* 아기 엄마 손님용 A4 한 장. 성분은 가격표(bread-tags-2026-10) 문구 기준 — 가격표가 바뀌면 여기도 고치기 */
+  @page{ size:A4; margin:0; }
+  :root{
+    --bg:#fffdfd; --blush:#fff1f2; --accent:#af4c60; --accent-soft:#ffe1e3; --accent-ink:#fffdfd;
+    --ink:#231717; --muted:#6e5f5e; --faint:#9b8b8a; --line:#eee1e0; --line-strong:#e1c6c7;
+    --serif:"Gowun Batang","Cormorant Garamond",serif; --latin:"Cormorant Garamond","Gowun Batang",serif;
+    --sans:"Noto Sans KR",sans-serif;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:794px; background:var(--bg); -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:var(--sans); color:var(--ink); word-break:keep-all; }
+  .poster{ position:relative; width:794px; height:1123px; padding:34px 50px 0; background:var(--bg); display:flex; flex-direction:column; overflow:hidden; }
+  .top{ display:flex; justify-content:space-between; align-items:baseline; padding:2px 2px 14px; border-bottom:1px solid var(--line); }
+  .brand{ font-family:var(--serif); font-weight:700; font-size:26px; }
+  .brand span{ font-family:var(--latin); font-weight:500; font-size:20px; color:var(--muted); }
+  .tag{ font-family:var(--serif); font-weight:700; font-size:19px; color:var(--accent); }
+
+  .hero{ margin-top:28px; text-align:center; }
+  .eyebrow{ font-family:var(--latin); letter-spacing:.3em; text-transform:uppercase; color:var(--accent); font-size:16px; font-weight:600; }
+  .hero h1{ font-family:var(--serif); font-size:76px; line-height:1.12; font-weight:700; color:var(--accent); margin-top:8px; letter-spacing:-.01em; }
+  .hero .lead{ margin-top:12px; font-size:21px; color:var(--muted); font-weight:500; line-height:1.55; }
+  .hero .lead b{ color:var(--ink); }
+
+  .ask{ margin:26px auto 0; text-align:center; font-family:var(--serif); font-weight:700; font-size:25px; }
+  .routes{ margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .card{ background:#fff; border:2px solid var(--line-strong); border-radius:30px; padding:22px 24px 24px; display:flex; flex-direction:column; }
+  .card.rice{ background:var(--blush); }
+  .q{ font-size:18px; font-weight:700; color:var(--muted); line-height:1.4; }
+  .q em{ font-style:normal; color:var(--accent); }
+  .arrow{ margin:10px 0 6px; font-size:22px; color:var(--accent); font-weight:800; }
+  .name{ font-family:var(--serif); font-weight:700; font-size:40px; line-height:1.15; color:var(--ink); }
+  .sub{ margin-top:4px; font-size:16px; color:var(--muted); }
+  .nos{ display:flex; flex-wrap:wrap; gap:7px; margin-top:16px; }
+  .no{ background:var(--accent); color:var(--accent-ink); font-weight:700; font-size:16px; padding:6px 13px; border-radius:999px; }
+  .no.soft{ background:#fff; color:#432326; border:1.5px solid var(--line-strong); }
+  .desc{ margin-top:14px; font-size:16.5px; line-height:1.6; color:var(--ink); }
+  .fine{ margin-top:auto; padding-top:12px; font-size:13.5px; line-height:1.55; color:var(--muted); border-top:1px dashed var(--line-strong); }
+
+  .tipsbox{ margin-top:22px; background:var(--blush); border-radius:28px; padding:20px 30px 22px; }
+  .tipsbox h2{ font-family:var(--serif); font-weight:700; font-size:24px; color:var(--accent); text-align:center; }
+  .steps{ margin-top:12px; display:grid; gap:10px; }
+  .step{ display:flex; gap:14px; align-items:center; font-size:18px; font-weight:500; line-height:1.45; }
+  .step b.n{ flex:none; width:34px; height:34px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:inline-flex; align-items:center; justify-content:center; font-size:17px; font-weight:700; }
+  .step em{ font-style:normal; font-weight:700; color:var(--accent); }
+
+  .foot{ margin-top:auto; padding:16px 4px 24px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }
+  .foot .note{ font-size:13.5px; color:var(--muted); line-height:1.6; }
+  .foot .sig{ font-family:var(--latin); font-style:italic; font-size:22px; color:var(--accent); white-space:nowrap; }
+</style>
+</head>
+<body>
+<section class="poster">
+  <div class="top"><div class="brand">본노엘 <span>Bon Noël</span></div><div class="tag">아기 엄마·아빠를 위한 안내</div></div>
+
+  <div class="hero">
+    <div class="eyebrow">My Baby's First Bread</div>
+    <h1>우리 아이 첫 빵 🍞</h1>
+    <div class="lead">처음 빵을 먹는 아이라면<br><b>재료가 단순한 빵</b>부터 골라 주세요</div>
+  </div>
+
+  <div class="ask">어떤 게 걱정되세요?</div>
+  <div class="routes">
+    <div class="card">
+      <div class="q"><em>계란·우유</em>가 걱정돼요<br>달고 기름진 건 아직 일러요</div>
+      <div class="arrow">→</div>
+      <div class="name">전통 바게트</div>
+      <div class="sub">작은 사이즈 · 쁘띠 바게트도 있어요</div>
+      <div class="nos"><span class="no">NO 계란</span><span class="no">NO 우유</span><span class="no">NO 설탕</span><span class="no">NO 버터</span></div>
+      <div class="desc">겉은 바삭, 속은 촉촉.<br>단맛·버터 없이 <b>담백한 기본 빵</b>이에요.</div>
+      <div class="fine">밀가루로 만들어요. 치즈·초코·마늘 바게트는 재료가 더 들어가요.</div>
+    </div>
+    <div class="card rice">
+      <div class="q"><em>밀가루</em>가 걱정돼요<br>쌀로 만든 빵을 찾아요</div>
+      <div class="arrow">→</div>
+      <div class="name">쌀식빵</div>
+      <div class="sub">쫄깃하고 부드러운 결</div>
+      <div class="nos"><span class="no">쌀가루 99%</span><span class="no">NO 계란</span><span class="no soft">밀가루 대신 쌀</span></div>
+      <div class="desc">밀가루 대신 <b>쌀가루로 만들어</b><br>속이 부드럽고 쫄깃해요.</div>
+      <div class="fine">설탕·버터, 제빵용 글루텐 1%가 들어가요. <span style="white-space:nowrap">밀(글루텐)·우유</span> 알레르기가 있다면 피해 주세요.</div>
+    </div>
+  </div>
+
+  <div class="tipsbox">
+    <h2>이렇게 먹여 보세요</h2>
+    <div class="steps">
+      <div class="step"><b class="n">1</b><span>딱딱한 겉껍질은 떼고 <em>부드러운 속살</em>만</span></div>
+      <div class="step"><b class="n">2</b><span>아이 입에 맞게 <em>작게 찢어서</em> 조금씩</span></div>
+      <div class="step"><b class="n">3</b><span>처음 먹는 날은 <em>한 가지 빵만</em>, 아이 반응을 살펴 주세요</span></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="note">아이 월령·체질에 따라 다를 수 있어요. 알레르기가 걱정되면 소아과 선생님과 먼저 상의해 주세요.<br>더 궁금한 성분은 직원에게 편하게 물어봐 주세요.</div>
+    <div class="sig">Bon Noël</div>
+  </div>
+</section>
+</body>
+</html>
