@@ -1440,8 +1440,50 @@
 
   // ===== 화면: 부족·주문 =====
   function orderPhotoHtml(id, path){
-    var lbl = function(t){ return '<label style="cursor:pointer"><u>' + t + '</u><input type="file" accept="image/*" class="hidden ord-photo-file" data-id="' + esc(id) + '"></label>'; };
-    return (path ? '<span data-act="exp-photo" data-path="' + esc(path) + '" style="cursor:pointer"><u>📷 캡쳐 보기</u></span> · ' + lbl('바꾸기') : lbl('📷 주문 캡쳐 넣기'));
+    var open = function(t){ return '<span data-act="ord-photo-open" data-id="' + esc(id) + '" style="cursor:pointer"><u>' + t + '</u></span>'; };
+    return (path ? '<span data-act="exp-photo" data-path="' + esc(path) + '" style="cursor:pointer"><u>📷 캡쳐 보기</u></span> · ' + open('바꾸기') : open('📷 주문 캡쳐 넣기'));
+  }
+  var ordPasteHandler = null;
+  function orderPhotoClose(){
+    var ov = document.getElementById('ord-photo-ov'); if (ov) ov.remove();
+    if (ordPasteHandler){ document.removeEventListener('paste', ordPasteHandler); ordPasteHandler = null; }
+  }
+  function orderPhotoMenu(id){
+    orderPhotoClose();
+    var ov = document.createElement('div'); ov.id = 'ord-photo-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML = '<div class="card" style="width:100%;max-width:380px;padding:18px"><div style="font-weight:700;margin-bottom:10px">주문 캡쳐 넣기</div>' +
+      '<div style="border:2px dashed var(--accent);border-radius:12px;padding:22px 10px;text-align:center;margin-bottom:10px;background:var(--accent-soft)"><b>캡쳐한 뒤 여기서 Ctrl+V</b><div class="muted" style="font-size:12px;margin-top:4px">PC에서 캡쳐(Win+Shift+S)하고 이 창이 열린 채로 붙여넣기만 하면 돼요</div></div>' +
+      '<button class="btn block" data-act="ord-photo-clip" data-id="' + esc(id) + '" style="margin-bottom:8px">📋 복사한 캡쳐 붙여넣기 버튼</button>' +
+      '<label class="btn block" style="cursor:pointer;margin-bottom:8px;text-align:center">📁 저장된 사진·파일 고르기<input type="file" accept="image/*" class="hidden ord-photo-file" data-id="' + esc(id) + '"></label>' +
+      '<button class="btn block" data-act="ord-photo-close">닫기</button></div>';
+    app.appendChild(ov);
+    ordPasteHandler = function(e){
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      for (var i = 0; i < items.length; i++){
+        if (items[i].kind === 'file' && /^image\//.test(items[i].type)){
+          var f = items[i].getAsFile(); e.preventDefault();
+          orderPhotoSubmit(id, f); return;
+        }
+      }
+      toast('복사된 사진이 없어요. 먼저 캡쳐(Win+Shift+S)를 해 주세요');
+    };
+    document.addEventListener('paste', ordPasteHandler);
+  }
+  async function orderPhotoClipRead(id){
+    try {
+      var list = await navigator.clipboard.read();
+      for (var i = 0; i < list.length; i++){
+        var t = list[i].types.filter(function(x){ return /^image\//.test(x); })[0];
+        if (t){ var blob = await list[i].getType(t); await orderPhotoSubmit(id, new File([blob], 'capture.png', { type: t })); return; }
+      }
+      toast('복사된 사진이 없어요. 먼저 캡쳐(Win+Shift+S)를 해 주세요');
+    } catch(e){ toast('버튼으로는 못 읽었어요. 이 창이 열린 채로 Ctrl+V 를 눌러 주세요'); }
+  }
+  async function orderPhotoSubmit(id, file){
+    orderPhotoClose();
+    try { await orderPhotoAdd(id, file); }
+    catch(err){ console.error(err); toast('캡쳐를 못 넣었어요: ' + (err.message || err)); }
   }
   async function orderPhotoAdd(id, file){
     if (!file) return;
@@ -6889,6 +6931,9 @@
         case 'manual-order': await orderSave(document.getElementById('mo-branch').value, document.getElementById('mo-item').value, num(document.getElementById('mo-qty').value), num(document.getElementById('mo-days').value) || 0); break;
         case 'copy': copyShort(el.getAttribute('data-branch')); break;
         case 'copy-resolved': copyResolved(el.getAttribute('data-branch')); break;
+        case 'ord-photo-open': orderPhotoMenu(id); break;
+        case 'ord-photo-clip': orderPhotoClipRead(id); break;
+        case 'ord-photo-close': orderPhotoClose(); break;
         case 'send-open': sendMenu(el.getAttribute('data-branch'), el.getAttribute('data-kind')); break;
         case 'send-text': sendText(); break;
         case 'send-photo': sendPhoto(); break;
@@ -7203,7 +7248,7 @@
     if (e.target.id === 'buy-file'){ await buyPhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'buy-proof-file'){ await buyProofPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.id === 'buy-extra-file'){ await buyExtraPicked(e.target.files && e.target.files[0]); return; }
-    if (e.target.classList.contains('ord-photo-file')){ try { await orderPhotoAdd(e.target.getAttribute('data-id'), e.target.files && e.target.files[0]); } catch(err){ console.error(err); toast('캡쳐를 못 넣었어요. SQL(supabase-migration-orderphoto.sql)을 한 번 실행했는지 확인해 주세요'); } return; }
+    if (e.target.classList.contains('ord-photo-file')){ await orderPhotoSubmit(e.target.getAttribute('data-id'), e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('buy-late-file')){ try { await buyLateAdd(e.target.getAttribute('data-id'), e.target.getAttribute('data-kind'), e.target.files && e.target.files[0]); } catch(err){ console.error(err); toast('사진 추가가 안 됐어요: ' + (err.message || err)); } return; }
     if (e.target.id === 'pp-use-file'){ await ppUsePhotoPicked(e.target.files && e.target.files[0]); return; }
     if (e.target.classList.contains('alog-file')){ await alogPhotoPicked(+e.target.getAttribute('data-i'), e.target.files && e.target.files[0]); return; }
