@@ -617,6 +617,9 @@
     items.forEach(function(it){ ['b1','b2','b3','b4'].forEach(function(b){ ib.push({ item_id: it.id, branch_id: b, target_qty: targets[it.id], active: true }); }); });
     var wk = daysAgo(2);
     return {
+      ops_tasks: [ {id:'tk1',branch_id:'b1',body:'입구 POP를 새 시즌 것으로 바꿔 주세요',due_on:addDays(todayStr(), 1),need_photo:true,status:'open',created_at:nowIso()} ],
+      ops_equipment: [ {id:'eq1',branch_id:'b1',name:'쇼케이스 1번',active:true}, {id:'eq2',branch_id:'b1',name:'데크 오븐',active:true} ],
+      ops_repairs: [],
       bread_info: breadDemoRows(),
       manual_branches: [ {id:'b1',name:'성수점',sort_order:1}, {id:'b4',name:'답십리점',sort_order:2}, {id:'b3',name:'중계점',sort_order:3}, {id:'b2',name:'왕십리점',sort_order:4} ],
       manual_staff: [
@@ -928,6 +931,10 @@
       else qItems.push(['#/buy', 'tile-yellow', '🥐', '직원 구매']);
       html += '<div class="quick3' + (qItems.length > 3 ? ' q4' : '') + '">' + qItems.map(function(q){ return '<a class="quick" href="' + q[0] + '"' + (q[0].indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + q[1] + ')">' + q[2] + '</div><div class="ql">' + q[3] + '</div></a>'; }).join('') + '</div>';
     }
+    if (session && !isOwner() && session.branchId) try { // 사장님 지시: 우리 매장에 남은 지시가 있으면 맨 위에 (표가 아직 없으면 조용히 건너뜀)
+      var myTasks = (await loadMyTasks()).filter(function(t){ return t.status === 'open'; });
+      if (myTasks.length) html += '<a href="#/otask" class="card" style="display:block;margin-top:12px;padding:12px 14px;border:2px solid var(--accent)"><div style="font-weight:700">📝 사장님 지시 ' + myTasks.length + '건</div>' + myTasks.slice(0, 3).map(function(t){ return '<div class="s" style="margin-top:4px">· ' + esc(t.body.length > 30 ? t.body.slice(0, 30) + '…' : t.body) + ' ' + taskDue(t) + '</div>'; }).join('') + '<div class="muted" style="font-size:12px;margin-top:6px">하고 나서 눌러서 [완료] →</div></a>';
+    } catch(e){ console.warn('지시 표 없음', e); }
     if (!isKiosk()) try { // 내 현황: 매니저 아닌 근무자도 자기 휴무·대타·보건증은 로그인하자마자 바로 보이게 (매장폰은 사람이 아니라 생략)
       var mySch = await loadSchedule([session.branchId], addDays(todayStr(), -14), addDays(todayStr(), 60));
       var myOpenReq = mySch.requests.filter(function(q){ return q.staff_id === session.staffId && ['requested', 'covering'].indexOf(q.status) >= 0 && q.date >= todayStr(); });
@@ -1097,6 +1104,8 @@
     html += grp('로그북(업무일지)');
     if (isManager()) html += row('#/checklist', 'tile-green', '📋', '마감·오픈 체크리스트', '매장폰에서 알바가 체크 → 이름 고르고 제출하고 퇴근 · 매니저·사장님은 제출 현황 확인');
     html += row('#/alog', 'tile-yellow', '✍️', '근무자 일지 쓰기', '근무 중 손님 요청·클레임·품절·고장·다음 조 전달 적기');
+    if (!isOwner()) html += row('#/otask', 'tile-red', '📝', '사장님 지시', '사장님이 우리 매장에 보낸 할 일 · 하고 나서 사진과 함께 [완료]');
+    html += row('#/repair-report', 'tile-orange', '🔧', '고장 신고', '기계·설비가 고장 나면 사진과 함께 사장님께 · 우리 매장 고장 현황');
     if (isManager()) html += row('#/alog-admin', 'tile-orange', '📒', '로그북 확인', '근무자·매니저 일지 · 확인 체크 · 처리 안 된 것 · 종류별 모아보기');
     if (isManager() && !noMlogBranch()) html += row(LINKS.logbook, 'tile-blue', '👔', '매니저 일지 쓰기', '매니저 로그북 · 업무일지·공지사항·행사·업무요청 (새 창, 알바는 안 보임)');
     html += tge();
@@ -6682,6 +6691,129 @@
       return html + '</div>';
     } catch(e){ console.warn('매니저 일지 없음', e); return ''; }
   }
+
+  // ===== 화면: 사장님 지시 · 고장 신고 (경영 도구 v1 — bonnoel-owner/docs/경영도구/PRD_전체.md, 표: supabase-migration-tasks.sql) =====
+  // 지시는 사장님 앱에서 매장으로 보냄 → 그날 근무자 누구든 [완료](사진·이름) → 사장님 앱에서 확인. 고장은 매장폰에서 신고 → 사장님 앱에서 수리 처리
+  var TASK_SQL_MSG = '지시·고장 준비(SQL)가 아직 안 됐어요 — supabase-migration-tasks.sql 실행';
+  async function loadMyTasks(){   // 우리 매장: 할 일 + 최근 7일 안에 완료한 것
+    var rows = await db.select('ops_tasks', { eq: { branch_id: session.branchId } });
+    var from = addDays(todayStr(), -7) + 'T00:00:00';
+    return rows.filter(function(t){ return t.status === 'open' || (t.done_at && t.done_at >= from); })
+      .sort(function(a, b){ return (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || (String(a.due_on || '9999') < String(b.due_on || '9999') ? -1 : 1); });
+  }
+  function taskDue(t){
+    if (!t.due_on) return '';
+    var dl = Math.round((Date.parse(t.due_on + 'T00:00:00') - Date.parse(todayStr() + 'T00:00:00')) / 864e5);
+    return dl < 0 ? '<span class="badge danger">' + (-dl) + '일 지남</span>' : dl === 0 ? '<span class="badge warn">오늘까지</span>' : '<span class="badge">' + md(t.due_on) + '까지</span>';
+  }
+  // 이 매장 근무자 이름 고르기 (매장폰이면 꼭 고르고, 개인 계정이면 본인이 기본)
+  function whoSelect(id){
+    var list = base.staff.filter(function(s){ return s.active !== false && s.role !== 'owner' && s.branch_id === session.branchId; }).sort(function(a, b){ return String(a.name).localeCompare(String(b.name), 'ko'); });
+    var me = isKiosk() ? '' : session.staffId;
+    return '<select class="in" id="' + id + '"><option value="">' + (isKiosk() ? '내 이름 고르기' : '') + '</option>' + list.map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === me ? ' selected' : '') + '>' + esc(s.name) + '</option>'; }).join('') + '</select>';
+  }
+  function photoPicker(id){ return '<label class="btn block" style="margin-top:6px">📷 사진 찍기 / 고르기<input type="file" accept="image/*" id="' + id + '" class="hidden"></label><div id="' + id + '-pv" class="muted" style="margin-top:6px"></div>'; }
+  function bindPhoto(id, st){
+    var f = document.getElementById(id); if (!f) return;
+    f.onchange = async function(){
+      var file = f.files[0]; if (!file) return;
+      document.getElementById(id + '-pv').textContent = '사진 준비 중…';
+      try { st.photo = await resizeImage(file, 1600); document.getElementById(id + '-pv').innerHTML = '<img src="' + st.photo.dataUrl + '" alt="사진" style="max-width:100%;max-height:220px;border-radius:12px">'; }
+      catch(e){ toast(e.message || '사진을 열 수 없어요'); }
+    };
+  }
+
+  routes.otask = async function(){
+    await loadBase();
+    var html = topbar('사장님 지시', true), rows;
+    try { rows = await loadMyTasks(); } catch(e){ app.innerHTML = html + '<div class="note danger">' + esc(TASK_SQL_MSG) + '</div>'; return; }
+    var open = rows.filter(function(t){ return t.status === 'open'; }), done = rows.filter(function(t){ return t.status !== 'open'; });
+    html += '<div class="muted" style="margin:4px 4px 10px">사장님이 ' + esc(branchName(session.branchId)) + '에 보낸 할 일이에요. 하고 나서 [완료]를 눌러 주세요. 그날 근무자 누구든 눌러도 돼요.</div>';
+    html += '<div class="group-title">📝 할 일 ' + open.length + '</div><div class="card">';
+    if (!open.length) html += '<div class="empty">남은 지시가 없어요 👍</div>';
+    open.forEach(function(t){
+      html += '<div class="item"><div class="iname"><div class="t" style="white-space:pre-wrap">' + esc(t.body) + '</div><div class="s">' + taskDue(t) + (t.need_photo ? ' <span class="badge">📷 사진 필요</span>' : '') + (t.redo_memo ? ' <span class="badge danger">다시: ' + esc(t.redo_memo) + '</span>' : '') + '</div></div><a class="btn primary sm" href="#/otask-done/' + esc(t.id) + '">완료</a></div>';
+    });
+    html += '</div>';
+    if (done.length){
+      html += '<div class="group-title">✅ 최근 완료 (7일)</div><div class="card">';
+      done.forEach(function(t){ html += '<div class="item"><div class="iname"><div class="t">' + esc(t.body) + '</div><div class="s">' + esc(staffName(t.done_by)) + ' · ' + md(t.done_at) + ' · ' + (t.status === 'ok' ? '<span class="badge ok">사장님 확인</span>' : '<span class="badge">사장님 확인 전</span>') + '</div></div></div>'; });
+      html += '</div>';
+    }
+    app.innerHTML = html;
+  };
+
+  var otaskSt = { photo: null };
+  routes['otask-done'] = async function(params){
+    await loadBase();
+    var t = (await db.select('ops_tasks', { eq: { id: params.arg } }))[0];
+    if (!t){ toast('지시를 찾을 수 없어요'); nav('#/otask'); return; }
+    if (t.status !== 'open'){ toast('이미 완료된 지시예요'); nav('#/otask'); return; }
+    otaskSt = { photo: null };
+    var html = topbar('지시 완료', true);
+    html += '<div class="card"><div class="t" style="font-weight:700;white-space:pre-wrap">' + esc(t.body) + '</div><div class="s" style="margin-top:6px">' + taskDue(t) + '</div>' + (t.redo_memo ? '<div class="note danger" style="margin-top:8px">사장님이 다시 요청: ' + esc(t.redo_memo) + '</div>' : '') + '</div>';
+    html += '<div class="form" style="margin-top:10px">'
+      + '<div><label>누가 했어요?</label>' + whoSelect('ot-who') + '</div>'
+      + '<div><label>사진' + (t.need_photo ? ' <b style="color:var(--danger)">(꼭 필요)</b>' : ' (있으면 좋아요)') + '</label>' + photoPicker('ot-file') + '</div>'
+      + '<div><label>한마디 (선택)</label><input class="in" id="ot-memo" placeholder="예) 가격표 3장 새로 붙였어요"></div></div>';
+    html += '<div class="stickybar"><div class="inner"><a class="btn" href="#/otask">취소</a><button class="btn primary block" id="ot-save">완료 보내기</button></div></div>';
+    app.innerHTML = html;
+    bindPhoto('ot-file', otaskSt);
+    document.getElementById('ot-save').onclick = async function(){
+      var who = document.getElementById('ot-who').value;
+      if (!who){ toast('누가 했는지 이름을 골라 주세요'); return; }
+      if (t.need_photo && !otaskSt.photo){ toast('사진을 넣어 주세요'); return; }
+      this.disabled = true;
+      try {
+        var path = null;
+        if (otaskSt.photo){ path = 'tasks/' + t.id + '-' + Date.now() + '.jpg'; await db.upload('receipts', path, otaskSt.photo.blob, 'image/jpeg'); }
+        await db.update('ops_tasks', { id: t.id }, { status: 'done', done_by: who, done_at: nowIso(), done_photo: path, done_memo: document.getElementById('ot-memo').value.trim() || null });
+        toast('사장님께 완료를 보냈어요'); nav('#/otask');
+      } catch(e){ this.disabled = false; toast('보내지 못했어요: ' + (e.message || e)); }
+    };
+  };
+
+  var repSt = { photo: null };
+  routes['repair-report'] = async function(){
+    await loadBase();
+    var html = topbar('고장 신고', true), eq, reps;
+    try {
+      eq = (await db.select('ops_equipment', { eq: { branch_id: session.branchId } })).filter(function(e){ return e.active !== false; });
+      reps = (await db.select('ops_repairs', { eq: { branch_id: session.branchId } })).sort(function(a, b){ return a.created_at < b.created_at ? 1 : -1; });
+    } catch(e){ app.innerHTML = html + '<div class="note danger">' + esc(TASK_SQL_MSG) + '</div>'; return; }
+    repSt = { photo: null };
+    var eqName = {}; eq.forEach(function(e){ eqName[e.id] = e.name; });
+    html += '<div class="muted" style="margin:4px 4px 10px">기계·설비가 고장 나면 사진과 함께 올려 주세요. 사장님 앱에 바로 떠요.</div>';
+    html += '<div class="form">'
+      + '<div><label>어떤 설비예요?</label><select class="in" id="rp-eq"><option value="">목록에 없음 (아래에 쓰기)</option>' + eq.map(function(e){ return '<option value="' + esc(e.id) + '">' + esc(e.name) + '</option>'; }).join('') + '</select>'
+      + '<input class="in" id="rp-eqt" placeholder="예) 2번 쇼케이스, 제빙기" style="margin-top:6px"></div>'
+      + '<div><label>어떻게 고장 났어요?</label><textarea class="in" id="rp-sym" rows="3" placeholder="예) 8도에서 안 내려가요, 문이 안 닫혀요"></textarea></div>'
+      + '<div><label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="rp-urg" style="width:20px;height:20px"> 영업에 지장 있어요 (빨리 고쳐야 해요)</label></div>'
+      + '<div><label>사진 (있으면 좋아요)</label>' + photoPicker('rp-file') + '</div>'
+      + '<div><label>누가 신고해요?</label>' + whoSelect('rp-who') + '</div></div>';
+    var open = reps.filter(function(r){ return r.status !== 'fixed'; }), fixed = reps.filter(function(r){ return r.status === 'fixed'; }).slice(0, 5);
+    if (open.length || fixed.length){
+      html += '<div class="group-title">🔧 우리 매장 고장</div><div class="card">';
+      open.concat(fixed).forEach(function(r){ html += '<div class="item"><div class="iname"><div class="t">' + esc(eqName[r.equipment_id] || r.equipment_text || '설비') + ' — ' + esc(r.symptom) + '</div><div class="s">' + md(r.created_at) + ' 신고 · ' + (r.status === 'fixed' ? '<span class="badge ok">고침' + (r.fixed_on ? ' ' + md(r.fixed_on) : '') + '</span>' : r.status === 'fixing' ? '<span class="badge warn">수리 부름</span>' : '<span class="badge danger">아직</span>') + (r.urgent && r.status !== 'fixed' ? ' <span class="badge danger">영업 지장</span>' : '') + '</div></div></div>'; });
+      html += '</div>';
+    }
+    html += '<div class="stickybar"><div class="inner"><a class="btn" href="#/home">취소</a><button class="btn primary block" id="rp-save">사장님께 신고</button></div></div>';
+    app.innerHTML = html;
+    bindPhoto('rp-file', repSt);
+    document.getElementById('rp-save').onclick = async function(){
+      var eqId = document.getElementById('rp-eq').value, eqText = document.getElementById('rp-eqt').value.trim(), sym = document.getElementById('rp-sym').value.trim(), who = document.getElementById('rp-who').value;
+      if (!eqId && !eqText){ toast('어떤 설비인지 골라 주거나 써 주세요'); return; }
+      if (!sym){ toast('어떻게 고장 났는지 써 주세요'); return; }
+      if (!who){ toast('신고하는 사람 이름을 골라 주세요'); return; }
+      this.disabled = true;
+      try {
+        var path = null, rid = uuid4();
+        if (repSt.photo){ path = 'repairs/' + rid + '.jpg'; await db.upload('receipts', path, repSt.photo.blob, 'image/jpeg'); }
+        await db.insert('ops_repairs', [{ id: rid, branch_id: session.branchId, equipment_id: eqId || null, equipment_text: eqId ? null : eqText, symptom: sym, urgent: document.getElementById('rp-urg').checked, photo_path: path, reported_by: who }]);
+        toast('사장님께 신고했어요'); render();
+      } catch(e){ this.disabled = false; toast('신고하지 못했어요: ' + (e.message || e)); }
+    };
+  };
 
   app.addEventListener('click', async function(e){
     var el = e.target.closest('[data-act]'); if (!el) return;
