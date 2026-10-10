@@ -135,7 +135,11 @@
   .quick3 .quick{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:16px 6px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-l); box-shadow:var(--shadow); text-decoration:none; color:inherit; }
   .quick3 .quick:active{ background:var(--surface-sunken); }
   .quick3 .tile{ width:64px; height:64px; font-size:32px; border-radius:18px; }
-  .quick3 .ql{ font-size:17px; font-weight:700; }
+  .quick3 .ql{ font-size:17px; font-weight:700; text-align:center; line-height:1.25; }
+  .quick3.q4{ grid-template-columns:repeat(4,1fr); gap:7px; }
+  .quick3.q4 .quick{ padding:12px 2px 10px; gap:6px; }
+  .quick3.q4 .tile{ width:50px; height:50px; font-size:26px; border-radius:15px; }
+  .quick3.q4 .ql{ font-size:14px; }
 
   .pin-wrap{ text-align:center; padding:20px 0; }
   .pin{ font-size:32px; letter-spacing:14px; width:200px; text-align:center; padding:10px; border:1px solid var(--line-strong); border-radius:var(--radius-m); background:var(--surface); color:var(--ink); }
@@ -913,8 +917,13 @@
   routes.home = async function(){
     await loadBase();
     var html = topbar('본노엘 운영', false, whoChip());
-    // 매장폰 첫 화면: 개인 계정이 없는 근무자가 매장폰으로 모든 일을 하므로, 출퇴근·근무표·선결제를 맨 위에 큰 칸으로 (아이콘·색은 아래 메뉴와 같음)
-    if (isKiosk()) html += '<div class="quick3">' + [['#/clock', 'tile-green', '⏱', '출퇴근'], ['#/schedule', 'tile-blue', '📅', '근무표'], ['#/prepay', 'tile-green', '🎟️', '선결제']].map(function(q){ return '<a class="quick" href="' + q[0] + '"><div class="tile" style="background:var(--' + q[1] + ')">' + q[2] + '</div><div class="ql">' + q[3] + '</div></a>'; }).join('') + '</div>';
+    // 매장폰·매니저 첫 화면: 출퇴근·근무표·선결제를 맨 위에 큰 칸으로 (아이콘·색은 아래 메뉴와 같음).
+    // 매니저는 선결제 옆에 로그북(매니저)까지 4칸 — 단, 매니저 일지를 숨기는 매장(왕십리)은 3칸. 사장님·알바 개인 계정은 해당 없음.
+    if (isKiosk() || (session && session.role === 'manager')){
+      var qItems = [['#/clock', 'tile-green', '⏱', '출퇴근'], ['#/schedule', 'tile-blue', '📅', '근무표'], ['#/prepay', 'tile-green', '🎟️', '선결제']];
+      if (session.role === 'manager' && !noMlogBranch()) qItems.push([LINKS.logbook, 'tile-blue', '👔', '로그북<br>(매니저)']);
+      html += '<div class="quick3' + (qItems.length > 3 ? ' q4' : '') + '">' + qItems.map(function(q){ return '<a class="quick" href="' + q[0] + '"' + (q[0].indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + q[1] + ')">' + q[2] + '</div><div class="ql">' + q[3] + '</div></a>'; }).join('') + '</div>';
+    }
     if (!isKiosk()) try { // 내 현황: 매니저 아닌 근무자도 자기 휴무·대타·보건증은 로그인하자마자 바로 보이게 (매장폰은 사람이 아니라 생략)
       var mySch = await loadSchedule([session.branchId], addDays(todayStr(), -14), addDays(todayStr(), 60));
       var myOpenReq = mySch.requests.filter(function(q){ return q.staff_id === session.staffId && ['requested', 'covering'].indexOf(q.status) >= 0 && q.date >= todayStr(); });
