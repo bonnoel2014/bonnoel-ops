@@ -765,7 +765,7 @@
     var map = {};
     base.itemBranch.forEach(function(ib){ if (ib.branch_id === branchId) map[ib.item_id] = ib; });
     return base.items.filter(function(it){ return it.active !== false && map[it.id] && map[it.id].active !== false; })
-      .map(function(it){ return { item: it, target: num(map[it.id].target_qty) || 0, note: effectiveNote(map[it.id]) }; });
+      .map(function(it){ return { item: it, target: num(map[it.id].target_qty) || 0, note: effectiveNote(map[it.id]), noteAt: map[it.id].note_at || null }; });
   }
   function groupByCategory(list){ // list: [{item,...}]
     var groups = [];
@@ -812,7 +812,7 @@
         });
         if (est != null && est < 0) est = 0;   // 보낸 게 종이 재고보다 많으면 0으로 봄
         var shortage = (est != null && x.target > 0 && !it.unlimited && !(last && last.unlimited)) ? Math.max(0, x.target - est - pending) : 0;
-        m[it.id] = { item: it, target: x.target, note: x.note, last: last, basement: latestBase[it.id] ? num(latestBase[it.id].basement_qty) : null, basementAt: latestBase[it.id] ? latestBase[it.id].checked_at : null, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
+        m[it.id] = { item: it, target: x.target, note: x.note, noteAt: x.noteAt, last: last, basement: latestBase[it.id] ? num(latestBase[it.id].basement_qty) : null, basementAt: latestBase[it.id] ? latestBase[it.id].checked_at : null, est: est, pending: pending, pendingList: pendingList, shortage: shortage };
       });
       out[b] = m;
     });
@@ -1546,7 +1546,7 @@
     var byBranch = {}, branchOrder = [], orderLines = [], noteLines = [];
     for (var k in m){
       var s = m[k];
-      if (s.note){ noteLines.push(s.item.name + ': ' + s.note); continue; }
+      if (s.note && noteIsFresh(s.noteAt)){ noteLines.push(s.item.name + ': ' + s.note); continue; }
       if (s.pending > 0){
         s.pendingList.forEach(function(p){
           if (p.kind === 'transfer'){
@@ -1780,6 +1780,8 @@
     await db.update('ops_items', { id: id }, { name: name.trim() });
     toast('고쳤어요'); render();
   }
+  // 처리 결과 복사에는 최근 7일 안에 쓴 메모만 넣음 (날짜 없는 옛 메모는 화면엔 남고 복사에서만 뺌)
+  function noteIsFresh(noteAt){ return !!noteAt && (Date.now() - new Date(noteAt).getTime()) / 86400000 <= NOTE_TEMP_DAYS; }
   function itemBranchNote(itemId, branchId){
     var ib = base.itemBranch.filter(function(x){ return x.item_id === itemId && x.branch_id === branchId; })[0];
     return effectiveNote(ib);
