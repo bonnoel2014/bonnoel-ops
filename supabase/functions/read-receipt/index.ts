@@ -1,6 +1,7 @@
 // 영수증 사진을 Claude에게 보여 주고 값을 JSON으로 받아오는 함수.
 //  - kind = "expense" (기본): 법인카드 영수증 → 가게명·날짜·금액·카드 끝자리
 //  - kind = "staff_purchase": 우리 매장 POS 영수증(직원 구매) → 날짜·정가 합계·할인·낸 금액·결제 방식·매장·산 것
+//  - kind = "contract": 계약서·보험증권·렌탈 약정서 (사장님 앱 계약함) → 이름·종류·상대방·시작·만료일·해지 통보·금액·연락처
 // 배포: Supabase 대시보드 -> Edge Functions -> Deploy a new function -> Via Editor -> 이름 read-receipt -> 이 파일 내용 붙여넣기 -> Deploy
 //       (이미 배포돼 있으면 함수 열기 -> Code -> 내용 바꿔 넣고 Deploy 한 번 더)
 // 비밀값(Secrets): ANTHROPIC_API_KEY (필수), APP_KEY (선택: 앱의 publishable 키를 넣으면 그 키를 가진 앱만 호출 가능)
@@ -42,6 +43,24 @@ const PROMPT_STAFF = [
   "}",
 ].join("\n");
 
+const PROMPT_CONTRACT = [
+  "이 사진은 한국 빵집(본노엘) 회사가 맺은 계약서·보험증권·렌탈 약정서·인허가증·교육 수료증 중 하나입니다.",
+  "아래 형식의 JSON 하나만 출력하세요. 설명이나 코드 표시는 붙이지 마세요. 사진에 없는 값은 추측하지 말고 null.",
+  "{",
+  '  "name": "알아보기 쉬운 짧은 이름 20자 이내 (예: 화재보험, 정수기 렌탈, 상가 임대차). 모르면 null",',
+  '  "cat": "rent(임대차) insur(보험) rental(렌탈·리스) license(인허가·신고) edu(위생교육) card(카드단말기·포스) security(보안·세콤) vendor(거래처·납품) etc 중 하나",',
+  '  "party": "상대방 회사·사람 이름 (건물주·보험사·렌탈 업체). 모르면 null",',
+  '  "start_on": "계약·보험 시작일 YYYY-MM-DD. 모르면 null",',
+  '  "end_on": "만료일·종료일·유효기간 끝 YYYY-MM-DD. 모르면 null",',
+  '  "notice_days": 해지하려면 만료 며칠 전까지 알려야 한다고 적혀 있으면 그 일수(정수, 1개월=30). 없으면 null,',
+  '  "auto_renew": 자동 갱신·자동 연장 조항이 있으면 true, 없거나 모르면 false,',
+  '  "amount": 월 임대료·월 렌탈료·보험료 같은 대표 금액을 정수(원)로. 모르면 null,',
+  '  "amount_unit": "month(매달) year(1년) once(한 번) 중 하나. 모르면 null",',
+  '  "phone": "담당자·고객센터 전화번호. 모르면 null",',
+  '  "confidence": 0에서 1 사이 숫자. 사진이 흐리거나 값이 애매하면 낮게',
+  "}",
+].join("\n");
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
@@ -67,7 +86,7 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "요청 내용을 읽을 수 없어요" }, 400); }
   const data = (body.image_base64 || "").replace(/\s/g, "");
   const mediaType = (body.media_type || "image/jpeg") as "image/jpeg" | "image/png" | "image/webp";
-  const kind = body.kind === "staff_purchase" ? "staff_purchase" : "expense";
+  const kind = body.kind === "staff_purchase" || body.kind === "contract" ? body.kind : "expense";
   if (!data) return json({ error: "사진이 없어요" }, 400);
   if (data.length > 6_000_000) return json({ error: "사진이 너무 커요 (앱에서 줄여서 보내야 해요)" }, 413);
 
@@ -81,7 +100,7 @@ Deno.serve(async (req) => {
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: mediaType, data } },
-          { type: "text", text: kind === "staff_purchase" ? PROMPT_STAFF : PROMPT_EXPENSE },
+          { type: "text", text: kind === "staff_purchase" ? PROMPT_STAFF : kind === "contract" ? PROMPT_CONTRACT : PROMPT_EXPENSE },
         ],
       }],
     });
@@ -96,7 +115,13 @@ Deno.serve(async (req) => {
   try {
     const parsed = JSON.parse(cleaned.slice(start, end + 1));
     const dateOk = (v: unknown) => v != null && /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : null;
-    if (kind === "staff_purchase") {
+    if (kind === "contract") {
+      parsed.start_on = dateOk(parsed.start_on);
+      parsed.end_on = dateOk(parsed.end_on);
+      parsed.amount = toInt(parsed.amount);
+      parsed.notice_days = toInt(parsed.notice_days);
+      parsed.auto_renew = parsed.auto_renew === true;
+    } else if (kind === "staff_purchase") {
       parsed.bought_on = dateOk(parsed.bought_on);
       parsed.list_total = toInt(parsed.list_total);
       parsed.discount = toInt(parsed.discount);
