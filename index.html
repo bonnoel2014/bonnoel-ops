@@ -917,12 +917,15 @@
   routes.home = async function(){
     await loadBase();
     var html = topbar('본노엘 운영', false, whoChip());
-    // 매장폰·매니저 첫 화면: 출퇴근·근무표·선결제를 맨 위에 큰 칸으로 (아이콘·색은 아래 메뉴와 같음).
-    // 매니저는 선결제 옆에 로그북(매니저)까지 4칸 — 단, 매니저 일지를 숨기는 매장(왕십리)은 3칸이고, 거긴 알바가 일지를 쓰니 선결제 자리에 알바 일지. 사장님·알바 개인 계정은 해당 없음.
-    if (isKiosk() || (session && session.role === 'manager')){
-      var qItems = [['#/clock', 'tile-green', '⏱', '출퇴근'], ['#/schedule', 'tile-blue', '📅', '근무표'], ['#/prepay', 'tile-green', '🎟️', '선결제']];
-      if (noMlogBranch()) qItems[2] = ['#/alog', 'tile-yellow', '✍️', '알바 일지'];
+    // 첫 화면 맨 위 큰 칸 (사장님 제외): 출퇴근·근무표 + [선결제 | 왕십리는 알바 일지] + 직원 구매. 아이콘·색은 아래 메뉴와 같음.
+    //  매장폰: 4칸(왕십리는 선결제 자리에 알바 일지) / 알바 개인 계정: 출퇴근·근무표·직원 구매(왕십리는 알바 일지 추가) — 선결제는 안 보임
+    //  매니저: 선결제·로그북(매니저) 4칸 — 매니저 일지를 숨기는 매장(왕십리)은 알바 일지·직원 구매
+    if (session && !isOwner()){
+      var qItems = [['#/clock', 'tile-green', '⏱', '출퇴근'], ['#/schedule', 'tile-blue', '📅', '근무표']];
+      if (noMlogBranch()) qItems.push(['#/alog', 'tile-yellow', '✍️', '알바 일지']);
+      else if (isManager()) qItems.push(['#/prepay', 'tile-green', '🎟️', '선결제']);
       if (session.role === 'manager' && !noMlogBranch()) qItems.push([LINKS.logbook, 'tile-blue', '👔', '로그북<br>(매니저)']);
+      else qItems.push(['#/buy', 'tile-yellow', '🥐', '직원 구매']);
       html += '<div class="quick3' + (qItems.length > 3 ? ' q4' : '') + '">' + qItems.map(function(q){ return '<a class="quick" href="' + q[0] + '"' + (q[0].indexOf('http') === 0 ? ' target="_blank" rel="noopener"' : '') + '><div class="tile" style="background:var(--' + q[1] + ')">' + q[2] + '</div><div class="ql">' + q[3] + '</div></a>'; }).join('') + '</div>';
     }
     if (!isKiosk()) try { // 내 현황: 매니저 아닌 근무자도 자기 휴무·대타·보건증은 로그인하자마자 바로 보이게 (매장폰은 사람이 아니라 생략)
